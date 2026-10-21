@@ -46,3 +46,12 @@
 ### Próximos Passos (Back-end e Integração):
 * **Função Fetch:** Substituir o `console.log` atual do formulário de Login por uma requisição HTTP (`fetch`) real.
 * **Desenvolvimento da API (Concluído ✅):** Os endpoints no servidor (Spring Boot) já foram criados para receber o JSON do aplicativo, validar as credenciais no banco de dados e retornar a resposta (Sucesso/Erro). Resta apenas a conexão de rede (IP) entre o Front e o Back.
+
+---
+
+## 🚀 Migração para o 4º Período (P4)
+* **Fase 0 — Preservação e Preparo ✅ [CONCLUÍDA]:** Novo repositório `projeto-ads-p4-mobile` criado, preservando o código do 3º período intacto.
+* **Fase 1 — Execução Reproduzível ✅ [CONCLUÍDA]:**
+  - Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
+  - Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
+  - Estrutura pronta para o 1º Commit oficial de evolução do P4.
