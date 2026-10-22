@@ -40,3 +40,8 @@
 ### Fase 1 — Execução Reproduzível ✅ [CONCLUÍDA]
 * Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
 * Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
+
+### Fase 3 — Integração Mobile com Autenticação JWT ✅ [CONCLUÍDA]
+* Adaptação do `AuthContext.tsx` no React Native com persistência em `AsyncStorage` (`@orienta_token` e `@orienta_user`).
+* Integração de interceptors do Axios para injeção automática de `Bearer ${token}`.
+* Fluxo de logout com limpeza de cache e remoção segura de credenciais.
