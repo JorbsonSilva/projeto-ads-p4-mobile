@@ -1,9 +1,11 @@
 import { API_URL } from "@/config/api";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { CronometroAula } from "@/components/CronometroAula";
+import { FontAwesome5 } from "@expo/vector-icons";
 import axios from "axios";
-import { useFocusEffect } from "expo-router"; // 🟢 1. Importação Nova
-import React, { useCallback, useState } from "react"; // 🟢 2. useCallback Adicionado
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -59,8 +61,33 @@ export default function Agenda() {
   const [novaHora, setNovaHora] = useState("");
   const [modalCancelarVisivel, setModalCancelarVisivel] = useState(false);
   const [justificativa, setJustificativa] = useState("");
+  const [modalSalaAulaVisivel, setModalSalaAulaVisivel] = useState(false);
+  const [aulaSalaAoVivo, setAulaSalaAoVivo] = useState<any>(null);
+
+  // Fase 7: Chat, Notificações Internas e Suporte
+  const [modalChatVisivel, setModalChatVisivel] = useState(false);
+  const [aulaChatSelecionada, setAulaChatSelecionada] = useState<any>(null);
+  const [modalNotificacoesVisivel, setModalNotificacoesVisivel] = useState(false);
+  const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState(0);
+  const [modalSuporteVisivel, setModalSuporteVisivel] = useState(false);
 
   const apiUrl = `${API_URL}/agendamentos`;
+
+  const carregarNaoLidas = async () => {
+    if (!usuarioId) return;
+    try {
+      const resp = await notificacaoApi.contarNaoLidas(Number(usuarioId));
+      const count = (resp.data as any)?.totalNaoLidas ?? (resp.data as any)?.total ?? 0;
+      setNotificacoesNaoLidas(count);
+    } catch (e) {
+      // Silencioso se backend offline
+    }
+  };
+
+  const abrirChat = (agendamento: any) => {
+    setAulaChatSelecionada(agendamento);
+    setModalChatVisivel(true);
+  };
 
   const buscarAgendamentos = async () => {
     if (!usuarioId) return;
@@ -84,10 +111,11 @@ export default function Agenda() {
     }
   };
 
-  // 🟢 3. A MÁGICA AQUI: Atualiza sempre que o usuário olhar para a tela de Agenda!
+  // 🟢 Atualiza sempre que o usuário olhar para a tela de Agenda!
   useFocusEffect(
     useCallback(() => {
       buscarAgendamentos();
+      carregarNaoLidas();
     }, [usuarioId, perfilAtivo]),
   );
 
@@ -179,30 +207,52 @@ export default function Agenda() {
         ? agendamento.aluno?.nome
         : agendamento.professor?.nome;
 
+    const podeEntrarAoVivo = 
+      agendamento.status === "CONFIRMADO" || 
+      agendamento.status === "EM_ANDAMENTO" || 
+      agendamento.status === "AGUARDANDO_CONFIRMACAO" || 
+      agendamento.status === "REALIZADA";
+
+    const botoesOpcoes: any[] = [];
+
+    if (podeEntrarAoVivo) {
+      botoesOpcoes.push({
+        text: agendamento.status === "REALIZADA" ? "Ver Resumo / Avaliação" : "Entrar na Sala Ao Vivo ⏱️",
+        onPress: () => {
+          setAulaSalaAoVivo(agendamento);
+          setModalSalaAulaVisivel(true);
+        },
+      });
+    }
+
+    if (agendamento.status !== "REALIZADA" && agendamento.status !== "EM_ANDAMENTO") {
+      botoesOpcoes.push({
+        text: "Remarcar",
+        onPress: () => {
+          setAulaSelecionada(agendamento);
+          setNovaData(agendamento.data);
+          setNovaHora(agendamento.hora.substring(0, 5));
+          setModalRemarcarVisivel(true);
+        },
+      });
+
+      botoesOpcoes.push({
+        text: "Cancelar Aula",
+        style: "destructive",
+        onPress: () => {
+          setAulaSelecionada(agendamento);
+          setJustificativa("");
+          setModalCancelarVisivel(true);
+        },
+      });
+    }
+
+    botoesOpcoes.push({ text: "Fechar", style: "cancel" });
+
     Alert.alert(
       "Opções da Aula",
-      `O que deseja fazer com a aula de ${nomeOutraPessoa || "ID Desconhecido"}?`,
-      [
-        {
-          text: "Cancelar Aula",
-          style: "destructive",
-          onPress: () => {
-            setAulaSelecionada(agendamento);
-            setJustificativa("");
-            setModalCancelarVisivel(true);
-          },
-        },
-        {
-          text: "Remarcar",
-          onPress: () => {
-            setAulaSelecionada(agendamento);
-            setNovaData(agendamento.data);
-            setNovaHora(agendamento.hora.substring(0, 5));
-            setModalRemarcarVisivel(true);
-          },
-        },
-        { text: "Fechar", style: "cancel" },
-      ],
+      `Mentoria com ${nomeOutraPessoa || "Participante"} (Status: ${agendamento.status})`,
+      botoesOpcoes,
     );
   };
 
@@ -234,9 +284,64 @@ export default function Agenda() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.conteudo}
       >
-        <Text style={estilos.textoTitulo}>
-          {perfilAtivo === "Professor" ? "Agenda do Professor" : "Minha Agenda"}
-        </Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <Text style={[estilos.textoTitulo, { marginBottom: 0 }]}>
+            {perfilAtivo === "Professor" ? "Agenda do Professor" : "Minha Agenda"}
+          </Text>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <TouchableOpacity
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: "#F1F5F9",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onPress={() => setModalSuporteVisivel(true)}
+              accessibilityLabel="Abrir Central de Suporte"
+            >
+              <FontAwesome5 name="headset" size={18} color="#475569" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: "#F1F5F9",
+                alignItems: "center",
+                justifyContent: "center",
+                position: "relative",
+              }}
+              onPress={() => setModalNotificacoesVisivel(true)}
+              accessibilityLabel="Abrir Notificações"
+            >
+              <FontAwesome5 name="bell" size={18} color="#475569" />
+              {notificacoesNaoLidas > 0 && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -2,
+                    right: -2,
+                    backgroundColor: "#EF4444",
+                    borderRadius: 10,
+                    minWidth: 18,
+                    height: 18,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 4,
+                  }}
+                >
+                  <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "bold" }}>
+                    {notificacoesNaoLidas > 99 ? "99+" : notificacoesNaoLidas}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <View style={estilos.cartaoCalendario}>
           <View style={estilos.cabecalhoMes}>
@@ -329,60 +434,141 @@ export default function Agenda() {
           aulasDoDia.map((agendamento) => {
             const isCancelado = agendamento.status === "CANCELADO";
             const isPendente = agendamento.status === "PENDENTE";
+            const isEmAndamento = agendamento.status === "EM_ANDAMENTO";
+            const isConfirmado = agendamento.status === "CONFIRMADO";
+            const isAguardando = agendamento.status === "AGUARDANDO_CONFIRMACAO";
+            const isRealizada = agendamento.status === "REALIZADA";
 
             const nomeCard =
               perfilAtivo === "Professor"
                 ? `Aluno: ${agendamento.aluno?.nome || agendamento.aluno?.id}`
                 : `Prof. ${agendamento.professor?.nome || agendamento.professor?.id}`;
 
+            const assunto = agendamento.assunto || agendamento.saber?.nome || "Mentoria Orienta";
+
             return (
-              <TouchableOpacity
+              <View
                 key={agendamento.id}
                 style={[
                   estilos.cartaoAgendamento,
                   isCancelado && estilos.cartaoCancelado,
                   isPendente && estilos.cartaoPendente,
+                  isEmAndamento && estilos.cartaoEmAndamento,
+                  isRealizada && estilos.cartaoRealizada,
                 ]}
-                onPress={() => abrirOpcoesAula(agendamento)}
               >
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      estilos.nomeProfessor,
-                      isCancelado && estilos.textoCancelado,
-                      isPendente && estilos.textoPendenteDestaque,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {nomeCard}
-                  </Text>
-                  <Text
-                    style={[
-                      estilos.materia,
-                      isCancelado && estilos.textoCancelado,
-                    ]}
-                  >
-                    Status: {agendamento.status}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    estilos.tagHorario,
-                    isCancelado && estilos.tagHorarioCancelado,
-                    isPendente && estilos.tagHorarioPendente,
-                  ]}
+                <TouchableOpacity 
+                  style={{ flex: 1 }}
+                  onPress={() => abrirOpcoesAula(agendamento)}
                 >
-                  <Text
-                    style={[
-                      estilos.textoHorario,
-                      isCancelado && estilos.textoCancelado,
-                      isPendente && estilos.textoPendenteDestaque,
-                    ]}
-                  >
-                    {agendamento.hora.substring(0, 5)}
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Text
+                      style={[
+                        estilos.nomeProfessor,
+                        isCancelado && estilos.textoCancelado,
+                        isPendente && estilos.textoPendenteDestaque,
+                        isEmAndamento && { color: "#10B981" },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {nomeCard}
+                    </Text>
+
+                    <View
+                      style={[
+                        estilos.tagHorario,
+                        isCancelado && estilos.tagHorarioCancelado,
+                        isPendente && estilos.tagHorarioPendente,
+                        isEmAndamento && { backgroundColor: "#DCFCE7" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          estilos.textoHorario,
+                          isCancelado && estilos.textoCancelado,
+                          isPendente && estilos.textoPendenteDestaque,
+                          isEmAndamento && { color: "#16A34A" },
+                        ]}
+                      >
+                        {agendamento.hora.substring(0, 5)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[estilos.materia, isCancelado && estilos.textoCancelado]}>
+                    {assunto} • {agendamento.modalidade || "ONLINE"}
                   </Text>
-                </View>
-              </TouchableOpacity>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 6, flexWrap: "wrap" }}>
+                    <View style={[
+                      estilos.badgeStatusPequeno,
+                      isEmAndamento && { backgroundColor: "#DCFCE7" },
+                      isConfirmado && { backgroundColor: "#DBEAFE" },
+                      isAguardando && { backgroundColor: "#FEF3C7" },
+                      isRealizada && { backgroundColor: "#F3E8FF" },
+                    ]}>
+                      <Text style={[
+                        estilos.badgeStatusTexto,
+                        isEmAndamento && { color: "#15803D" },
+                        isConfirmado && { color: "#1D4ED8" },
+                        isAguardando && { color: "#B45309" },
+                        isRealizada && { color: "#7E22CE" },
+                      ]}>
+                        {isEmAndamento ? "🔴 EM ANDAMENTO" : agendamento.status}
+                      </Text>
+                    </View>
+
+                    {!isCancelado && (
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: "#0284C7",
+                          flexDirection: "row",
+                          alignItems: "center",
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 6,
+                          gap: 5,
+                        }}
+                        onPress={() => abrirChat(agendamento)}
+                      >
+                        <FontAwesome5 name="comments" size={12} color="#FFFFFF" />
+                        <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "bold" }}>
+                          Chat
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {(isConfirmado || isEmAndamento || isAguardando || isRealizada) && (
+                      <TouchableOpacity
+                        style={[
+                          estilos.botaoAcessarAoVivo,
+                          isEmAndamento && { backgroundColor: "#10B981" },
+                          isRealizada && { backgroundColor: "#8B5CF6" },
+                        ]}
+                        onPress={() => {
+                          setAulaSalaAoVivo(agendamento);
+                          setModalSalaAulaVisivel(true);
+                        }}
+                      >
+                        <FontAwesome5 
+                          name={isRealizada ? "star" : "stopwatch"} 
+                          size={12} 
+                          color="#FFFFFF" 
+                        />
+                        <Text style={estilos.botaoAcessarAoVivoTexto}>
+                          {isEmAndamento 
+                            ? "Acessar Sala Ao Vivo" 
+                            : isConfirmado 
+                            ? "Entrar na Sala" 
+                            : isAguardando 
+                            ? "Confirmar Fim" 
+                            : "Ver / Avaliar"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              </View>
             );
           })
         )}
@@ -469,7 +655,149 @@ export default function Agenda() {
             </View>
           </View>
         </View>
+      {/* MODAL SALA DE AULA AO VIVO & CRONÔMETRO BILATERAL */}
+      <Modal
+        animationType="slide"
+        transparent={false}
+        visible={modalSalaAulaVisivel}
+        onRequestClose={() => setModalSalaAulaVisivel(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#0F172A" }}>
+          {/* Header da Sala */}
+          <View style={estilos.salaHeader}>
+            <TouchableOpacity 
+              style={estilos.botaoVoltarSala}
+              onPress={() => setModalSalaAulaVisivel(false)}
+            >
+              <FontAwesome5 name="arrow-left" size={18} color="#F8FAFC" />
+              <Text style={estilos.textoVoltarSala}>Agenda</Text>
+            </TouchableOpacity>
+
+            <View style={{ alignItems: "center" }}>
+              <Text style={estilos.salaTitulo}>Sala de Aula Ao Vivo</Text>
+              <Text style={estilos.salaSubtitulo}>Sincronização em Tempo Real</Text>
+            </View>
+
+            <View style={{ width: 60 }} />
+          </View>
+
+          <ScrollView 
+            contentContainerStyle={estilos.salaConteudo}
+            showsVerticalScrollIndicator={false}
+          >
+            {aulaSalaAoVivo && (
+              <View style={estilos.salaInfoCard}>
+                <View style={estilos.salaBadgeModalidade}>
+                  <Text style={estilos.salaBadgeModalidadeTexto}>
+                    {aulaSalaAoVivo.modalidade || "ONLINE"}
+                  </Text>
+                </View>
+
+                <Text style={estilos.salaDisciplina}>
+                  {aulaSalaAoVivo.assunto || aulaSalaAoVivo.saber?.nome || "Mentoria Orienta"}
+                </Text>
+
+                <Text style={estilos.salaParticipante}>
+                  {perfilAtivo === "Professor" 
+                    ? `Aluno: ${aulaSalaAoVivo.aluno?.nome || aulaSalaAoVivo.aluno?.id}` 
+                    : `Professor: ${aulaSalaAoVivo.professor?.nome || aulaSalaAoVivo.professor?.id}`}
+                </Text>
+
+                <View style={estilos.salaMetaRow}>
+                  <View style={estilos.salaMetaItem}>
+                    <FontAwesome5 name="calendar-day" size={12} color="#94A3B8" />
+                    <Text style={estilos.salaMetaTexto}>{aulaSalaAoVivo.data}</Text>
+                  </View>
+                  <View style={estilos.salaMetaItem}>
+                    <FontAwesome5 name="clock" size={12} color="#94A3B8" />
+                    <Text style={estilos.salaMetaTexto}>{aulaSalaAoVivo.hora?.substring(0, 5)}</Text>
+                  </View>
+                  {aulaSalaAoVivo.valorAplicado && (
+                    <View style={estilos.salaMetaItem}>
+                      <FontAwesome5 name="tag" size={12} color="#10B981" />
+                      <Text style={[estilos.salaMetaTexto, { color: "#10B981", fontWeight: "bold" }]}>
+                        R$ {Number(aulaSalaAoVivo.valorAplicado).toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Botão de Chat na Sala Ao Vivo */}
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: "#0284C7",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    gap: 8,
+                    marginTop: 12,
+                  }}
+                  onPress={() => abrirChat(aulaSalaAoVivo)}
+                >
+                  <FontAwesome5 name="comments" size={14} color="#FFFFFF" />
+                  <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "bold" }}>
+                    Abrir Chat com {perfilAtivo === "Professor" ? "Aluno" : "Professor"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {aulaSalaAoVivo && (
+              <CronometroAula
+                agendamentoId={aulaSalaAoVivo.id}
+                usuarioId={Number(usuarioId)}
+                isProfessor={perfilAtivo === "Professor"}
+                onAulaConcluida={() => {
+                  buscarAgendamentos();
+                }}
+              />
+            )}
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
+
+      {/* MODAL DO CHAT (FASE 7) */}
+      <ChatModal
+        visible={modalChatVisivel}
+        onClose={() => setModalChatVisivel(false)}
+        agendamentoId={aulaChatSelecionada?.id || 0}
+        usuarioId={Number(usuarioId)}
+        outroUsuarioId={
+          aulaChatSelecionada
+            ? perfilAtivo === "Professor"
+              ? aulaChatSelecionada.aluno?.id
+              : aulaChatSelecionada.professor?.id
+            : undefined
+        }
+        outroParticipanteNome={
+          aulaChatSelecionada
+            ? perfilAtivo === "Professor"
+              ? aulaChatSelecionada.aluno?.nome || `Aluno #${aulaChatSelecionada.aluno?.id}`
+              : aulaChatSelecionada.professor?.nome || `Prof. #${aulaChatSelecionada.professor?.id}`
+            : "Participante"
+        }
+        disciplinaNome={aulaChatSelecionada?.saber?.nome || aulaChatSelecionada?.assunto || "Mentoria"}
+        agendamentoStatus={aulaChatSelecionada?.status}
+      />
+
+      {/* CENTRAL DE NOTIFICAÇÕES (FASE 7) */}
+      <CentralNotificacoesModal
+        visible={modalNotificacoesVisivel}
+        onClose={() => {
+          setModalNotificacoesVisivel(false);
+          carregarNaoLidas();
+        }}
+        usuarioId={Number(usuarioId)}
+      />
+
+      {/* SUPORTE E TICKETS (FASE 7) */}
+      <ModalSuporteTicket
+        visible={modalSuporteVisivel}
+        onClose={() => setModalSuporteVisivel(false)}
+        usuarioId={Number(usuarioId)}
+      />
     </SafeAreaView>
   );
 }
@@ -644,4 +972,126 @@ const estilos = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   modalTextoBotaoSalvar: { color: Colors.card, fontWeight: "bold" },
+  cartaoEmAndamento: {
+    borderColor: "#10B981",
+    borderWidth: 1.5,
+    backgroundColor: "#F0FDF4",
+  },
+  cartaoRealizada: {
+    borderColor: "#C084FC",
+    borderWidth: 1,
+    backgroundColor: "#FAF5FF",
+  },
+  badgeStatusPequeno: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: "#F1F5F9",
+  },
+  badgeStatusTexto: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: "#475569",
+    textTransform: "uppercase",
+  },
+  botaoAcessarAoVivo: {
+    backgroundColor: "#F97316",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 5,
+  },
+  botaoAcessarAoVivoTexto: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "bold",
+  },
+  salaHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#1E293B",
+    borderBottomWidth: 1,
+    borderBottomColor: "#334155",
+  },
+  botaoVoltarSala: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  textoVoltarSala: {
+    color: "#F8FAFC",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  salaTitulo: {
+    color: "#F8FAFC",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  salaSubtitulo: {
+    color: "#94A3B8",
+    fontSize: 11,
+  },
+  salaConteudo: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  salaInfoCard: {
+    backgroundColor: "#1E293B",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#334155",
+    marginBottom: 16,
+  },
+  salaBadgeModalidade: {
+    alignSelf: "flex-start",
+    backgroundColor: "#0F172A",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  salaBadgeModalidadeTexto: {
+    color: "#F97316",
+    fontSize: 10,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+  },
+  salaDisciplina: {
+    color: "#F8FAFC",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  salaParticipante: {
+    color: "#CBD5E1",
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  salaMetaRow: {
+    flexDirection: "row",
+    gap: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#334155",
+    paddingTop: 10,
+  },
+  salaMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  salaMetaTexto: {
+    color: "#94A3B8",
+    fontSize: 12,
+  },
 });
