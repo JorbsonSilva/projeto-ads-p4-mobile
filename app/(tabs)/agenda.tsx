@@ -1,10 +1,10 @@
+import { CentralNotificacoesModal } from "@/components/CentralNotificacoesModal";
+import { ChatModal } from "@/components/ChatModal";
+import { CronometroAula } from "@/components/CronometroAula";
+import { ModalSuporteTicket } from "@/components/ModalSuporteTicket";
 import { API_URL, notificacaoApi } from "@/config/api";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { CronometroAula } from "@/components/CronometroAula";
-import { ChatModal } from "@/components/ChatModal";
-import { CentralNotificacoesModal } from "@/components/CentralNotificacoesModal";
-import { ModalSuporteTicket } from "@/components/ModalSuporteTicket";
 import { FontAwesome5 } from "@expo/vector-icons";
 import axios from "axios";
 import { useFocusEffect } from "expo-router";
@@ -70,7 +70,8 @@ export default function Agenda() {
   // Fase 7: Chat, Notificações Internas e Suporte
   const [modalChatVisivel, setModalChatVisivel] = useState(false);
   const [aulaChatSelecionada, setAulaChatSelecionada] = useState<any>(null);
-  const [modalNotificacoesVisivel, setModalNotificacoesVisivel] = useState(false);
+  const [modalNotificacoesVisivel, setModalNotificacoesVisivel] =
+    useState(false);
   const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState(0);
   const [modalSuporteVisivel, setModalSuporteVisivel] = useState(false);
 
@@ -80,7 +81,8 @@ export default function Agenda() {
     if (!usuarioId) return;
     try {
       const resp = await notificacaoApi.contarNaoLidas(Number(usuarioId));
-      const count = (resp.data as any)?.totalNaoLidas ?? (resp.data as any)?.total ?? 0;
+      const count =
+        (resp.data as any)?.totalNaoLidas ?? (resp.data as any)?.total ?? 0;
       setNotificacoesNaoLidas(count);
     } catch (e) {
       // Silencioso se backend offline
@@ -210,17 +212,20 @@ export default function Agenda() {
         ? agendamento.aluno?.nome
         : agendamento.professor?.nome;
 
-    const podeEntrarAoVivo = 
-      agendamento.status === "CONFIRMADO" || 
-      agendamento.status === "EM_ANDAMENTO" || 
-      agendamento.status === "AGUARDANDO_CONFIRMACAO" || 
+    const podeEntrarAoVivo =
+      agendamento.status === "CONFIRMADO" ||
+      agendamento.status === "EM_ANDAMENTO" ||
+      agendamento.status === "AGUARDANDO_CONFIRMACAO" ||
       agendamento.status === "REALIZADA";
 
     const botoesOpcoes: any[] = [];
 
     if (podeEntrarAoVivo) {
       botoesOpcoes.push({
-        text: agendamento.status === "REALIZADA" ? "Ver Resumo / Avaliação" : "Entrar na Sala Ao Vivo ⏱️",
+        text:
+          agendamento.status === "REALIZADA"
+            ? "Ver Resumo / Avaliação"
+            : "Entrar na Sala Ao Vivo ⏱️",
         onPress: () => {
           setAulaSalaAoVivo(agendamento);
           setModalSalaAulaVisivel(true);
@@ -228,7 +233,10 @@ export default function Agenda() {
       });
     }
 
-    if (agendamento.status !== "REALIZADA" && agendamento.status !== "EM_ANDAMENTO") {
+    if (
+      agendamento.status !== "REALIZADA" &&
+      agendamento.status !== "EM_ANDAMENTO"
+    ) {
       botoesOpcoes.push({
         text: "Remarcar",
         onPress: () => {
@@ -287,9 +295,18 @@ export default function Agenda() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.conteudo}
       >
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 20,
+          }}
+        >
           <Text style={[estilos.textoTitulo, { marginBottom: 0 }]}>
-            {perfilAtivo === "Professor" ? "Agenda do Professor" : "Minha Agenda"}
+            {perfilAtivo === "Professor"
+              ? "Agenda do Professor"
+              : "Minha Agenda"}
           </Text>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -337,7 +354,13 @@ export default function Agenda() {
                     paddingHorizontal: 4,
                   }}
                 >
-                  <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "bold" }}>
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: 10,
+                      fontWeight: "bold",
+                    }}
+                  >
                     {notificacoesNaoLidas > 99 ? "99+" : notificacoesNaoLidas}
                   </Text>
                 </View>
@@ -439,7 +462,8 @@ export default function Agenda() {
             const isPendente = agendamento.status === "PENDENTE";
             const isEmAndamento = agendamento.status === "EM_ANDAMENTO";
             const isConfirmado = agendamento.status === "CONFIRMADO";
-            const isAguardando = agendamento.status === "AGUARDANDO_CONFIRMACAO";
+            const isAguardando =
+              agendamento.status === "AGUARDANDO_CONFIRMACAO";
             const isRealizada = agendamento.status === "REALIZADA";
 
             const nomeCard =
@@ -447,7 +471,10 @@ export default function Agenda() {
                 ? `Aluno: ${agendamento.aluno?.nome || agendamento.aluno?.id}`
                 : `Prof. ${agendamento.professor?.nome || agendamento.professor?.id}`;
 
-            const assunto = agendamento.assunto || agendamento.saber?.nome || "Mentoria Orienta";
+            const assunto =
+              agendamento.assunto ||
+              agendamento.saber?.nome ||
+              "Mentoria Orienta";
 
             return (
               <View
@@ -460,11 +487,18 @@ export default function Agenda() {
                   isRealizada && estilos.cartaoRealizada,
                 ]}
               >
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={{ flex: 1 }}
                   onPress={() => abrirOpcoesAula(agendamento)}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 4,
+                    }}
+                  >
                     <Text
                       style={[
                         estilos.nomeProfessor,
@@ -498,25 +532,42 @@ export default function Agenda() {
                     </View>
                   </View>
 
-                  <Text style={[estilos.materia, isCancelado && estilos.textoCancelado]}>
+                  <Text
+                    style={[
+                      estilos.materia,
+                      isCancelado && estilos.textoCancelado,
+                    ]}
+                  >
                     {assunto} • {agendamento.modalidade || "ONLINE"}
                   </Text>
 
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, gap: 6, flexWrap: "wrap" }}>
-                    <View style={[
-                      estilos.badgeStatusPequeno,
-                      isEmAndamento && { backgroundColor: "#DCFCE7" },
-                      isConfirmado && { backgroundColor: "#DBEAFE" },
-                      isAguardando && { backgroundColor: "#FEF3C7" },
-                      isRealizada && { backgroundColor: "#F3E8FF" },
-                    ]}>
-                      <Text style={[
-                        estilos.badgeStatusTexto,
-                        isEmAndamento && { color: "#15803D" },
-                        isConfirmado && { color: "#1D4ED8" },
-                        isAguardando && { color: "#B45309" },
-                        isRealizada && { color: "#7E22CE" },
-                      ]}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      marginTop: 8,
+                      gap: 6,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <View
+                      style={[
+                        estilos.badgeStatusPequeno,
+                        isEmAndamento && { backgroundColor: "#DCFCE7" },
+                        isConfirmado && { backgroundColor: "#DBEAFE" },
+                        isAguardando && { backgroundColor: "#FEF3C7" },
+                        isRealizada && { backgroundColor: "#F3E8FF" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          estilos.badgeStatusTexto,
+                          isEmAndamento && { color: "#15803D" },
+                          isConfirmado && { color: "#1D4ED8" },
+                          isAguardando && { color: "#B45309" },
+                          isRealizada && { color: "#7E22CE" },
+                        ]}
+                      >
                         {isEmAndamento ? "🔴 EM ANDAMENTO" : agendamento.status}
                       </Text>
                     </View>
@@ -534,14 +585,27 @@ export default function Agenda() {
                         }}
                         onPress={() => abrirChat(agendamento)}
                       >
-                        <FontAwesome5 name="comments" size={12} color="#FFFFFF" />
-                        <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "bold" }}>
+                        <FontAwesome5
+                          name="comments"
+                          size={12}
+                          color="#FFFFFF"
+                        />
+                        <Text
+                          style={{
+                            color: "#FFFFFF",
+                            fontSize: 11,
+                            fontWeight: "bold",
+                          }}
+                        >
                           Chat
                         </Text>
                       </TouchableOpacity>
                     )}
 
-                    {(isConfirmado || isEmAndamento || isAguardando || isRealizada) && (
+                    {(isConfirmado ||
+                      isEmAndamento ||
+                      isAguardando ||
+                      isRealizada) && (
                       <TouchableOpacity
                         style={[
                           estilos.botaoAcessarAoVivo,
@@ -553,19 +617,19 @@ export default function Agenda() {
                           setModalSalaAulaVisivel(true);
                         }}
                       >
-                        <FontAwesome5 
-                          name={isRealizada ? "star" : "stopwatch"} 
-                          size={12} 
-                          color="#FFFFFF" 
+                        <FontAwesome5
+                          name={isRealizada ? "star" : "stopwatch"}
+                          size={12}
+                          color="#FFFFFF"
                         />
                         <Text style={estilos.botaoAcessarAoVivoTexto}>
-                          {isEmAndamento 
-                            ? "Acessar Sala Ao Vivo" 
-                            : isConfirmado 
-                            ? "Entrar na Sala" 
-                            : isAguardando 
-                            ? "Confirmar Fim" 
-                            : "Ver / Avaliar"}
+                          {isEmAndamento
+                            ? "Acessar Sala Ao Vivo"
+                            : isConfirmado
+                              ? "Entrar na Sala"
+                              : isAguardando
+                                ? "Confirmar Fim"
+                                : "Ver / Avaliar"}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -658,6 +722,8 @@ export default function Agenda() {
             </View>
           </View>
         </View>
+      </Modal>
+
       {/* MODAL SALA DE AULA AO VIVO & CRONÔMETRO BILATERAL */}
       <Modal
         animationType="slide"
@@ -668,7 +734,7 @@ export default function Agenda() {
         <SafeAreaView style={{ flex: 1, backgroundColor: "#0F172A" }}>
           {/* Header da Sala */}
           <View style={estilos.salaHeader}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={estilos.botaoVoltarSala}
               onPress={() => setModalSalaAulaVisivel(false)}
             >
@@ -678,13 +744,15 @@ export default function Agenda() {
 
             <View style={{ alignItems: "center" }}>
               <Text style={estilos.salaTitulo}>Sala de Aula Ao Vivo</Text>
-              <Text style={estilos.salaSubtitulo}>Sincronização em Tempo Real</Text>
+              <Text style={estilos.salaSubtitulo}>
+                Sincronização em Tempo Real
+              </Text>
             </View>
 
             <View style={{ width: 60 }} />
           </View>
 
-          <ScrollView 
+          <ScrollView
             contentContainerStyle={estilos.salaConteudo}
             showsVerticalScrollIndicator={false}
           >
@@ -697,28 +765,43 @@ export default function Agenda() {
                 </View>
 
                 <Text style={estilos.salaDisciplina}>
-                  {aulaSalaAoVivo.assunto || aulaSalaAoVivo.saber?.nome || "Mentoria Orienta"}
+                  {aulaSalaAoVivo.assunto ||
+                    aulaSalaAoVivo.saber?.nome ||
+                    "Mentoria Orienta"}
                 </Text>
 
                 <Text style={estilos.salaParticipante}>
-                  {perfilAtivo === "Professor" 
-                    ? `Aluno: ${aulaSalaAoVivo.aluno?.nome || aulaSalaAoVivo.aluno?.id}` 
+                  {perfilAtivo === "Professor"
+                    ? `Aluno: ${aulaSalaAoVivo.aluno?.nome || aulaSalaAoVivo.aluno?.id}`
                     : `Professor: ${aulaSalaAoVivo.professor?.nome || aulaSalaAoVivo.professor?.id}`}
                 </Text>
 
                 <View style={estilos.salaMetaRow}>
                   <View style={estilos.salaMetaItem}>
-                    <FontAwesome5 name="calendar-day" size={12} color="#94A3B8" />
-                    <Text style={estilos.salaMetaTexto}>{aulaSalaAoVivo.data}</Text>
+                    <FontAwesome5
+                      name="calendar-day"
+                      size={12}
+                      color="#94A3B8"
+                    />
+                    <Text style={estilos.salaMetaTexto}>
+                      {aulaSalaAoVivo.data}
+                    </Text>
                   </View>
                   <View style={estilos.salaMetaItem}>
                     <FontAwesome5 name="clock" size={12} color="#94A3B8" />
-                    <Text style={estilos.salaMetaTexto}>{aulaSalaAoVivo.hora?.substring(0, 5)}</Text>
+                    <Text style={estilos.salaMetaTexto}>
+                      {aulaSalaAoVivo.hora?.substring(0, 5)}
+                    </Text>
                   </View>
                   {aulaSalaAoVivo.valorAplicado && (
                     <View style={estilos.salaMetaItem}>
                       <FontAwesome5 name="tag" size={12} color="#10B981" />
-                      <Text style={[estilos.salaMetaTexto, { color: "#10B981", fontWeight: "bold" }]}>
+                      <Text
+                        style={[
+                          estilos.salaMetaTexto,
+                          { color: "#10B981", fontWeight: "bold" },
+                        ]}
+                      >
                         R$ {Number(aulaSalaAoVivo.valorAplicado).toFixed(2)}
                       </Text>
                     </View>
@@ -740,8 +823,15 @@ export default function Agenda() {
                   onPress={() => abrirChat(aulaSalaAoVivo)}
                 >
                   <FontAwesome5 name="comments" size={14} color="#FFFFFF" />
-                  <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "bold" }}>
-                    Abrir Chat com {perfilAtivo === "Professor" ? "Aluno" : "Professor"}
+                  <Text
+                    style={{
+                      color: "#FFFFFF",
+                      fontSize: 13,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Abrir Chat com{" "}
+                    {perfilAtivo === "Professor" ? "Aluno" : "Professor"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -777,11 +867,17 @@ export default function Agenda() {
         outroParticipanteNome={
           aulaChatSelecionada
             ? perfilAtivo === "Professor"
-              ? aulaChatSelecionada.aluno?.nome || `Aluno #${aulaChatSelecionada.aluno?.id}`
-              : aulaChatSelecionada.professor?.nome || `Prof. #${aulaChatSelecionada.professor?.id}`
+              ? aulaChatSelecionada.aluno?.nome ||
+                `Aluno #${aulaChatSelecionada.aluno?.id}`
+              : aulaChatSelecionada.professor?.nome ||
+                `Prof. #${aulaChatSelecionada.professor?.id}`
             : "Participante"
         }
-        disciplinaNome={aulaChatSelecionada?.saber?.nome || aulaChatSelecionada?.assunto || "Mentoria"}
+        disciplinaNome={
+          aulaChatSelecionada?.saber?.nome ||
+          aulaChatSelecionada?.assunto ||
+          "Mentoria"
+        }
         agendamentoStatus={aulaChatSelecionada?.status}
       />
 
