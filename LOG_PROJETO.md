@@ -32,17 +32,11 @@
 
 ---
 
-## 🚧 Sprint 2: Telas Pendentes e Integração (Em Andamento)
+## 🚀 Migração e Evolução — 4º Período (P4)
 
-### O que já foi feito na Sprint 2:
-🟢 [ATUALIZADO] * **Identidade Visual:** Aplicativo oficialmente nomeado como "Orienta".
-🟢 [ATUALIZADO] * **Splash Screen (`index.tsx`):** Implementada a tela de abertura com a logomarca oficial em PNG. Criada animação fluida de surgimento (Fade In) e crescimento (Spring) utilizando a API nativa `Animated`. Transição automática para a tela de Login configurada.
-* **Tela de Cadastro (`cadastro.tsx`):** Formulário base construído reaproveitando os componentes (`InputCustomizado` e `BotaoCustomizado`). Implementada a lógica de botões de seleção ("Aluno" e "Professor") lado a lado utilizando Flexbox (`flex: 1`). Estado inicial do Modal (`Bottom Sheet`) preparado para exibir as opções específicas de cada perfil.
+### Fase 0 — Preservação e Preparo ✅ [CONCLUÍDA]
+* Novo repositório `projeto-ads-p4-mobile` criado, preservando o código do 3º período intacto.
 
-### O que falta no Front-end:
-* **Splash Screen (`index.tsx`):** Substituir o texto temporário "Sistema iniciando" pela logomarca oficial da UNINASSAU/Projeto e refinar a animação de transição para a tela de Login.
-* **Refinamento do Cadastro:** Aplicar os estilos visuais de "Gaveta" (Bottom Sheet) no Modal de seleção de perfil e adicionar os campos específicos para Aluno (Interesses) e Professor (Matérias).ial do Modal (`Bottom Sheet`) preparado para exibir as opções específicas de cada perfil.
-
-### Próximos Passos (Back-end e Integração):
-* **Função Fetch:** Substituir o `console.log` atual do formulário de Login por uma requisição HTTP (`fetch`) real.
-* **Desenvolvimento da API (Concluído ✅):** Os endpoints no servidor (Spring Boot) já foram criados para receber o JSON do aplicativo, validar as credenciais no banco de dados e retornar a resposta (Sucesso/Erro). Resta apenas a conexão de rede (IP) entre o Front e o Back.
+### Fase 1 — Execução Reproduzível ✅ [CONCLUÍDA]
+* Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
+* Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
