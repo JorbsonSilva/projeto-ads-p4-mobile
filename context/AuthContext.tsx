@@ -2,19 +2,29 @@
  * @file AuthContext.tsx
  * @description Provedor de Contexto Global de Autenticação e Sessão (AuthContext).
  * Gerencia a sincronização simultânea entre a memória de curto prazo (RAM) e o armazenamento local persistente (AsyncStorage).
+ * Rastreabilidade: Fase 3 (Auth & RBAC) - f3-t11
  */
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { API_URL } from "../config/api";
 
 /** Definindo a tipagem estrita para o formato dos dados que o contexto distribuirá globalmente */
 interface AuthContextData {
   usuarioId: string | null;
   perfilAtivo: string;
   nomeUsuario: string;
+  token: string | null;
+  refreshToken: string | null;
   carregandoAuth: boolean;
+  isAuthenticated: boolean;
   alternarPerfilGlobal: (novoPerfil: string) => Promise<void>;
-  loginGlobal: (id: string, perfil: string, nome: string) => Promise<void>;
+  loginGlobal: (
+    id: string,
+    perfil: string,
+    nome: string,
+    token?: string,
+    refreshToken?: string
+  ) => Promise<void>;
   logoutGlobal: () => Promise<void>;
 }
 
@@ -27,28 +37,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
   const [perfilAtivo, setPerfilAtivo] = useState<string>("Aluno");
   const [nomeUsuario, setNomeUsuario] = useState<string>("");
+  const [token, setToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [carregandoAuth, setCarregandoAuth] = useState<boolean>(true);
 
   /**
-   * Efeito colateral inicializer que roda automaticamente ao abrir o aplicativo.
+   * Efeito colateral inicializador que roda automaticamente ao abrir o aplicativo.
    * Verifica se há resíduos de sessão persistidos no armazenamento do celular.
    */
   useEffect(() => {
     const carregarSessaoPersistida = async () => {
       try {
-        const [idSalvo, perfilSalvo, nomeSalvo] = await Promise.all([
-          AsyncStorage.getItem("@orienta_usuario_id"),
-          AsyncStorage.getItem("@orienta_perfil"),
-          AsyncStorage.getItem("@orienta_nome_usuario"),
-        ]);
+        const [idSalvo, perfilSalvo, nomeSalvo, tokenSalvo, refreshSalvo] =
+          await Promise.all([
+            AsyncStorage.getItem("@orienta_usuario_id"),
+            AsyncStorage.getItem("@orienta_perfil"),
+            AsyncStorage.getItem("@orienta_nome_usuario"),
+            AsyncStorage.getItem("@orienta_token"),
+            AsyncStorage.getItem("@orienta_refresh_token"),
+          ]);
 
         if (idSalvo) setUsuarioId(idSalvo);
         if (perfilSalvo) setPerfilAtivo(perfilSalvo);
         if (nomeSalvo) setNomeUsuario(nomeSalvo);
+        if (tokenSalvo) setToken(tokenSalvo);
+        if (refreshSalvo) setRefreshToken(refreshSalvo);
       } catch (error) {
         console.error(
           "Erro ao ler dados do AsyncStorage no bootstrap do app:",
-          error,
+          error
         );
       } finally {
         setCarregandoAuth(false);
@@ -69,34 +86,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   /**
    * Registra a sessão do usuário logado na RAM e no armazenamento físico.
-   * @param {string} id - Chave primária do usuário vinda do banco de dados.
-   * @param {string} perfil - Perfil selecionado na tela de login.
-   * @param {string} nome - Nome do usuário retornado pelo servidor.
+   * Suporta tanto logins legados quanto autenticação JWT com tokens.
    */
-  const _loginGlobal = async (id: string, perfil: string, nome: string) => {
+  const _loginGlobal = async (
+    id: string,
+    perfil: string,
+    nome: string,
+    novoToken?: string,
+    novoRefreshToken?: string
+  ) => {
     setUsuarioId(id);
     setPerfilAtivo(perfil);
     setNomeUsuario(nome);
 
-    await Promise.all([
+    const promises: Promise<void>[] = [
       AsyncStorage.setItem("@orienta_usuario_id", id),
       AsyncStorage.setItem("@orienta_perfil", perfil),
       AsyncStorage.setItem("@orienta_nome_usuario", nome),
-    ]);
+    ];
+
+    if (novoToken) {
+      setToken(novoToken);
+      promises.push(AsyncStorage.setItem("@orienta_token", novoToken));
+    }
+    if (novoRefreshToken) {
+      setRefreshToken(novoRefreshToken);
+      promises.push(
+        AsyncStorage.setItem("@orienta_refresh_token", novoRefreshToken)
+      );
+    }
+
+    await Promise.all(promises);
   };
 
   /**
-   * Executa a amnésia completa do aplicativo, limpando resíduos de sessão do estado e do disco.
+   * Executa o logout completo, tentando revogar o token no servidor e limpando o armazenamento local.
    */
   const _logoutGlobal = async () => {
+    try {
+      if (token) {
+        await fetch(`${API_URL}/api/auth/logout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Ignora erro de rede em logout
+    }
+
     setUsuarioId(null);
     setPerfilAtivo("Aluno");
     setNomeUsuario("");
+    setToken(null);
+    setRefreshToken(null);
 
     await AsyncStorage.multiRemove([
       "@orienta_usuario_id",
       "@orienta_perfil",
       "@orienta_nome_usuario",
+      "@orienta_token",
+      "@orienta_refresh_token",
     ]);
   };
 
@@ -106,7 +157,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         usuarioId,
         perfilAtivo,
         nomeUsuario,
+        token,
+        refreshToken,
         carregandoAuth,
+        isAuthenticated: !!token || !!usuarioId,
         alternarPerfilGlobal: _alternarPerfilGlobal,
         loginGlobal: _loginGlobal,
         logoutGlobal: _logoutGlobal,
