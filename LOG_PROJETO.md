@@ -32,35 +32,34 @@
 
 ---
 
-## 🚧 Sprint 2: Telas Pendentes e Integração (Em Andamento)
+## 🚀 Migração e Evolução — 4º Período (P4)
 
-### O que já foi feito na Sprint 2:
-🟢 [ATUALIZADO] * **Identidade Visual:** Aplicativo oficialmente nomeado como "Orienta".
-🟢 [ATUALIZADO] * **Splash Screen (`index.tsx`):** Implementada a tela de abertura com a logomarca oficial em PNG. Criada animação fluida de surgimento (Fade In) e crescimento (Spring) utilizando a API nativa `Animated`. Transição automática para a tela de Login configurada.
-* **Tela de Cadastro (`cadastro.tsx`):** Formulário base construído reaproveitando os componentes (`InputCustomizado` e `BotaoCustomizado`). Implementada a lógica de botões de seleção ("Aluno" e "Professor") lado a lado utilizando Flexbox (`flex: 1`). Estado inicial do Modal (`Bottom Sheet`) preparado para exibir as opções específicas de cada perfil.
+### Fase 0 — Preservação e Preparo ✅ [CONCLUÍDA]
+* Novo repositório `projeto-ads-p4-mobile` criado, preservando o código do 3º período intacto.
 
-### O que falta no Front-end:
-* **Splash Screen (`index.tsx`):** Substituir o texto temporário "Sistema iniciando" pela logomarca oficial da UNINASSAU/Projeto e refinar a animação de transição para a tela de Login.
-* **Refinamento do Cadastro:** Aplicar os estilos visuais de "Gaveta" (Bottom Sheet) no Modal de seleção de perfil e adicionar os campos específicos para Aluno (Interesses) e Professor (Matérias).ial do Modal (`Bottom Sheet`) preparado para exibir as opções específicas de cada perfil.
+### Fase 1 — Execução Reproduzível ✅ [CONCLUÍDA]
+* Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
+* Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
 
-### Próximos Passos (Back-end e Integração):
-* **Função Fetch:** Substituir o `console.log` atual do formulário de Login por uma requisição HTTP (`fetch`) real.
-* **Desenvolvimento da API (Concluído ✅):** Os endpoints no servidor (Spring Boot) já foram criados para receber o JSON do aplicativo, validar as credenciais no banco de dados e retornar a resposta (Sucesso/Erro). Resta apenas a conexão de rede (IP) entre o Front e o Back.
+### Fase 3 — Integração Mobile com Autenticação JWT ✅ [CONCLUÍDA]
+* Adaptação do `AuthContext.tsx` no React Native com persistência em `AsyncStorage` (`@orienta_token` e `@orienta_user`).
+* Integração de interceptors do Axios para injeção automática de `Bearer ${token}`.
+* Fluxo de logout com limpeza de cache e remoção segura de credenciais.
+
+### Fase 4 — Padronização de Contratos Mobile/API (/api/v1) ✅ [CONCLUÍDA]
+* **Prefixo v1 Unificado (`f4-t1`, `f4-t8`):** `config/api.ts` configurado para comunicação exclusiva com a API v1 (`${EXPO_PUBLIC_API_URL}/api/v1`).
+* **Tipagem Estrita com TypeScript (`f4-t7`):** Criação de `types/agendamento.ts` com o enum `StatusAgendamento` rigorosamente sincronizado com o backend Java (PENDENTE, CONFIRMADO, RECUSADO, CANCELADO, EM_ANDAMENTO, AGUARDANDO_CONFIRMACAO, REALIZADA).
+* **Tratamento Semântico de Erros (`f4-t9`):** Interceptors configurados para capturar respostas 400 (validação), 401 (sessão expirada com deslogue automático), 403 (acesso restrito), 409 (conflito de agenda) e 422 (regra de negócio violada).
+* **Serviços de API Tipados (`f4-t6`, `f4-t8`):** Disponibilização do objeto `agendamentoApi` com métodos tipados (`criar`, `listarPorAluno`, `listarPorProfessor`, `aceitar`, `recusar`, `cancelar`, `remarcar`).
 
 ---
 
-## 🚀 Migração para o 4º Período (P4)
-* **Fase 0 — Preservação e Preparo ✅ [CONCLUÍDA]:** Novo repositório `projeto-ads-p4-mobile` criado, preservando o código do 3º período intacto.
-* **Fase 1 — Execução Reproduzível ✅ [CONCLUÍDA]:**
-  - Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
-  - Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
-  - Estrutura pronta para o 1º Commit oficial de evolução do P4.
-
-### Fase 3 — Integração Mobile com Autenticação JWT ✅ [CONCLUÍDA]
-* **Objetivo:** Adaptar o aplicativo React Native / Expo para utilizar tokens Bearer JWT, armazenamento em `AsyncStorage` e logout com revogação.
+### Fase 6 — Implementar Aula, Cronômetro e Avaliação ✅ [CONCLUÍDA]
+* **Objetivo:** Completar o ciclo de aula no aplicativo mobile: início bilateral, cronômetro oficial ao vivo sincronizado com o servidor, confirmação mútua de término e avaliação por estrelas.
 * **Entregas Realizadas:**
-  1. Criação do cliente HTTP Axios com interceptors automáticos para envio do cabeçalho `Authorization: Bearer <token>` (`config/api.ts`).
-  2. Tratamento interceptor de resposta para capturar e registrar HTTP 401 Unauthorized sem travar a navegação.
-  3. Atualização do `AuthContext.tsx` com gerenciamento de estado de `token`, `refreshToken`, `isAuthenticated` e suporte retrocompatível ao `loginGlobal`.
-  4. Implementação de fluxo de logout com chamada de revogação no servidor (`POST /api/auth/logout`) e limpeza das chaves de sessão no dispositivo.
-  5. Atualização da tela de login (`app/login.tsx`) para persistir automaticamente os tokens JWT emitidos pela API.
+  1. **Componente de Cronômetro Oficial (`f6-t7`):** Criação do componente `components/CronometroAula.tsx` sincronizando a contagem com o relógio do backend via polling a cada 5 segundos.
+  2. **Indicadores de Check-in Bilateral (`f6-t2`):** Indicadores visuais do status de presença ("Você" e "Outro participante") com botão interativo para confirmação.
+  3. **Controles de Pausa, Retomada e Conclusão (`f6-t4`, `f6-t6`):** Botões contextuais para pausar/retomar a mentoria e confirmação bilateral de término com estado `AGUARDANDO_CONFIRMACAO`.
+  4. **Modal de Avaliação Pós-Aula (`f6-t8`):** Diálogo interativo de nota de 1 a 5 estrelas e campo de comentário pós-conclusão da aula.
+  5. **Integração na Tela de Agenda (`app/(tabs)/agenda.tsx`):** Exibição de cards de agendamento com badge `🔴 EM ANDAMENTO`, botão de atalho `[Acessar Sala Ao Vivo]` e modal de tela cheia para a aula ao vivo.
+
