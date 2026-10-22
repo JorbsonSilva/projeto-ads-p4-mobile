@@ -108,3 +108,58 @@ export const usuarioApi = {
     return res.data;
   },
 };
+
+export const chatApi = {
+  obterConversa: async (agendamentoId: number, usuarioId: number) => {
+    const res = await api.get<ApiResponse<any>>(`/chat/agendamento/${agendamentoId}?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  listarMensagens: async (agendamentoId: number, usuarioId: number) => {
+    const res = await api.get<ApiResponse<any[]>>(`/chat/agendamento/${agendamentoId}/mensagens?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  enviarMensagem: async (agendamentoId: number, remetenteId: number, conteudo: string) => {
+    const res = await api.post<ApiResponse<any>>(`/chat/agendamento/${agendamentoId}/mensagens`, {
+      remetenteId,
+      conteudo,
+    });
+    return res.data;
+  },
+};
+
+export const suporteApi = {
+  criarTicket: async (usuarioId: number, ticket: { titulo: string; descricao: string; categoria: string; prioridade?: string }) => {
+    const res = await api.post<ApiResponse<any>>(`/suporte/tickets?usuarioId=${usuarioId}`, ticket);
+    return res.data;
+  },
+  listarMeusTickets: async (usuarioId: number) => {
+    const res = await api.get<ApiResponse<any[]>>(`/suporte/tickets/meus?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  enviarDenuncia: async (denuncianteId: number, denuncia: { denunciadoId: number; agendamentoId?: number; motivo: string; descricao: string }) => {
+    const res = await api.post<ApiResponse<any>>(`/suporte/denuncias?denuncianteId=${denuncianteId}`, denuncia);
+    return res.data;
+  },
+};
+
+export const notificacaoApi = {
+  listar: async (usuarioId: number) => {
+    const res = await api.get<ApiResponse<any[]>>(`/notificacoes?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  contarNaoLidas: async (usuarioId: number) => {
+    const res = await api.get<ApiResponse<{ totalNaoLidas: number }>>(`/notificacoes/nao-lidas/count?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  marcarComoLida: async (notificacaoId: number, usuarioId: number) => {
+    const res = await api.patch<ApiResponse<any>>(`/notificacoes/${notificacaoId}/lida?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+  marcarTodasComoLidas: async (usuarioId: number) => {
+    const res = await api.patch<ApiResponse<any>>(`/notificacoes/marcar-todas-lidas?usuarioId=${usuarioId}`);
+    return res.data;
+  },
+};
+
+export default api;
+
