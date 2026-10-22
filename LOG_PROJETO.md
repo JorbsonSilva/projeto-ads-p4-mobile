@@ -45,3 +45,11 @@
 * Adaptação do `AuthContext.tsx` no React Native com persistência em `AsyncStorage` (`@orienta_token` e `@orienta_user`).
 * Integração de interceptors do Axios para injeção automática de `Bearer ${token}`.
 * Fluxo de logout com limpeza de cache e remoção segura de credenciais.
+
+### Fase 4 — Padronização de Contratos Mobile/API (/api/v1) ✅ [CONCLUÍDA]
+* **Prefixo v1 Unificado (`f4-t1`, `f4-t8`):** `config/api.ts` configurado para comunicação exclusiva com a API v1 (`${EXPO_PUBLIC_API_URL}/api/v1`).
+* **Tipagem Estrita com TypeScript (`f4-t7`):** Criação de `types/agendamento.ts` com o enum `StatusAgendamento` rigorosamente sincronizado com o backend Java (PENDENTE, CONFIRMADO, RECUSADO, CANCELADO, EM_ANDAMENTO, AGUARDANDO_CONFIRMACAO, REALIZADA).
+* **Tratamento Semântico de Erros (`f4-t9`):** Interceptors configurados para capturar respostas 400 (validação), 401 (sessão expirada com deslogue automático), 403 (acesso restrito), 409 (conflito de agenda) e 422 (regra de negócio violada).
+* **Serviços de API Tipados (`f4-t6`, `f4-t8`):** Disponibilização do objeto `agendamentoApi` com métodos tipados (`criar`, `listarPorAluno`, `listarPorProfessor`, `aceitar`, `recusar`, `cancelar`, `remarcar`).
+
+---
