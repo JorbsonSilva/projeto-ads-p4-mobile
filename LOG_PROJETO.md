@@ -55,3 +55,12 @@
   - Criação do `.env.example` com `EXPO_PUBLIC_API_URL=http://localhost:8080`.
   - Configuração do `config/api.ts` lendo a variável de ambiente para conexão flexível em emulador, web e celular físico.
   - Estrutura pronta para o 1º Commit oficial de evolução do P4.
+
+### Fase 3 — Integração Mobile com Autenticação JWT ✅ [CONCLUÍDA]
+* **Objetivo:** Adaptar o aplicativo React Native / Expo para utilizar tokens Bearer JWT, armazenamento em `AsyncStorage` e logout com revogação.
+* **Entregas Realizadas:**
+  1. Criação do cliente HTTP Axios com interceptors automáticos para envio do cabeçalho `Authorization: Bearer <token>` (`config/api.ts`).
+  2. Tratamento interceptor de resposta para capturar e registrar HTTP 401 Unauthorized sem travar a navegação.
+  3. Atualização do `AuthContext.tsx` com gerenciamento de estado de `token`, `refreshToken`, `isAuthenticated` e suporte retrocompatível ao `loginGlobal`.
+  4. Implementação de fluxo de logout com chamada de revogação no servidor (`POST /api/auth/logout`) e limpeza das chaves de sessão no dispositivo.
+  5. Atualização da tela de login (`app/login.tsx`) para persistir automaticamente os tokens JWT emitidos pela API.
