@@ -51,3 +51,15 @@
 * **Tipagem Estrita com TypeScript (`f4-t7`):** Criação de `types/agendamento.ts` com o enum `StatusAgendamento` rigorosamente sincronizado com o backend Java (PENDENTE, CONFIRMADO, RECUSADO, CANCELADO, EM_ANDAMENTO, AGUARDANDO_CONFIRMACAO, REALIZADA).
 * **Tratamento Semântico de Erros (`f4-t9`):** Interceptors configurados para capturar respostas 400 (validação), 401 (sessão expirada com deslogue automático), 403 (acesso restrito), 409 (conflito de agenda) e 422 (regra de negócio violada).
 * **Serviços de API Tipados (`f4-t6`, `f4-t8`):** Disponibilização do objeto `agendamentoApi` com métodos tipados (`criar`, `listarPorAluno`, `listarPorProfessor`, `aceitar`, `recusar`, `cancelar`, `remarcar`).
+
+---
+
+### Fase 6 — Implementar Aula, Cronômetro e Avaliação ✅ [CONCLUÍDA]
+* **Objetivo:** Completar o ciclo de aula no aplicativo mobile: início bilateral, cronômetro oficial ao vivo sincronizado com o servidor, confirmação mútua de término e avaliação por estrelas.
+* **Entregas Realizadas:**
+  1. **Componente de Cronômetro Oficial (`f6-t7`):** Criação do componente `components/CronometroAula.tsx` sincronizando a contagem com o relógio do backend via polling a cada 5 segundos.
+  2. **Indicadores de Check-in Bilateral (`f6-t2`):** Indicadores visuais do status de presença ("Você" e "Outro participante") com botão interativo para confirmação.
+  3. **Controles de Pausa, Retomada e Conclusão (`f6-t4`, `f6-t6`):** Botões contextuais para pausar/retomar a mentoria e confirmação bilateral de término com estado `AGUARDANDO_CONFIRMACAO`.
+  4. **Modal de Avaliação Pós-Aula (`f6-t8`):** Diálogo interativo de nota de 1 a 5 estrelas e campo de comentário pós-conclusão da aula.
+  5. **Integração na Tela de Agenda (`app/(tabs)/agenda.tsx`):** Exibição de cards de agendamento com badge `🔴 EM ANDAMENTO`, botão de atalho `[Acessar Sala Ao Vivo]` e modal de tela cheia para a aula ao vivo.
+
