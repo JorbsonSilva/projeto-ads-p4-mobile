@@ -1,26 +1,50 @@
-# Plataforma de Agendamento de Aulas Online
+# Orienta — Aplicativo Mobile & Web (Período 4)
 
-## Sobre o Projeto
-Este projeto é um Marketplace Educacional desenvolvido como trabalho interdisciplinar para o 3º período do curso de Análise e Desenvolvimento de Sistemas (ADS). O objetivo do aplicativo é conectar alunos que buscam reforço escolar ou aprendizado de novas habilidades com professores particulares, permitindo o agendamento de aulas de forma online e intuitiva.
+Aplicativo cross-platform em **React Native / Expo SDK 54, TypeScript e Expo Router** para a plataforma educacional **Orienta**.
 
-O sistema atende aos requisitos de três disciplinas distintas:
-* **Desenvolvimento Mobile:** Interface do usuário (Aluno e Professor).
-* **Framework Back-end:** API REST para regras de negócio e integrações.
-* **Projeto de Banco de Dados:** Modelagem e persistência de dados.
+Renderiza nativamente em **Android e iOS** (via Expo Go ou build nativo) e também como **Web Application** para navegador.
 
-## Tecnologias Utilizadas
-A arquitetura do projeto foi dividida para garantir performance e escalabilidade:
+---
 
-* **Mobile (Front-end):** React Native (com Expo)
-* **API (Back-end):** Java com Spring Boot
-* **Banco de Dados:** PostgreSQL (Hospedado em nuvem)
+## 🚀 Como Executar
 
-## Equipe de Desenvolvimento
-O projeto foi estruturado utilizando a metodologia de divisão por funcionalidades (*Vertical Slicing*), onde cada membro atua como Full-Stack em seu módulo:
+### 1. Pré-requisitos
+* **Node.js (versão 20+)**
+* Gerenciador de pacotes **npm** ou **yarn**
+* Aplicativo **Expo Go** instalado no celular (opcional, para testar no dispositivo físico)
 
-* **Jorbson** - Organização, Modelagem de Dados e Módulo de Autenticação/Perfil e etc.
-* **Helder** - Módulo de Catálogo e Busca de Aulas e etc.
-* **Thiago** - Módulo de Agenda e Agendamento e etc.
+---
 
-## Como executar (Em construção)
-As instruções para rodar o servidor e o aplicativo localmente serão adicionadas conforme o avanço do desenvolvimento.
+### 2. Instalação das Dependências
+Na raiz deste repositório, execute:
+
+```bash
+npm install
+```
+
+---
+
+### 3. Configuração de Ambiente (`.env`)
+Copie o arquivo de exemplo:
+```bash
+cp .env.example .env
+```
+
+* **Para rodar no Navegador (Web) ou Emulador:** Mantenha `EXPO_PUBLIC_API_URL=http://localhost:8080`
+* **Para rodar no Celular Físico via Expo Go:** Coloque o IP da sua máquina na rede local Wi-Fi: `EXPO_PUBLIC_API_URL=http://SEU_IP_AQUI:8080`
+
+---
+
+### 4. Executando o Projeto
+
+#### No Navegador Web (Mais rápido para demonstração):
+```bash
+npm run web
+```
+Acesse [http://localhost:8081](http://localhost:8081) no navegador.
+
+#### No Celular com Expo Go:
+```bash
+npm start
+```
+Escaneie o QR Code exibido no terminal com o app Expo Go (Android) ou Câmera (iOS).
