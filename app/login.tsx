@@ -97,11 +97,11 @@ export default function Login() {
 
         // Grava as informações simultaneamente na memória RAM (Contexto) e no Disco (AsyncStorage)
         if (loginGlobal) {
-          await loginGlobal(
-            dadosDoUsuario.id.toString(),
-            perfil,
-            dadosDoUsuario.nome,
-          );
+          const id = (dadosDoUsuario.usuario?.id || dadosDoUsuario.id || "").toString();
+          const nome = dadosDoUsuario.usuario?.nome || dadosDoUsuario.nome || "";
+          const token = dadosDoUsuario.token || "";
+          const refreshToken = dadosDoUsuario.refreshToken || "";
+          await loginGlobal(id, perfil, nome, token, refreshToken);
         }
 
         // Substitui a rota atual matando o histórico de navegação (Evita loops ao usar o botão voltar do Android)
