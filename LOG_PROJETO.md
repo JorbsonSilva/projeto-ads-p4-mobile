@@ -64,3 +64,16 @@
   5. **Integração na Tela de Agenda (`app/(tabs)/agenda.tsx`):** Exibição de cards de agendamento com badge `🔴 EM ANDAMENTO`, botão de atalho `[Acessar Sala Ao Vivo]` e modal de tela cheia para a aula ao vivo.
 
 ---
+
+### Fase 7 — Chat, Suporte e Notificações Internas ✅ [CONCLUÍDA]
+* **Objetivo:** Interface mobile para chat em tempo real restrito à mentoria, central de notificações internas com contador de não-lidas e abertura de tickets de suporte com canal de denúncia.
+* **Entregas Realizadas:**
+  1. **Clientes de API Tipados (`config/api.ts`):** Adição de `chatApi`, `suporteApi` e `notificacaoApi` conectados aos endpoints `/api/v1`.
+  2. **Componente de Chat em Tempo Real (`components/ChatModal.tsx`):** Interface de conversas com polling periódico (3s), bolhas visuais diferenciadas para emissor e receptor, timestamps legíveis, indicador de leitura e botão integrado para denúncias de conduta.
+  3. **Central de Notificações Internas (`components/CentralNotificacoesModal.tsx`):** Drawer modal com listagem de avisos, badges por tipo (mensagens, atualizações de aula, suporte), contador de não-lidas e ação em lote "Marcar todas como lidas".
+  4. **Módulo de Suporte e Tickets (`components/ModalSuporteTicket.tsx`):** Tela modal com abas "Novo Chamado" e "Meus Chamados", exibindo status com cores dinâmicas, código do protocolo (`SUP-YYYY-XXXXXX`) e histórico de respostas dos administradores.
+  5. **Integração na Tela de Agenda (`app/(tabs)/agenda.tsx`):**
+     * Cabeçalho modernizado com atalhos para a Central de Suporte e Notificações com badge de não-lidas.
+     * Botão direto `[💬 Chat]` nos cards de agendamento ativos.
+     * Botão de acesso ao chat diretamente dentro da sala de aula ao vivo (`CronometroAula`).
+
