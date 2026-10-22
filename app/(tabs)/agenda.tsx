@@ -1,7 +1,10 @@
-import { API_URL } from "@/config/api";
+import { API_URL, notificacaoApi } from "@/config/api";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { CronometroAula } from "@/components/CronometroAula";
+import { ChatModal } from "@/components/ChatModal";
+import { CentralNotificacoesModal } from "@/components/CentralNotificacoesModal";
+import { ModalSuporteTicket } from "@/components/ModalSuporteTicket";
 import { FontAwesome5 } from "@expo/vector-icons";
 import axios from "axios";
 import { useFocusEffect } from "expo-router";
