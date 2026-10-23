@@ -1,80 +1,124 @@
+/**
+ * @file _layout.tsx
+ * @description Layout de Navegação por Abas do aplicativo Orienta.
+ * Em estrita conformidade com a Especificação de Navegação e Canais de Conversa — Orienta 2.0.1 (PROP-BKL-03).
+ * 
+ * Regra dos 5 Destinos por Perfil:
+ * - Aluno: Home | Mapa | Agenda | Mensagens | Perfil
+ * - Professor: Home | Dashboard | Agenda | Mensagens | Perfil
+ * - Notícias: Formalmente excluída da navegação inferior (convertida em header modal)
+ */
+
 import { Colors } from "@/constants/colors";
+import { useAuth } from "@/context/AuthContext";
 import { FontAwesome5 } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { perfilAtivo } = useAuth();
+  const isProfessor = perfilAtivo === "Professor";
 
   return (
     <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: Colors.secondary,
-          tabBarInactiveTintColor: "#888888",
-          tabBarStyle: {
-            backgroundColor: "#FFFFFF",
-            borderTopWidth: 0,
-            elevation: 10,
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: -3 },
-
-            // 🟢 A MÁGICA AQUI:
-            // Tamanho base (60) + o tamanho exato dos botões de navegação do Android (insets.bottom)
-            height: 60 + insets.bottom,
-
-            // 🟢 O respiro inferior ajustável:
-            // Se o celular tiver botões (insets.bottom > 0), o respiro é o tamanho dos botões.
-            // Se for um iPhone sem botões, o respiro é 10.
-            paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
-          },
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: "600",
-          },
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: Colors.secondary,
+        tabBarInactiveTintColor: "#64748B",
+        tabBarStyle: {
+          backgroundColor: "#FFFFFF",
+          borderTopWidth: 1,
+          borderTopColor: "#E2E8F0",
+          elevation: 10,
+          shadowColor: "#000",
+          shadowOpacity: 0.08,
+          shadowOffset: { width: 0, height: -2 },
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+        },
+      }}
+    >
+      {/* 1. Home (Ambos os Perfis) */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="home" size={19} color={color} />
+          ),
         }}
-      >
-        <Tabs.Screen
-          name="index" // Vai puxar o arquivo index.tsx (Home)
-          options={{
-            title: "Home",
-            // Função que desenha o ícone. O 'color' já vem automático dependendo se está ativo ou inativo.
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="home" size={24} color={color} />
-            ),
-          }}
-        />
+      />
 
-        <Tabs.Screen
-          name="noticias"
-          options={{
-            title: "Notícias",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="newspaper" size={24} color={color} />
-            ),
-          }}
-        />
+      {/* 2. Mapa (Destino do Aluno na Especificação 2.0.1) */}
+      <Tabs.Screen
+        name="mapa"
+        options={{
+          title: "Mapa",
+          href: isProfessor ? null : "/(tabs)/mapa",
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="map-marked-alt" size={19} color={color} />
+          ),
+        }}
+      />
 
-        <Tabs.Screen
-          name="agenda" // Vai puxar o arquivo agenda.tsx
-          options={{
-            title: "Agenda",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="calendar-alt" size={24} color={color} />
-            ),
-          }}
-        />
+      {/* 2. Dashboard (Destino do Professor na Especificação 2.0.1) */}
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "Dashboard",
+          href: isProfessor ? "/(tabs)/dashboard" : null,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="chart-pie" size={19} color={color} />
+          ),
+        }}
+      />
 
-        <Tabs.Screen
-          name="perfil" // Vai puxar o arquivo perfil.tsx
-          options={{
-            title: "Perfil",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="user-alt" size={24} color={color} />
-            ),
-          }}
-        />
-      </Tabs>
+      {/* 3. Agenda (Ambos os Perfis) */}
+      <Tabs.Screen
+        name="agenda"
+        options={{
+          title: "Agenda",
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="calendar-alt" size={19} color={color} />
+          ),
+        }}
+      />
+
+      {/* 4. Mensagens (Canal 1 - Aluno ↔ Professor vinculado a agendamentos) */}
+      <Tabs.Screen
+        name="mensagens"
+        options={{
+          title: "Mensagens",
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="comments" size={19} color={color} />
+          ),
+        }}
+      />
+
+      {/* 5. Perfil (Ambos os Perfis) */}
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+          tabBarIcon: ({ color }) => (
+            <FontAwesome5 name="user-alt" size={19} color={color} />
+          ),
+        }}
+      />
+
+      {/* Notícias: Excluída da barra inferior (Especificação 2.0.1 § 2.2) */}
+      <Tabs.Screen
+        name="noticias"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
   );
 }
