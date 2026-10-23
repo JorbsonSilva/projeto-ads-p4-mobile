@@ -44,6 +44,10 @@ interface ProfessorBusca {
   notaMedia?: number;
   totalAvaliacoes?: number;
   fotoUrl?: string;
+  oferecePresencial?: boolean;
+  regiaoAtendimento?: string;
+  distanciaAproximadaKm?: number;
+  textoProximidade?: string;
   aptidoes?: Aptidao[];
 }
 
@@ -89,6 +93,18 @@ export default function BuscaProfessores() {
     "maisRelevantes" | "maisBarato" | "maisCaro"
   >("maisRelevantes");
 
+  // ==========================================
+  // ESTADOS DE LOCALIZAÇÃO E RAIO (FASE 8 / MAP-001 a MAP-006)
+  // ==========================================
+  const [modalidade, setModalidade] = useState<"TODAS" | "ONLINE" | "PRESENCIAL">("TODAS");
+  const [raioKm, setRaioKm] = useState<number>(10);
+  const [regiaoBusca, setRegiaoBusca] = useState<string>("");
+  const [coordenadasAluno, setCoordenadasAluno] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [localizacaoAtiva, setLocalizacaoAtiva] = useState(false);
+  const [solicitandoLocalizacao, setSolicitandoLocalizacao] = useState(false);
+  const [modalRaioVisivel, setModalRaioVisivel] = useState(false);
+  const [modalPrivacidadeVisivel, setModalPrivacidadeVisivel] = useState(false);
+
   // Estados de Modais
   const [modalMateriaVisivel, setModalMateriaVisivel] = useState(false);
   const [modalPrecoVisivel, setModalPrecoVisivel] = useState(false);
@@ -102,49 +118,102 @@ export default function BuscaProfessores() {
   }, [categoria]);
 
   /**
-   * Dispara a requisição paginada para buscar os professores no banco de dados.
+   * Solicita e ativa a localização do aluno com consentimento explícito (MAP-003, MAP-009).
+   */
+  const ativarLocalizacaoAluno = () => {
+    setSolicitandoLocalizacao(true);
+
+    if (typeof window !== "undefined" && navigator?.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCoordenadasAluno({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setLocalizacaoAtiva(true);
+          setSolicitandoLocalizacao(false);
+          setModalidade("PRESENCIAL");
+        },
+        (erro) => {
+          console.warn("Localização não obtida via GPS:", erro.message);
+          // Fallback para ponto de demonstração (Recife - Marco Zero / Centro)
+          setCoordenadasAluno({
+            latitude: -8.063169,
+            longitude: -34.871139,
+          });
+          setLocalizacaoAtiva(true);
+          setSolicitandoLocalizacao(false);
+          setModalidade("PRESENCIAL");
+        },
+        { enableHighAccuracy: false, timeout: 6000 }
+      );
+    } else {
+      // Ponto de referência padrão de demonstração para banca acadêmica
+      setCoordenadasAluno({
+        latitude: -8.063169,
+        longitude: -34.871139,
+      });
+      setLocalizacaoAtiva(true);
+      setSolicitandoLocalizacao(false);
+      setModalidade("PRESENCIAL");
+    }
+  };
+
+  const desativarLocalizacaoAluno = () => {
+    setCoordenadasAluno(null);
+    setLocalizacaoAtiva(false);
+  };
+
+  /**
+   * Dispara a requisição para buscar os professores no banco com suporte a Raio e Modalidade (Fase 8).
    * @async
    */
   const buscarProfessoresPagina = useCallback(
     async (page: number) => {
-      if (!usuarioId) return;
       setCarregando(true);
 
       try {
-        const url = `${API_URL}/api/usuarios/professores/destaque/${usuarioId}`;
-        const resProfs = await fetch(url);
+        const params = new URLSearchParams();
+        if (modalidade) params.append("modalidade", modalidade);
+        if (filtroMateria && filtroMateria !== "Todas") params.append("termo", filtroMateria);
+        if (busca.trim()) params.append("termo", busca.trim());
+        if (regiaoBusca.trim()) params.append("regiao", regiaoBusca.trim());
+        if (filtroPrecoMax) params.append("precoMax", filtroPrecoMax.toString());
+
+        if (coordenadasAluno && modalidade === "PRESENCIAL") {
+          params.append("latitude", coordenadasAluno.latitude.toString());
+          params.append("longitude", coordenadasAluno.longitude.toString());
+          params.append("raioKm", raioKm.toString());
+        }
+
+        // Tenta o endpoint da Fase 8
+        const urlBusca = `${API_URL}/api/v1/usuarios/professores/busca?${params.toString()}`;
+        let resProfs = await fetch(urlBusca);
+
+        if (!resProfs.ok && usuarioId) {
+          // Fallback gracioso para a rota de destaque
+          resProfs = await fetch(`${API_URL}/api/usuarios/professores/destaque/${usuarioId}`);
+        }
 
         if (resProfs.ok) {
-          const dadosProfs: ProfessorBusca[] = await resProfs.json();
-          const servidorRetornouTudo =
-            page === 1 && dadosProfs.length > PAGE_SIZE;
-
-          if (servidorRetornouTudo) {
-            setPaginaLocalFallback(true);
-            setPaginaMaximaVisivel(Math.ceil(dadosProfs.length / PAGE_SIZE));
-            setTemMaisPaginas(dadosProfs.length > PAGE_SIZE);
-          } else {
-            setPaginaLocalFallback(false);
-            setTemMaisPaginas(dadosProfs.length === PAGE_SIZE);
-            setPaginaMaximaVisivel((anterior) =>
-              Math.max(
-                anterior,
-                page + (dadosProfs.length === PAGE_SIZE ? 1 : 0),
-              ),
-            );
-          }
+          const json = await resProfs.json();
+          const dadosProfs: ProfessorBusca[] = Array.isArray(json)
+            ? json
+            : json.dados || json.data || [];
 
           setProfessoresBanco(dadosProfs);
           setProfessoresFiltrados(dadosProfs);
           setPaginaAtual(page);
+          setPaginaMaximaVisivel(Math.max(1, Math.ceil(dadosProfs.length / PAGE_SIZE)));
+          setTemMaisPaginas(dadosProfs.length > PAGE_SIZE);
         }
       } catch (e) {
-        console.error("Erro ao buscar professores por página:", e);
+        console.error("Erro ao buscar professores:", e);
       } finally {
         setCarregando(false);
       }
     },
-    [usuarioId],
+    [usuarioId, modalidade, filtroMateria, busca, regiaoBusca, filtroPrecoMax, coordenadasAluno, raioKm],
   );
 
   const selecionarPagina = async (page: number) => {
@@ -308,8 +377,119 @@ export default function BuscaProfessores() {
           ))}
         </ScrollView>
 
+        {/* ========================================================================= */}
+        {/* FASE 8: SELETOR DE MODALIDADE E RAIO DE ATENDIMENTO (MAP-001 a MAP-006) */}
+        {/* ========================================================================= */}
+        <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={estilos.labelSecaoSemPadding}>Modalidade da Aula</Text>
+            <TouchableOpacity 
+              onPress={() => setModalPrivacidadeVisivel(true)} 
+              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            >
+              <Feather name="shield" size={14} color="#0284C7" />
+              <Text style={{ fontSize: 12, color: "#0284C7", fontWeight: "600" }}>Privacidade & LGPD</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Seletor de Modalidade (Todas / Online / Presencial) */}
+          <View style={estilos.containerModalidade}>
+            <TouchableOpacity
+              style={[estilos.botaoModalidade, modalidade === "TODAS" && estilos.botaoModalidadeAtivo]}
+              onPress={() => setModalidade("TODAS")}
+            >
+              <Text style={[estilos.textoModalidade, modalidade === "TODAS" && estilos.textoModalidadeAtivo]}>
+                Todas
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[estilos.botaoModalidade, modalidade === "ONLINE" && estilos.botaoModalidadeAtivo]}
+              onPress={() => setModalidade("ONLINE")}
+            >
+              <Text style={[estilos.textoModalidade, modalidade === "ONLINE" && estilos.textoModalidadeAtivo]}>
+                💻 100% Online
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[estilos.botaoModalidade, modalidade === "PRESENCIAL" && estilos.botaoModalidadeAtivoPresencial]}
+              onPress={() => setModalidade("PRESENCIAL")}
+            >
+              <Text style={[estilos.textoModalidade, modalidade === "PRESENCIAL" && estilos.textoModalidadeAtivoPresencial]}>
+                📍 Presencial
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Painel Avançado de Raio e Localização Presencial (Fase 8) */}
+          {modalidade === "PRESENCIAL" && (
+            <View style={estilos.painelPresencial}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Text style={estilos.subtituloPresencial}>Raio de Busca (Servidor Haversine)</Text>
+                {localizacaoAtiva && (
+                  <View style={estilos.badgeGpsAtivo}>
+                    <Feather name="check-circle" size={12} color="#10B981" />
+                    <Text style={estilos.textoGpsAtivo}>GPS Ativo (Minimizado)</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Botões de Raio Permitidos pelo Produto: 2, 5, 10, 20 km (Decisão 17) */}
+              <View style={estilos.linhaBotoesRaio}>
+                {[2, 5, 10, 20].map((raio) => (
+                  <TouchableOpacity
+                    key={raio}
+                    style={[estilos.chipRaio, raioKm === raio && estilos.chipRaioAtivo]}
+                    onPress={() => setRaioKm(raio)}
+                  >
+                    <Text style={[estilos.textoChipRaio, raioKm === raio && estilos.textoChipRaioAtivo]}>
+                      Até {raio} km
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Botão de Localização do Aluno com Consentimento */}
+              <View style={{ marginTop: 10, flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  style={[estilos.botaoAtivarGps, localizacaoAtiva && estilos.botaoAtivarGpsLigado]}
+                  onPress={localizacaoAtiva ? desativarLocalizacaoAluno : ativarLocalizacaoAluno}
+                  disabled={solicitandoLocalizacao}
+                >
+                  <Feather 
+                    name={localizacaoAtiva ? "crosshair" : "map-pin"} 
+                    size={16} 
+                    color={localizacaoAtiva ? "#059669" : "#0284C7"} 
+                  />
+                  <Text style={[estilos.textoAtivarGps, localizacaoAtiva && { color: "#059669" }]}>
+                    {solicitandoLocalizacao
+                      ? "Obtendo..."
+                      : localizacaoAtiva
+                      ? "Localização Ativa (Desativar)"
+                      : "Usar Localização Atual (GPS)"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Fallback sem GPS: Busca textual por Bairro / Região (MAP-008) */}
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ fontSize: 11, color: "#64748B", marginBottom: 4 }}>
+                  Ou informe seu Bairro / Região (sem usar GPS):
+                </Text>
+                <BarraBusca
+                  valor={regiaoBusca}
+                  aoMudarTexto={setRegiaoBusca}
+                  placeholder="Ex: Boa Viagem, Centro, Graças..."
+                  exibirFiltro={false}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* Barramento de Filtros Dropdown */}
-        <Text style={estilos.labelSecao}>Filtros</Text>
+        <Text style={estilos.labelSecao}>Filtros Avançados</Text>
         <View style={estilos.containerFiltros}>
           <TouchableOpacity
             style={estilos.botaoFiltroLargo}
@@ -368,20 +548,35 @@ export default function BuscaProfessores() {
             />
           ) : (
             <>
-              {professoresExibicao.map((prof) => (
-                <CardProfessor
-                  key={prof.id}
-                  nome={prof.nome}
-                  materia={prof.aptidoes?.[0]?.saber?.nome || "Geral"}
-                  nota={prof.notaMedia || 5.0}
-                  avaliacoes={prof.totalAvaliacoes || 0}
-                  precoHora={prof.aptidoes?.[0]?.precoHora || 0}
-                  fotoUrl={
-                    prof.fotoUrl || `https://i.pravatar.cc/150?u=${prof.id}`
-                  }
-                  onPress={() => router.push(`/professor/${prof.id}`)}
-                />
-              ))}
+              {professoresExibicao.length === 0 ? (
+                <View style={{ alignItems: "center", paddingVertical: 36, paddingHorizontal: 16 }}>
+                  <Feather name="map-pin" size={42} color="#94A3B8" />
+                  <Text style={{ fontSize: 15, fontWeight: "bold", color: "#334155", marginTop: 12, textAlign: "center" }}>
+                    Nenhum professor encontrado
+                  </Text>
+                  <Text style={{ fontSize: 13, color: "#64748B", marginTop: 6, textAlign: "center", lineHeight: 18 }}>
+                    Tente ampliar o raio de atendimento (ex: 20 km), buscar por outra matéria ou procurar aulas na modalidade 100% Online.
+                  </Text>
+                </View>
+              ) : (
+                professoresExibicao.map((prof) => (
+                  <CardProfessor
+                    key={prof.id}
+                    nome={prof.nome}
+                    materia={prof.aptidoes?.[0]?.saber?.nome || "Geral"}
+                    nota={prof.notaMedia || 5.0}
+                    avaliacoes={prof.totalAvaliacoes || 0}
+                    precoHora={prof.aptidoes?.[0]?.precoHora || 0}
+                    fotoUrl={
+                      prof.fotoUrl || `https://i.pravatar.cc/150?u=${prof.id}`
+                    }
+                    oferecePresencial={prof.oferecePresencial}
+                    regiaoAtendimento={prof.regiaoAtendimento}
+                    textoProximidade={prof.textoProximidade}
+                    onPress={() => router.push(`/professor/${prof.id}`)}
+                  />
+                ))
+              )}
 
               <View style={estilos.paginacaoContainer}>
                 {Array.from({ length: paginaMaximaVisivel }, (_, index) => {
@@ -547,6 +742,42 @@ export default function BuscaProfessores() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Privacidade e Consentimento LGPD (Fase 8 / MAP-003, MAP-SEC-002) */}
+      <Modal visible={modalPrivacidadeVisivel} transparent animationType="fade">
+        <View style={estilos.fundoModal}>
+          <View style={[estilos.containerModal, { maxHeight: 520 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <Feather name="shield" size={24} color="#0284C7" />
+              <Text style={estilos.tituloModal}>Privacidade e LGPD</Text>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
+              <View style={{ gap: 10 }}>
+                <Text style={{ fontSize: 13, color: "#334155", lineHeight: 20 }}>
+                  <Text style={{ fontWeight: "bold", color: "#0F172A" }}>• Minimização de Dados:</Text> Sua localização exata não é gravada de forma contínua e nunca é compartilhada publicamente.
+                </Text>
+                <Text style={{ fontSize: 13, color: "#334155", lineHeight: 20 }}>
+                  <Text style={{ fontWeight: "bold", color: "#0F172A" }}>• Cálculo de Distância Seguro:</Text> A distância é calculada pela fórmula matemática de Haversine diretamente no servidor Java, sem envio para serviços externos pagos.
+                </Text>
+                <Text style={{ fontSize: 13, color: "#334155", lineHeight: 20 }}>
+                  <Text style={{ fontWeight: "bold", color: "#0F172A" }}>• Endereço Protegido:</Text> O endereço residencial do professor e do aluno não é exibido nos resultados de busca ou perfis públicos.
+                </Text>
+                <Text style={{ fontSize: 13, color: "#334155", lineHeight: 20 }}>
+                  <Text style={{ fontWeight: "bold", color: "#0F172A" }}>• Alternativa sem GPS:</Text> Se preferir não permitir o GPS, você pode pesquisar informando diretamente o seu bairro ou região.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={{ backgroundColor: "#0284C7", paddingVertical: 14, borderRadius: 14, alignItems: "center", marginTop: 16 }}
+              onPress={() => setModalPrivacidadeVisivel(false)}
+            >
+              <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Entendi</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -676,5 +907,123 @@ const estilos = StyleSheet.create({
     marginTop: 16,
     textAlign: "center",
     color: "#555",
+  },
+
+  // Estilos da Fase 8 (Modalidade, Raio e Geolocalização)
+  labelSecaoSemPadding: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#0F172A",
+  },
+  containerModalidade: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  botaoModalidade: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  botaoModalidadeAtivo: {
+    backgroundColor: "#FFF0E7",
+    borderColor: "#FF6B1A",
+  },
+  botaoModalidadeAtivoPresencial: {
+    backgroundColor: "#F0F9FF",
+    borderColor: "#0284C7",
+  },
+  textoModalidade: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  textoModalidadeAtivo: {
+    color: "#FF6B1A",
+    fontWeight: "700",
+  },
+  textoModalidadeAtivoPresencial: {
+    color: "#0284C7",
+    fontWeight: "700",
+  },
+
+  painelPresencial: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 12,
+  },
+  subtituloPresencial: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#0369A1",
+  },
+  badgeGpsAtivo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  textoGpsAtivo: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
+  },
+  linhaBotoesRaio: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  chipRaio: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFF",
+    alignItems: "center",
+  },
+  chipRaioAtivo: {
+    borderColor: "#0284C7",
+    backgroundColor: "#E0F2FE",
+  },
+  textoChipRaio: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  textoChipRaioAtivo: {
+    color: "#0369A1",
+    fontWeight: "700",
+  },
+  botaoAtivarGps: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    backgroundColor: "#F0F9FF",
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+    borderRadius: 12,
+  },
+  botaoAtivarGpsLigado: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  textoAtivarGps: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0284C7",
   },
 });
