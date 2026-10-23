@@ -1,7 +1,18 @@
-# Fase 9 — Mobile: Interface do Assistente Determinístico (React Native / Expo)
+# Orienta Mobile — Fase 10: Testes, Ensaio e Entrega para a Banca
 
-## Componentes Entregues:
-1. `app/assistente.tsx` — Tela interativa com máquina de estados, opções rápidas em chips e entrada de texto.
-2. `components/RuleIndicatorBadge.tsx` — Selo obrigatório visual informando que a triagem é baseada em regras sem custo de IA generativa (F9-T6).
-3. `components/AssistantSummaryCard.tsx` — Card com botão direto para escolha de horário e confirmação manual (F9-T4 & F9-T7).
-4. `services/assistenteApi.ts` — Integração com o backend local e fallback offline automático.
+## 🎯 Objetivo da Fase 10
+Garantir que o aplicativo mobile do Orienta esteja totalmente auditado (TypeScript + ESLint), pronto para projeção na tela da banca e equipado com plano de contingência offline.
+
+## 🚀 Como Iniciar no Dia da Banca:
+1. Executar auditoria de sanidade:
+   ```bash
+   ./scripts/verificar-ambiente-banca.sh
+   ```
+2. Iniciar aplicativo Expo:
+   ```bash
+   npx expo start --clear
+   ```
+3. Se apresentar no emulador local ou web:
+   ```bash
+   # Pressione 'w' para abrir no navegador ou 'a' para Android
+   ```
