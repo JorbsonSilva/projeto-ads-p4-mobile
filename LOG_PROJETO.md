@@ -77,3 +77,16 @@
      * Botão direto `[💬 Chat]` nos cards de agendamento ativos.
      * Botão de acesso ao chat diretamente dentro da sala de aula ao vivo (`CronometroAula`).
 
+---
+
+### Fase 8 — Localização Aproximada e Busca por Raio ✅ [CONCLUÍDA]
+* **Objetivo:** Suportar aulas presenciais sem expor endereço residencial, permitindo busca por proximidade calculada no servidor (Haversine) e busca textual por bairro/região sem dependência de GPS (MAP-001 a MAP-006, MAP-SEC-002).
+* **Entregas Realizadas:**
+  1. **Seletor de Modalidade (`f8-t2` / MAP-001):** Chips de seleção no topo da busca permitindo alternar entre `Todas`, `💻 100% Online` e `📍 Presencial`.
+  2. **Controle de Raio de Atendimento (`f8-t4` / MAP-004 / Decisão 17):** Seletores de raio configuráveis para 2 km, 5 km, 10 km e 20 km quando a modalidade presencial for escolhida.
+  3. **Localização com Consentimento Transparente (`f8-t2` / MAP-003, MAP-009):** Botão de ativação de localização que solicita acesso apenas no momento da busca, sem rastreamento contínuo em segundo plano, com suporte a coordenadas de referência para testes locais.
+  4. **Fallback sem GPS (`f8-t4` / MAP-008):** Campo textual para digitar bairro ou região (ex: "Boa Viagem", "Graças", "Várzea") caso a permissão de GPS seja recusada ou não desejada pelo aluno.
+  5. **Card do Professor com Indicadores de Proximidade (`f8-t5` / MAP-006):** Exibição de badge `📍 Presencial em [Região] (a ~X km)` ou `💻 100% Online`, garantindo que endereços residenciais exatos nunca apareçam na interface.
+  6. **Modal de Privacidade & LGPD (`f8-t5` / MAP-SEC-001 a MAP-SEC-006):** Diálogo informativo explicando que os dados de localização são transitórios, calculados no servidor Java e protegidos contra vazamentos.
+  7. **Tratamento de Busca Vazia (`MAP-010`):** Mensagem de orientação caso nenhum professor seja localizado no raio, sugerindo ampliar o raio ou optar por aulas online.
+

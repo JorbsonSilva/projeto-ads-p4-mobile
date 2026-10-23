@@ -156,9 +156,11 @@ export default function Cadastro() {
 
     /** Objeto estruturado (Payload) contendo os dados necessários para o cadastro */
     const pacoteJSON = {
-      nome: nome,
-      email: email,
+      nome: nome.trim(),
+      email: email.trim().toLowerCase(),
       senha: senha,
+      tipo: "ALUNO",
+      dataNascimento: data,
     };
 
     try {

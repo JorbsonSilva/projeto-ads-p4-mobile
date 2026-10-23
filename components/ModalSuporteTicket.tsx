@@ -132,9 +132,17 @@ export const ModalSuporteTicket: React.FC<ModalSuporteTicketProps> = ({
           </TouchableOpacity>
 
           <View style={styles.headerInfo}>
-            <Text style={styles.headerTitulo}>Suporte Acadêmico Orienta</Text>
-            <Text style={styles.headerSubtitulo}>Atendimento interno e resolução de dúvidas</Text>
+            <Text style={styles.headerTitulo}>Canal de Ajuda & Suporte (Canal 3)</Text>
+            <Text style={styles.headerSubtitulo}>Atendimento assíncrono via chamados e protocolos</Text>
           </View>
+        </View>
+
+        {/* Nota explicativa de canal assíncrono (Especificação 2.0.1 § 3.3) */}
+        <View style={{ backgroundColor: "#FFFBEB", borderBottomWidth: 1, borderColor: "#FDE68A", paddingHorizontal: 16, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <FontAwesome5 name="info-circle" size={13} color="#D97706" />
+          <Text style={{ fontSize: 11, color: "#92400E", flex: 1 }}>
+            As solicitações são registradas por protocolo único (SUP-...). Não há fila de chat em tempo real nem atendente síncrono.
+          </Text>
         </View>
 
         {/* Abas */}
@@ -149,7 +157,7 @@ export const ModalSuporteTicket: React.FC<ModalSuporteTicketProps> = ({
               color={abaAtiva === "novo" ? "#F97316" : "#94A3B8"}
             />
             <Text style={[styles.abaTexto, abaAtiva === "novo" && styles.abaTextoAtivo]}>
-              Novo Chamado
+              Abrir Solicitação
             </Text>
           </TouchableOpacity>
 
@@ -163,7 +171,7 @@ export const ModalSuporteTicket: React.FC<ModalSuporteTicketProps> = ({
               color={abaAtiva === "meus" ? "#F97316" : "#94A3B8"}
             />
             <Text style={[styles.abaTexto, abaAtiva === "meus" && styles.abaTextoAtivo]}>
-              Meus Tickets ({tickets.length})
+              Acompanhar Chamados ({tickets.length})
             </Text>
           </TouchableOpacity>
         </View>

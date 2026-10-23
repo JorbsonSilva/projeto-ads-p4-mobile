@@ -9,14 +9,14 @@ import axios, { AxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Agendamento, AgendamentoRequest, ApiResponse, JustificativaRequest, RemarcarAgendamentoRequest } from "../types/agendamento";
 
-const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080";
-// Garante o prefixo /api/v1
-export const API_URL = RAW_API_URL.endsWith("/api/v1")
-  ? RAW_API_URL
-  : `${RAW_API_URL.replace(/\/api\/?$/, "")}/api/v1`;
+const RAW_API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
+// Garante URL raiz para chamadas que já utilizam '/api/...' ou '/agendamentos'
+export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
+// URL base da API v1 para uso em clientes REST dedicados
+export const API_V1_URL = `${API_URL}/api/v1`;
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_V1_URL,
   timeout: 12000,
   headers: {
     "Content-Type": "application/json",
