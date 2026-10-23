@@ -5,22 +5,18 @@
  * Centraliza requisições com baseURL '/api/v1', interceptors para injeção automática de Bearer Token,
  * e tratamento padronizado de respostas de erro (400, 401, 403, 409, 422).
  */
-import axios, { AxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios, { AxiosError } from "axios";
 import { Agendamento, AgendamentoRequest, ApiResponse, JustificativaRequest, RemarcarAgendamentoRequest } from "../types/agendamento";
 
-const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080";
-// Garante o prefixo /api/v1
-export const API_URL = RAW_API_URL.endsWith("/api/v1")
-  ? RAW_API_URL
-  : `${RAW_API_URL.replace(/\/api\/?$/, "")}/api/v1`;
+const RAW_API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
+export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
+export const API_V1_URL = `${API_URL}/api/v1`;
 
 export const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_V1_URL,
   timeout: 12000,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
 });
 
 // Interceptor de Requisição: Injeta automaticamente o Bearer Token salvo

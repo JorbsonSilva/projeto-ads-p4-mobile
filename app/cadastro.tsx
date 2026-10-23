@@ -155,11 +155,13 @@ export default function Cadastro() {
     setSubmetendo(true);
 
     /** Objeto estruturado (Payload) contendo os dados necessários para o cadastro */
-    const pacoteJSON = {
-      nome: nome,
-      email: email,
-      senha: senha,
-    };
+   const pacoteJSON = {
+  nome: nome.trim(),
+  email: email.trim().toLowerCase(),
+  senha: senha,
+  tipo: "ALUNO",
+  dataNascimento: data,
+};
 
     try {
       // Dispara a chamada HTTP assíncrona POST para o endpoint correspondente na API
