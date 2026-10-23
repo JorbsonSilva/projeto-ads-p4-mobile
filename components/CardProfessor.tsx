@@ -10,6 +10,9 @@ interface CardProfessorProps {
   precoHora: number;
   fotoUrl: string;
   verificado?: boolean;
+  oferecePresencial?: boolean;
+  regiaoAtendimento?: string;
+  textoProximidade?: string;
   onPress: () => void;
   onPressFavorito?: () => void;
 }
@@ -22,6 +25,9 @@ export default function CardProfessor({
   precoHora,
   fotoUrl,
   verificado = true,
+  oferecePresencial = false,
+  regiaoAtendimento,
+  textoProximidade,
   onPress,
   onPressFavorito,
 }: CardProfessorProps) {
@@ -66,6 +72,23 @@ export default function CardProfessor({
 
         {/* Linha 2: Matéria */}
         <Text style={estilos.textoMateria}>{materia}</Text>
+
+        {/* Linha 2.5: Tag de Localização e Proximidade (Fase 8 / MAP-006) */}
+        <View style={estilos.linhaLocalizacao}>
+          {oferecePresencial ? (
+            <View style={estilos.badgePresencial}>
+              <MaterialIcons name="location-on" size={12} color="#0284C7" />
+              <Text style={estilos.textoBadgePresencial} numberOfLines={1}>
+                {textoProximidade || regiaoAtendimento || "Presencial"}
+              </Text>
+            </View>
+          ) : (
+            <View style={estilos.badgeOnline}>
+              <MaterialIcons name="laptop" size={12} color="#475569" />
+              <Text style={estilos.textoBadgeOnline}>100% Online</Text>
+            </View>
+          )}
+        </View>
 
         {/* Linha 3: Avaliações */}
         <View style={estilos.linhaAvaliacao}>
@@ -133,6 +156,41 @@ const estilos = StyleSheet.create({
   textoNome: { fontSize: 16, fontWeight: "bold", color: "#111" },
 
   textoMateria: { fontSize: 14, color: "#444", marginTop: 2 },
+
+  linhaLocalizacao: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  badgePresencial: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F9FF",
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 3,
+  },
+  textoBadgePresencial: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#0369A1",
+    maxWidth: 150,
+  },
+  badgeOnline: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 3,
+  },
+  textoBadgeOnline: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#475569",
+  },
 
   linhaAvaliacao: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   textoNota: { fontSize: 13, fontWeight: "bold", color: "#444", marginLeft: 4 },
