@@ -243,7 +243,6 @@ const estilos = StyleSheet.create({
   },
   areaCentral: {
     alignItems: "center",
-    flex: 1,
     justifyContent: "center",
     width: "100%",
     marginTop: 20,
