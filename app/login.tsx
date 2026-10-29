@@ -46,9 +46,15 @@ export default function LoginScreen() {
       });
 
       if (resposta.ok) {
-        const dados = await resposta.json();
+        const corpo = await resposta.json();
+        const payload = corpo.data || corpo;
+        const usuario = payload.usuario || payload;
+        const token = payload.token || payload.accessToken;
+        const usuarioId = usuario.id || usuario.usuarioId;
+        const perfil = usuario.tipo || usuario.perfil || "ALUNO";
+        const nome = usuario.nome || "";
         if (loginGlobal) {
-          await loginGlobal(dados.usuarioId || dados.id, dados.perfil || "ALUNO", dados.nome, dados.token);
+          await loginGlobal(usuarioId, perfil, nome, token);
         }
         router.replace("/(tabs)");
       } else {
