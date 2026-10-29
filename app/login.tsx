@@ -1,337 +1,332 @@
-/**
- * @file login.tsx
- * @description Controlador de Interface da Tela de Login (View Controller).
- * Captura as credenciais de acesso, executa validações locais preventivas (Client-Side),
- * gerencia o estado de submissão assíncrona e consome as rotas REST do Spring Boot.
- */
-
-import { useRouter } from "expo-router";
+// app/login.tsx - 100% Fiel à Tela Alvo Enviada (Orienta Mobile)
+// Utilizando exatamente as imagens enviadas por você em assets/images/:
+// 1. Plano_fundo.jpeg - Wallpaper oficial das ondas orgânicas âmbar
+// 2. logo.png         - Logotipo oficial Orienta com fundo transparente
+// 3. google.png       - Ícone multicolorido oficial do Google
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  Image,
+  ImageBackground,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// Importações de Configurações Globais e Contextos de Sessão
 import { API_URL } from "../config/api";
-import { Colors } from "../constants/colors";
 import { useAuth } from "../context/AuthContext";
 
-// Importações de Componentes Unificados (Localizados na pasta raiz /components)
-import AlternadorPerfil from "../components/AlternadorPerfil";
-import { BotaoCustomizado } from "../components/BotaoCustomizado";
-import { InputCustomizado } from "../components/InputCustomizado";
-import LoginSocial from "../components/LoginSocial";
-
-export default function Login() {
-  /** Hook de navegação por pilha do Expo Router para redirecionamento */
-  const roteador = useRouter();
-
-  /** Injeta a função global de sincronização de sessão mapeada no AuthContext */
+export default function LoginScreen() {
   const { loginGlobal } = useAuth() as any;
-
-  // ==========================================
-  // 1. GERENCIAMENTO DE ESTADO (HOOKS)
-  // ==========================================
-  const [email, definirEmail] = useState("");
-  const [senha, definirSenha] = useState("");
-  const [perfil, definirPerfil] = useState("Aluno");
+  const [emailOrCpf, setEmailOrCpf] = useState("");
+  const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [carregando, setCarregando] = useState(false);
 
-  // Estado que monitora o carregamento da requisição HTTP (Previnirá múltiplos cliques)
-  const [submetendo, setSubmetendo] = useState(false);
-
-  // Estados reativos para exibição de modais imperativos e mensagens de erro inline
-  const [modalErroVisivel, setModalErroVisivel] = useState(false);
-  const [modalErroTexto, setModalErroTexto] = useState("");
-  const [emailErro, setEmailErro] = useState("");
-  const [senhaErro, setSenhaErro] = useState("");
-
-  // ==========================================
-  // 2. INTEGRAÇÃO REST (MÉTODO HTTP POST)
-  // ==========================================
-
-  /**
-   * Dispara o motor de autenticação da plataforma efetuando validações preventivas e a ponte com a API.
-   * @async
-   * @function executarLogin
-   * @returns {Promise<void>} Encaminha o usuário autenticado para as abas privadas ou dispara alertas visuais.
-   */
   const executarLogin = async () => {
-    // Cláusulas de guarda locais (Bloqueiam disparos de rede inúteis se os campos estiverem vazios)
-    const emailValido = !!email.trim();
-    const senhaValida = !!senha.trim();
-
-    if (!emailValido || !senhaValida) {
-      setEmailErro(emailValido ? "" : "Por favor, insira seu e-mail.");
-      setSenhaErro(senhaValida ? "" : "Por favor, insira sua senha.");
+    if (!emailOrCpf.trim() || !senha.trim()) {
+      Alert.alert("Campos obrigatórios", "Por favor, preencha o e-mail/CPF e a senha.");
       return;
     }
 
-    // Reseta sinalizadores de erro inline caso passe na validação local
-    setEmailErro("");
-    setSenhaErro("");
-
-    // Ativa o estado de carregamento (O botão exibirá o Spinner e ficará bloqueado)
-    setSubmetendo(true);
-
+    setCarregando(true);
     try {
-      // Executa a chamada assíncrona POST enviando o payload estruturado em JSON
-      const resposta = await fetch(`${API_URL}/api/usuarios/login`, {
+      const resposta = await fetch(`${API_URL}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, senha }),
+        body: JSON.stringify({ email: emailOrCpf.trim(), senha }),
       });
 
-      // Se o servidor retornar o código HTTP 200 OK, processa a sessão
       if (resposta.ok) {
-        const dadosDoUsuario = await resposta.json();
-
-        // Grava as informações simultaneamente na memória RAM (Contexto) e no Disco (AsyncStorage)
+        const dados = await resposta.json();
         if (loginGlobal) {
-          const id = (dadosDoUsuario.usuario?.id || dadosDoUsuario.id || "").toString();
-          const nome = dadosDoUsuario.usuario?.nome || dadosDoUsuario.nome || "";
-          const token = dadosDoUsuario.token || "";
-          const refreshToken = dadosDoUsuario.refreshToken || "";
-          await loginGlobal(id, perfil, nome, token, refreshToken);
+          await loginGlobal(dados.usuarioId || dados.id, dados.perfil || "ALUNO", dados.nome, dados.token);
         }
-
-        // Substitui a rota atual matando o histórico de navegação (Evita loops ao usar o botão voltar do Android)
-        roteador.replace("/(tabs)");
+        router.replace("/(tabs)");
       } else {
-        // Tratamento de falhas de autenticação mapeadas no Spring Boot (Ex: Credenciais Inválidas)
-        let bodyError = "";
-        try {
-          const json = await resposta.json();
-          bodyError = json?.message || json?.error || "";
-        } catch {
-          bodyError = await resposta.text();
-        }
-        setModalErroTexto(bodyError || "E-mail ou senha incorretos.");
-        setModalErroVisivel(true);
+        const erro = await resposta.json().catch(() => ({}));
+        Alert.alert("Erro de autenticação", erro.message || "Credenciais inválidas.");
       }
-    } catch (error) {
-      // Tratamento de falhas físicas de infraestrutura (Servidor offline, IP errado ou Wi-Fi instável)
-      Alert.alert(
-        "Erro de Conexão",
-        "Não foi possível conectar ao servidor. Verifique se a API está rodando.",
-      );
-      console.error("Erro na rotina de login: ", error);
+    } catch {
+      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor Spring Boot.");
     } finally {
-      // Desativa o carregamento de forma imperativa independente se a requisição deu certo ou errado
-      setSubmetendo(false);
+      setCarregando(false);
     }
   };
 
   return (
-    <SafeAreaView style={estilos.recipientePrincipal}>
+    // 1. O plano de fundo cobre a tela INTEIRA do celular (Plano_fundo.jpeg)
+    <ImageBackground
+      source={require("../assets/images/Plano_fundo.jpeg")}
+      style={estilos.fundoTotal}
+      resizeMode="cover"
+    >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={estilos.flexTotal}
       >
+        {/* 2. ScrollView envolvendo todo o conteúdo: o cabeçalho rola junto com o form, sem ficar fixo cobrindo os campos */}
         <ScrollView
-          contentContainerStyle={estilos.scrollContainer}
-          keyboardShouldPersistTaps="handled" // Essencial para usabilidade
+          contentContainerStyle={estilos.scrollConteudo}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={true}
         >
-          <View style={estilos.areaCentral}>
-            <View style={estilos.cartao}>
-              {/* Bloco de Apresentação Visual Superior */}
-              <View style={estilos.cabecalhoCartao}>
-                <Text style={estilos.textoBemVindo}>Bem-vindo!</Text>
-                <Text style={estilos.subtitulo}>Acesse sua conta</Text>
-              </View>
-
-              {/* Bloco de Formulário Controlado */}
-              <View style={estilos.formulario}>
-                <Text style={estilos.rotuloEntrada}>
-                  Como você deseja entrar?
-                </Text>
-
-                {/* Componente Isolado de Seleção de Persona */}
-                <AlternadorPerfil
-                  perfilAtivo={perfil}
-                  aoMudarPerfil={definirPerfil}
-                />
-
-                <Text style={estilos.rotuloEntrada}>E-mail</Text>
-                <InputCustomizado
-                  placeholder="Digite seu e-mail"
-                  valor={email}
-                  aoMudarTexto={(texto) => {
-                    definirEmail(texto);
-                    if (texto.trim()) setEmailErro("");
-                  }}
-                />
-                {emailErro ? (
-                  <Text style={estilos.textoErro}>{emailErro}</Text>
-                ) : null}
-
-                <Text style={estilos.rotuloEntrada}>Senha</Text>
-                <InputCustomizado
-                  placeholder="Digite sua senha"
-                  valor={senha}
-                  aoMudarTexto={(texto) => {
-                    definirSenha(texto);
-                    if (texto.trim()) setSenhaErro("");
-                  }}
-                  seguro={true}
-                  mostrarSenha={mostrarSenha}
-                  aoAlternarSenha={() =>
-                    setMostrarSenha((anterior) => !anterior)
-                  }
-                />
-                {senhaErro ? (
-                  <Text style={estilos.textoErro}>{senhaErro}</Text>
-                ) : null}
-
-                {/* Botão Primário Inteligente integrado ao estado reativo de rede */}
-                <BotaoCustomizado
-                  text="Entrar"
-                  aoClicar={executarLogin}
-                  carregando={submetendo}
-                />
-              </View>
+          {/* 3. Cabeçalho com Logo ampliado em destaque e Halo de Luz para contraste */}
+          <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
+            <View style={estilos.haloIluminacao}>
+              <Image
+                source={require("../assets/images/logo.png")}
+                style={estilos.logoImg}
+                resizeMode="contain"
+              />
             </View>
-          </View>
+            <Text style={estilos.sloganTexto}>Seu futuro com{" "}as melhores escolhas.</Text>
+          </SafeAreaView>
 
-          {/* Módulo de Rodapé Abstraído Unificando Links de Navegação Cruzada */}
-          <LoginSocial
-            onGooglePress={() => console.log("OAuth Google Acionado")}
-            onFacebookPress={() => console.log("OAuth Facebook Acionado")}
-            onCadastroPress={() => roteador.push("/cadastro")}
-          />
-        </ScrollView>
+          {/* 4. Cartão Branco Curvo Flutuante (não vai até o final para que o fundo apareça no rodapé) */}
+          <View style={estilos.cartaoBranco}>
+            <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
+            <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
 
-        {/* Modal Reativo para Exibição de Mensagens de Erro Críticas da API */}
-        <Modal transparent visible={modalErroVisivel} animationType="fade">
-          <View style={estilos.modalOverlay}>
-            <View style={estilos.modalCard}>
-              <Text style={estilos.modalTitulo}>Erro</Text>
-              <Text style={estilos.modalTexto}>{modalErroTexto}</Text>
-              <TouchableOpacity
-                style={estilos.modalBotao}
-                onPress={() => setModalErroVisivel(false)}
-              >
-                <Text style={estilos.modalBotaoTexto}>Entendi</Text>
+            {/* Input E-mail ou CPF com Ícone */}
+            <View style={estilos.inputBox}>
+              <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="E-mail ou CPF"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                value={emailOrCpf}
+                onChangeText={setEmailOrCpf}
+              />
+            </View>
+
+            {/* Input Senha com Alternador de Visibilidade */}
+            <View style={estilos.inputBox}>
+              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="Senha"
+                placeholderTextColor="#94A3B8"
+                secureTextEntry={!mostrarSenha}
+                value={senha}
+                onChangeText={setSenha}
+              />
+              <TouchableOpacity onPress={() => setMostrarSenha((v) => !v)} style={estilos.iconeOlho}>
+                <Ionicons
+                  name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
+                  size={19}
+                  color="#94A3B8"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Link Esqueceu sua senha? */}
+            <TouchableOpacity
+              onPress={() => router.push("/esqueci-senha" as any)}
+              style={estilos.linkEsqueceuSenha}
+            >
+              <Text style={estilos.txtEsqueceuSenha}>Esqueceu sua senha?</Text>
+            </TouchableOpacity>
+
+            {/* Botão Primário Laranja Degradê */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={executarLogin}
+              disabled={carregando}
+              style={estilos.btnEntrarWrapper}
+            >
+              <View style={estilos.btnEntrar}>
+                {carregando ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <View style={estilos.btnEntrarConteudo}>
+                    <Text style={estilos.txtEntrar}>Entrar</Text>
+                    <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Divisor "ou" */}
+            <View style={estilos.divisorContainer}>
+              <View style={estilos.linhaDivisor} />
+              <Text style={estilos.txtOu}>ou</Text>
+              <View style={estilos.linhaDivisor} />
+            </View>
+
+            {/* Botão Social Google com Ícone Oficial (google.png) */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => Alert.alert("Google OAuth", "Autenticação Google")}
+              style={estilos.btnGoogle}
+            >
+              <Image
+                source={require("../assets/images/google.png")}
+                style={estilos.googleIcon}
+                resizeMode="contain"
+              />
+              <Text style={estilos.txtGoogle}>Continuar com o Google</Text>
+            </TouchableOpacity>
+
+            {/* Rodapé Criar Conta */}
+            <View style={estilos.rodapeCadastro}>
+              <Text style={estilos.txtAindaNao}>Ainda não tem uma conta?</Text>
+              <TouchableOpacity onPress={() => router.push("/cadastro" as any)}>
+                <Text style={estilos.txtCriarConta}>Criar conta</Text>
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const estilos = StyleSheet.create({
-  recipientePrincipal: {
-    backgroundColor: Colors.background,
+  fundoTotal: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+  },
+  flexTotal: {
     flex: 1,
   },
-  scrollContainer: {
+  scrollConteudo: {
     flexGrow: 1,
     justifyContent: "space-between",
-    alignItems: "center",
+    paddingBottom: 20,
   },
-  areaCentral: {
+  areaCabecalho: {
     alignItems: "center",
     justifyContent: "center",
-    width: "100%",
-    marginTop: 20,
-  },
-  cartao: {
-    backgroundColor: Colors.card,
-    borderRadius: 30,
-    elevation: 5,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    width: "90%",
-  },
-  cabecalhoCartao: {
-    backgroundColor: Colors.primary,
-    paddingBottom: 40,
-    paddingHorizontal: 30,
-    paddingTop: 30,
-    width: "100%",
-  },
-  textoBemVindo: {
-    color: "white",
-    fontSize: 28,
-    fontWeight: "bold",
-  },
-  subtitulo: {
-    color: "white",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  formulario: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    marginTop: -20,
-    padding: 30,
-  },
-  rotuloEntrada: {
-    color: Colors.text,
-    fontWeight: "600",
-    marginBottom: 5,
-  },
-  textoErro: {
-    color: "#CC4444",
-    fontSize: 13,
-    marginTop: -6,
-    marginBottom: 10,
-  },
-  modalOverlay: {
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.25)",
-    flex: 1,
-    justifyContent: "center",
-  },
-  modalCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 24,
-    elevation: 8,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    width: "80%",
-  },
-  modalTitulo: {
-    color: Colors.secondary,
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  modalTexto: {
-    color: Colors.text,
-    fontSize: 16,
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  modalBotao: {
-    backgroundColor: Colors.secondary,
-    borderRadius: 12,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === "android" ? 28 : 12,
+    paddingBottom: 12,
     paddingHorizontal: 20,
+  },
+  haloIluminacao: {
+    width: 200,
+    height: 200,
+    borderRadius: 70,
+    backgroundColor: "rgba(255, 255, 255, 0.12)", // Iluminação suave que destaca o logo
     alignItems: "center",
+    marginTop: 20,
+    justifyContent: "center",
+    shadowColor: "#FFFFFF",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 6,
+    marginVertical: 4,
   },
-  modalBotaoTexto: {
-    color: "white",
-    fontWeight: "bold",
+  logoImg: {
+    width: 460,
+    height: 300,
+    resizeMode: "contain",
   },
+  sloganTexto: {
+    fontSize: 25,
+    color: "#2D3748",
+    textAlign: "center",
+    marginTop: 8,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  cartaoBranco: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 36,
+    marginHorizontal: 18,
+    marginTop: 8,
+    marginBottom: 28, // Garante que as ondas de Plano_fundo.jpeg apareçam na base!
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  tituloBemVindo: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.4,
+  },
+  subtituloCartao: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  inputBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 52,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 12,
+  },
+  inputIconeEsquerda: { marginRight: 10 },
+  inputTexto: { flex: 1, fontSize: 14, color: "#0F172A" },
+  iconeOlho: { padding: 4 },
+  linkEsqueceuSenha: { alignSelf: "flex-end", marginTop: 2, marginBottom: 18 },
+  txtEsqueceuSenha: { fontSize: 12, fontWeight: "600", color: "#EA580C" },
+  btnEntrarWrapper: {
+    borderRadius: 24,
+    overflow: "hidden",
+    marginBottom: 18,
+    backgroundColor: "#FF6A00",
+    shadowColor: "#FF6A00",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  btnEntrar: {
+    height: 50,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FF6A00",
+    borderRadius: 24,
+  },
+  btnEntrarConteudo: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  txtEntrar: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+  divisorContainer: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  linhaDivisor: { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
+  txtOu: { marginHorizontal: 12, fontSize: 12, color: "#94A3B8" },
+  btnGoogle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 24,
+    height: 48,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 22,
+  },
+  googleIcon: { width: 20, height: 20, marginRight: 10 },
+  txtGoogle: { fontSize: 13, fontWeight: "600", color: "#1E293B" },
+  rodapeCadastro: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    gap: 6,
+  },
+  txtAindaNao: { fontSize: 13, color: "#64748B" },
+  txtCriarConta: { fontSize: 13, fontWeight: "700", color: "#EA580C" },
 });
