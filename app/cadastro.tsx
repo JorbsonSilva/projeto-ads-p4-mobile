@@ -1,10 +1,12 @@
 // app/cadastro.tsx - 100% Fiel à Tela Alvo Enviada (Orienta Mobile)
+// Utilizando os assets oficiais de imagem em assets/images/ (logo.png, google.png)
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -13,12 +15,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
 
-
+const { width: LARGURA_TELA, height: ALTURA_TELA } = Dimensions.get("window");
 
 export default function CadastroScreen() {
   const [nome, setNome] = useState("");
@@ -30,10 +32,11 @@ export default function CadastroScreen() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
+  const [feedback, setFeedback] = useState<{ tipo: "erro" | "sucesso"; texto: string } | null>(null);
 
-  // Máscara dinâmica de CPF (000.000.000-00)
+  // 1. Máscara Robusta de CPF (000.000.000-00) usando [^0-9] sem barras invertidas
   const formatarCpf = (valor: string) => {
-    const apenasNumeros = valor.replace(/\D/g, "").slice(0, 11);
+    const apenasNumeros = valor.replace(/[^0-9]/g, "").slice(0, 11);
     if (apenasNumeros.length <= 3) return apenasNumeros;
     if (apenasNumeros.length <= 6)
       return `${apenasNumeros.slice(0, 3)}.${apenasNumeros.slice(3)}`;
@@ -42,13 +45,30 @@ export default function CadastroScreen() {
     return `${apenasNumeros.slice(0, 3)}.${apenasNumeros.slice(3, 6)}.${apenasNumeros.slice(6, 9)}-${apenasNumeros.slice(9, 11)}`;
   };
 
-  // Máscara dinâmica de Data de Nascimento (DD/MM/AAAA)
+  // 2. Máscara Robusta de Data de Nascimento (DD/MM/AAAA) usando [^0-9]
   const formatarData = (valor: string) => {
-    const apenasNumeros = valor.replace(/\D/g, "").slice(0, 8);
+    const apenasNumeros = valor.replace(/[^0-9]/g, "").slice(0, 8);
     if (apenasNumeros.length <= 2) return apenasNumeros;
     if (apenasNumeros.length <= 4)
       return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2)}`;
     return `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2, 4)}/${apenasNumeros.slice(4, 8)}`;
+  };
+
+  // 3. Validador Estrito de Força de Senha (8+ dígitos, maiúscula, minúscula, número e símbolo)
+  const checarForcaSenha = (valor: string) => {
+    const temMinimo = valor.length >= 8;
+    const temMaiuscula = /[A-Z]/.test(valor);
+    const temMinuscula = /[a-z]/.test(valor);
+    const temNumero = /[0-9]/.test(valor);
+    const temEspecial = /[^A-Za-z0-9]/.test(valor);
+    return {
+      temMinimo,
+      temMaiuscula,
+      temMinuscula,
+      temNumero,
+      temEspecial,
+      ehForte: temMinimo && temMaiuscula && temMinuscula && temNumero && temEspecial,
+    };
   };
 
   const handleMudarCpf = (texto: string) => {
@@ -60,28 +80,47 @@ export default function CadastroScreen() {
   };
 
   const executarCadastro = async () => {
+    setFeedback(null);
+
     if (!nome.trim() || !email.trim() || !cpf.trim() || !dataNascimento.trim() || !senha.trim()) {
-      Alert.alert("Campos obrigatórios", "Por favor, preencha todos os campos do formulário.");
+      const msg = "Por favor, preencha todos os campos do formulário.";
+      setFeedback({ tipo: "erro", texto: msg });
+      Alert.alert("Campos obrigatórios", msg);
       return;
     }
 
-    const cpfLimpo = cpf.replace(/\D/g, "");
+    const cpfLimpo = cpf.replace(/[^0-9]/g, "");
     if (cpfLimpo.length !== 11) {
-      Alert.alert("CPF inválido", "Por favor, digite um CPF válido com 11 números.");
+      const msg = "Por favor, digite um CPF válido com 11 números.";
+      setFeedback({ tipo: "erro", texto: msg });
+      Alert.alert("CPF inválido", msg);
       return;
     }
 
-    if (senha.length < 6) {
-      Alert.alert("Senha muito curta", "A senha deve ter no mínimo 6 caracteres.");
+    const forca = checarForcaSenha(senha);
+    if (!forca.ehForte) {
+      const pendencias: string[] = [];
+      if (!forca.temMinimo) pendencias.push("mínimo de 8 caracteres");
+      if (!forca.temMaiuscula) pendencias.push("uma letra maiúscula (A-Z)");
+      if (!forca.temMinuscula) pendencias.push("uma letra minúscula (a-z)");
+      if (!forca.temNumero) pendencias.push("um número (0-9)");
+      if (!forca.temEspecial) pendencias.push("um caractere especial (!@#$...)");
+      const msg = `Senha fraca. Sua senha deve conter: ${pendencias.join(", ")}.`;
+      setFeedback({ tipo: "erro", texto: msg });
+      Alert.alert("Senha fraca", msg);
       return;
     }
 
     if (senha !== confirmarSenha) {
-      Alert.alert("Confirmação incorreta", "A senha e a confirmação de senha não coincidem.");
+      const msg = "A senha e a confirmação de senha não coincidem.";
+      setFeedback({ tipo: "erro", texto: msg });
+      Alert.alert("Confirmação incorreta", msg);
       return;
     }
 
     setCarregando(true);
+    const emailNormalizado = email.trim().toLowerCase();
+
     try {
       let dataIso = dataNascimento;
       const partes = dataNascimento.split("/");
@@ -89,12 +128,15 @@ export default function CadastroScreen() {
         dataIso = `${partes[2]}-${partes[1]}-${partes[0]}`;
       }
 
-      const resposta = await fetch(`${API_URL}/api/v1/auth/cadastro`, {
+      const urlDestino = `${API_URL}/api/v1/auth/cadastro`;
+      console.log(`[Cadastro] Enviando requisição para: ${urlDestino}`);
+
+      const resposta = await fetch(urlDestino, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome: nome.trim(),
-          email: email.trim().toLowerCase(),
+          email: emailNormalizado,
           cpf: cpfLimpo,
           dataNascimento: dataIso,
           senha,
@@ -103,27 +145,41 @@ export default function CadastroScreen() {
       });
 
       const corpo = await resposta.json().catch(() => ({}));
+      console.log(`[Cadastro] Resposta HTTP ${resposta.status}:`, corpo);
 
       if (resposta.ok) {
-        Alert.alert(
-          "Conta criada com sucesso!",
-          corpo.message || "Seu cadastro foi realizado com sucesso. Faça login agora.",
-          [
-            {
-              text: "Ir para Login",
-              onPress: () => router.replace("/login" as any),
-            },
-          ]
-        );
+        setFeedback({
+          tipo: "sucesso",
+          texto: "Conta criada! Redirecionando para verificação de e-mail...",
+        });
+
+        // Redireciona diretamente para a tela de verificação com fallback seguro
+        try {
+          router.push({
+            pathname: "/verificar-email" as any,
+            params: { email: emailNormalizado },
+          });
+        } catch {
+          router.replace({
+            pathname: "/verificar-email" as any,
+            params: { email: emailNormalizado },
+          });
+        }
       } else {
         const mensagemErro =
+          corpo.mensagem ||
           corpo.message ||
           corpo.error ||
-          (corpo.errors ? Object.values(corpo.errors).join("\n") : "Falha ao criar conta.");
+          (corpo.errors ? Object.values(corpo.errors).join("") : "Falha ao criar conta no servidor.");
+        setFeedback({ tipo: "erro", texto: mensagemErro });
         Alert.alert("Erro no cadastro", mensagemErro);
       }
-    } catch {
-      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor Spring Boot.");
+    } catch (err: any) {
+      console.error("[Cadastro] Erro ao conectar ao Spring Boot:", err);
+      const urlAlvo = API_URL || "URL indefinida";
+      const erroRede = `Não foi possível conectar ao servidor Spring Boot em: ${urlAlvo}. No emulador Android, use http://10.0.2.2:8080 no seu config/api.ts. Em celular físico, use o IP local da sua máquina.`;
+      setFeedback({ tipo: "erro", texto: erroRede });
+      Alert.alert("Erro de Conexão", erroRede);
     } finally {
       setCarregando(false);
     }
@@ -131,217 +187,242 @@ export default function CadastroScreen() {
 
   return (
     <View style={estilos.containerGeral}>
-      {/* 1. Imagem de fundo travada nas dimensões físicas da tela (zero zoom) */}
+      {/* 1. Imagem de fundo travada nas dimensões físicas da tela (evita efeito zoom ao rolar o formulário) */}
       <Image
         source={require("../assets/images/Plano_fundo_cadastro.jpeg")}
         style={estilos.fundoAbsoluto}
-        resizeMode="stretch"
+        resizeMode="cover"
       />
 
       {/* 2. Conteúdo rolável independente por cima do plano de fundo */}
       <SafeAreaView style={estilos.safeArea} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={estilos.flexTotal}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={estilos.flexTotal}
+      >
+        <ScrollView
+          contentContainerStyle={estilos.scrollConteudo}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            contentContainerStyle={estilos.scrollConteudo}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Top Bar: Botão Voltar (←) e Logo Centralizado */}
-            <View style={estilos.cabecalhoTopo}>
+          {/* Top Bar: Botão Voltar e Logo Centralizado */}
+          <View style={estilos.cabecalhoTopo}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={estilos.btnVoltar}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Feather name="arrow-left" size={24} color="#0F172A" />
+            </TouchableOpacity>
+
+            <View style={estilos.areaLogo}>
+              <Image
+                source={require("../assets/images/logo.png")}
+                style={estilos.logoImg}
+                resizeMode="contain"
+              />
+            </View>
+
+            <View style={estilos.espacadorDireita} />
+          </View>
+
+          {/* Título e Subtítulo */}
+          <View style={estilos.areaTitulos}>
+            <Text style={estilos.tituloPrincipal}>Crie sua conta</Text>
+            <Text style={estilos.subtitulo}>
+              Vamos começar! Preencha seus dados para continuar.
+            </Text>
+          </View>
+
+          {/* Formulário com os 6 campos idênticos ao design */}
+          <View style={estilos.formulario}>
+            {/* 1. Nome completo */}
+            <View style={estilos.inputBox}>
+              <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="Nome completo"
+                placeholderTextColor="#94A3B8"
+                value={nome}
+                onChangeText={setNome}
+                autoCapitalize="words"
+              />
+            </View>
+
+            {/* 2. E-mail */}
+            <View style={estilos.inputBox}>
+              <Feather name="mail" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="E-mail"
+                placeholderTextColor="#94A3B8"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            {/* 3. CPF */}
+            <View style={estilos.inputBox}>
+              <Feather name="credit-card" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <View style={estilos.inputConteudoDuplo}>
+                <Text style={estilos.inputLabelMini}>CPF</Text>
+                <TextInput
+                  style={estilos.inputTextoMini}
+                  placeholder="000.000.000-00"
+                  placeholderTextColor="#94A3B8"
+                  value={cpf}
+                  onChangeText={handleMudarCpf}
+                  keyboardType="numeric"
+                  maxLength={14}
+                />
+              </View>
+            </View>
+
+            {/* 4. Data de nascimento */}
+            <View style={estilos.inputBox}>
+              <Feather name="calendar" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <View style={estilos.inputConteudoDuplo}>
+                <Text style={estilos.inputLabelMini}>Data de nascimento</Text>
+                <TextInput
+                  style={estilos.inputTextoMini}
+                  placeholder="DD/MM/AAAA"
+                  placeholderTextColor="#94A3B8"
+                  value={dataNascimento}
+                  onChangeText={handleMudarData}
+                  keyboardType="numeric"
+                  maxLength={10}
+                />
+              </View>
+              <Feather name="calendar" size={18} color="#94A3B8" style={estilos.inputIconeDireita} />
+            </View>
+
+            {/* 5. Senha */}
+            <View style={estilos.inputBox}>
+              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="Senha"
+                placeholderTextColor="#94A3B8"
+                value={senha}
+                onChangeText={setSenha}
+                secureTextEntry={!mostrarSenha}
+              />
               <TouchableOpacity
-                onPress={() => router.back()}
-                style={estilos.btnVoltar}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => setMostrarSenha((v) => !v)}
+                style={estilos.iconeOlho}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Feather name="arrow-left" size={24} color="#0F172A" />
+                <Ionicons
+                  name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
+                  size={19}
+                  color="#94A3B8"
+                />
               </TouchableOpacity>
-
-              <View style={estilos.areaLogo}>
-                <Image
-                  source={require("../assets/images/logo.png")}
-                  style={estilos.logoImg}
-                  resizeMode="contain"
-                />
-              </View>
-
-              <View style={estilos.espacadorDireita} />
             </View>
 
-            {/* Título e Subtítulo */}
-            <View style={estilos.areaTitulos}>
-              <Text style={estilos.tituloPrincipal}>Crie sua conta</Text>
-              <Text style={estilos.subtitulo}>
-                Vamos começar! Preencha seus dados para continuar.
-              </Text>
+            {/* 6. Confirmar senha */}
+            <View style={estilos.inputBox}>
+              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
+              <TextInput
+                style={estilos.inputTexto}
+                placeholder="Confirmar senha"
+                placeholderTextColor="#94A3B8"
+                value={confirmarSenha}
+                onChangeText={setConfirmarSenha}
+                secureTextEntry={!mostrarConfirmarSenha}
+              />
+              <TouchableOpacity
+                onPress={() => setMostrarConfirmarSenha((v) => !v)}
+                style={estilos.iconeOlho}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name={mostrarConfirmarSenha ? "eye-off-outline" : "eye-outline"}
+                  size={19}
+                  color="#94A3B8"
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Formulário com os 6 campos */}
-            <View style={estilos.formulario}>
-              {/* 1. Nome completo */}
-              <View style={estilos.inputBox}>
-                <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <TextInput
-                  style={estilos.inputTexto}
-                  placeholder="Nome completo"
-                  placeholderTextColor="#94A3B8"
-                  value={nome}
-                  onChangeText={setNome}
-                  autoCapitalize="words"
+            {/* Banner de feedback inline (Erro ou Sucesso) */}
+            {feedback && (
+              <View
+                style={[
+                  estilos.bannerFeedback,
+                  feedback.tipo === "sucesso" ? estilos.bannerSucesso : estilos.bannerErro,
+                ]}
+              >
+                <Feather
+                  name={feedback.tipo === "sucesso" ? "check-circle" : "alert-circle"}
+                  size={18}
+                  color={feedback.tipo === "sucesso" ? "#16A34A" : "#DC2626"}
+                  style={{ marginRight: 8, marginTop: 1 }}
                 />
-              </View>
-
-              {/* 2. E-mail */}
-              <View style={estilos.inputBox}>
-                <Feather name="mail" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <TextInput
-                  style={estilos.inputTexto}
-                  placeholder="E-mail"
-                  placeholderTextColor="#94A3B8"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* 3. CPF */}
-              <View style={estilos.inputBox}>
-                <Feather name="credit-card" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <View style={estilos.inputConteudoDuplo}>
-                  <Text style={estilos.inputLabelMini}>CPF</Text>
-                  <TextInput
-                    style={estilos.inputTextoMini}
-                    placeholder="000.000.000-00"
-                    placeholderTextColor="#94A3B8"
-                    value={cpf}
-                    onChangeText={handleMudarCpf}
-                    keyboardType="numeric"
-                    maxLength={14}
-                  />
-                </View>
-              </View>
-
-              {/* 4. Data de nascimento */}
-              <View style={estilos.inputBox}>
-                <Feather name="calendar" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <View style={estilos.inputConteudoDuplo}>
-                  <Text style={estilos.inputLabelMini}>Data de nascimento</Text>
-                  <TextInput
-                    style={estilos.inputTextoMini}
-                    placeholder="DD/MM/AAAA"
-                    placeholderTextColor="#94A3B8"
-                    value={dataNascimento}
-                    onChangeText={handleMudarData}
-                    keyboardType="numeric"
-                    maxLength={10}
-                  />
-                </View>
-                <Feather name="calendar" size={18} color="#94A3B8" style={estilos.inputIconeDireita} />
-              </View>
-
-              {/* 5. Senha */}
-              <View style={estilos.inputBox}>
-                <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <TextInput
-                  style={estilos.inputTexto}
-                  placeholder="Senha"
-                  placeholderTextColor="#94A3B8"
-                  value={senha}
-                  onChangeText={setSenha}
-                  secureTextEntry={!mostrarSenha}
-                />
-                <TouchableOpacity
-                  onPress={() => setMostrarSenha((v) => !v)}
-                  style={estilos.iconeOlho}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                <Text
+                  style={[
+                    estilos.txtBannerFeedback,
+                    feedback.tipo === "sucesso" ? estilos.txtBannerSucesso : estilos.txtBannerErro,
+                  ]}
                 >
-                  <Ionicons
-                    name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-                    size={19}
-                    color="#94A3B8"
-                  />
-                </TouchableOpacity>
+                  {feedback.texto}
+                </Text>
               </View>
+            )}
 
-              {/* 6. Confirmar senha */}
-              <View style={estilos.inputBox}>
-                <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-                <TextInput
-                  style={estilos.inputTexto}
-                  placeholder="Confirmar senha"
-                  placeholderTextColor="#94A3B8"
-                  value={confirmarSenha}
-                  onChangeText={setConfirmarSenha}
-                  secureTextEntry={!mostrarConfirmarSenha}
-                />
-                <TouchableOpacity
-                  onPress={() => setMostrarConfirmarSenha((v) => !v)}
-                  style={estilos.iconeOlho}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons
-                    name={mostrarConfirmarSenha ? "eye-off-outline" : "eye-outline"}
-                    size={19}
-                    color="#94A3B8"
-                  />
-                </TouchableOpacity>
+            {/* Botão Primário Laranja Degradê */}
+            <TouchableOpacity
+              activeOpacity={0.88}
+              onPress={executarCadastro}
+              disabled={carregando}
+              style={estilos.btnCriarContaWrapper}
+            >
+              <View style={estilos.btnCriarConta}>
+                {carregando ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <View style={estilos.btnCriarContaConteudo}>
+                    <Text style={estilos.txtCriarContaBtn}>Criar conta</Text>
+                    <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                  </View>
+                )}
               </View>
+            </TouchableOpacity>
 
-              {/* Botão Primário Laranja */}
-              <TouchableOpacity
-                activeOpacity={0.88}
-                onPress={executarCadastro}
-                disabled={carregando}
-                style={estilos.btnCriarContaWrapper}
-              >
-                <View style={estilos.btnCriarConta}>
-                  {carregando ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <View style={estilos.btnCriarContaConteudo}>
-                      <Text style={estilos.txtCriarContaBtn}>Criar conta</Text>
-                      <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-
-              {/* Divisor "ou" */}
-              <View style={estilos.divisorContainer}>
-                <View style={estilos.linhaDivisor} />
-                <Text style={estilos.txtOu}>ou</Text>
-                <View style={estilos.linhaDivisor} />
-              </View>
-
-              {/* Botão Social Google */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => Alert.alert("Google OAuth", "Autenticação Google")}
-                style={estilos.btnGoogle}
-              >
-                <Image
-                  source={require("../assets/images/google.png")}
-                  style={estilos.googleIcon}
-                  resizeMode="contain"
-                />
-                <Text style={estilos.txtGoogle}>Continuar com o Google</Text>
-              </TouchableOpacity>
-
-              {/* Rodapé: Já tem uma conta? Entrar */}
-              <View style={estilos.rodapeLogin}>
-                <Text style={estilos.txtJaTemConta}>Já tem uma conta?</Text>
-                <TouchableOpacity onPress={() => router.push("/login" as any)}>
-                  <Text style={estilos.txtEntrarLink}>Entrar</Text>
-                </TouchableOpacity>
-              </View>
+            {/* Divisor "ou" */}
+            <View style={estilos.divisorContainer}>
+              <View style={estilos.linhaDivisor} />
+              <Text style={estilos.txtOu}>ou</Text>
+              <View style={estilos.linhaDivisor} />
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+
+            {/* Botão Social Google */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => Alert.alert("Google OAuth", "Autenticação Google")}
+              style={estilos.btnGoogle}
+            >
+              <Image
+                source={require("../assets/images/google.png")}
+                style={estilos.googleIcon}
+                resizeMode="contain"
+              />
+              <Text style={estilos.txtGoogle}>Continuar com o Google</Text>
+            </TouchableOpacity>
+
+            {/* Rodapé: Já tem uma conta? Entrar */}
+            <View style={estilos.rodapeLogin}>
+              <Text style={estilos.txtJaTemConta}>Já tem uma conta?</Text>
+              <TouchableOpacity onPress={() => router.push("/login" as any)}>
+                <Text style={estilos.txtEntrarLink}>Entrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </View>
   );
 }
 
@@ -350,15 +431,12 @@ const estilos = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FDFBF9",
   },
-  // Localize este trecho no final do seu arquivo dentro do StyleSheet.create:
   fundoAbsoluto: {
     position: "absolute",
     top: 0,
     left: 0,
-    right: 0,
-    bottom: 0,
-    width: "100%",  // Garante que ocupe toda a largura independente do aparelho
-    height: "100%", // Garante que ocupe toda a altura independente do aparelho
+    width: LARGURA_TELA,
+    height: ALTURA_TELA,
   },
   safeArea: {
     flex: 1,
@@ -389,8 +467,8 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
   },
   logoImg: {
-    width: 400,
-    height: 264,
+    width: 140,
+    height: 64,
   },
   espacadorDireita: {
     width: 40,
@@ -411,19 +489,7 @@ const estilos = StyleSheet.create({
     lineHeight: 20,
   },
   formulario: {
-   backgroundColor: "#F7F2EC", // Um bege suave que contrasta com o fundo e destaca os inputs brancos
-    borderRadius: 20,          // Bordas arredondadas para combinar com os botões
-    padding: 16,               // Espaçamento interno para os inputs não colarem nas bordas do card
-    gap: 12,                   // Mantém o espaçamento padrão entre os campos
-    borderWidth: 1,            // Linha bem fina de contorno opcional
-    borderColor: "#EFEAE4",    // Cor suave para a borda do card
-    
-    // Sombra leve para dar profundidade sobre o wallpaper
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 12,
   },
   inputBox: {
     flexDirection: "row",
@@ -544,5 +610,33 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#EA580C",
+  },
+  bannerFeedback: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  bannerSucesso: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  bannerErro: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
+  },
+  txtBannerFeedback: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+  txtBannerSucesso: {
+    color: "#166534",
+  },
+  txtBannerErro: {
+    color: "#991B1B",
   },
 });
