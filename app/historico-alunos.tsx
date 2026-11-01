@@ -9,17 +9,17 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import BarraBusca from "../components/BarraBusca";
-import { API_URL } from "../config/api";
+import { API_URL, extrairDadosLista } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 
 // ==========================================
@@ -74,7 +74,8 @@ export default function HistoricoAlunos() {
         `${API_URL}/agendamentos/professor/${usuarioId}`,
       );
       if (resposta.ok) {
-        const agendamentos: Agendamento[] = await resposta.json();
+        const payload: unknown = await resposta.json();
+        const agendamentos = extrairDadosLista<Agendamento>(payload);
 
         // Mapa utilitário temporário para agrupar as aulas por ID de Aluno
         const mapaAlunos: Record<number, HistoricoAluno> = {};

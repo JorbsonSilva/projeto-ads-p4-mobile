@@ -31,7 +31,7 @@ import CardCategoria from "../../components/CardCategoria";
 import CardProfessor from "../../components/CardProfessor";
 import ResumoProfessor from "../../components/ResumoProfessor";
 import SectionTitle from "../../components/SectionTitle";
-import { API_URL } from "../../config/api";
+import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 
 // ==========================================
@@ -123,7 +123,8 @@ function HomeAluno({ nome }: { nome: string }) {
     try {
       const resAluno = await fetch(`${API_URL}/api/usuarios/${usuarioId}`);
       if (resAluno.ok) {
-        const dadosAluno: DadosAluno = await resAluno.json();
+        const payloadAluno: unknown = await resAluno.json();
+        const dadosAluno: DadosAluno = extrairDadosObjeto<DadosAluno>(payloadAluno);
         if (dadosAluno.interesses && dadosAluno.interesses.length > 0) {
           const saberesExtraidos = dadosAluno.interesses.map(
             (item) => item.saber,
@@ -136,7 +137,8 @@ function HomeAluno({ nome }: { nome: string }) {
 
       const resSaberes = await fetch(`${API_URL}/api/saberes`);
       if (resSaberes.ok) {
-        const dadosSaberes: Saber[] = await resSaberes.json();
+        const payloadSaberes: unknown = await resSaberes.json();
+        const dadosSaberes: Saber[] = extrairDadosLista<Saber>(payloadSaberes);
         setCategorias(dadosSaberes);
       }
 
@@ -144,7 +146,8 @@ function HomeAluno({ nome }: { nome: string }) {
         `${API_URL}/api/usuarios/professores/destaque/${usuarioId}`,
       );
       if (resProfs.ok) {
-        const dadosProfs: ProfessorDestaque[] = await resProfs.json();
+        const payloadProfs: unknown = await resProfs.json();
+        const dadosProfs: ProfessorDestaque[] = extrairDadosLista<ProfessorDestaque>(payloadProfs);
         setProfessoresDestaque(dadosProfs);
       }
     } catch (error) {
@@ -309,7 +312,8 @@ function HomeProfessor({ nome }: { nome: string }) {
     try {
       const res = await fetch(`${API_URL}/agendamentos/professor/${usuarioId}`);
       if (res.ok) {
-        const dados: Agendamento[] = await res.json();
+        const payload: unknown = await res.json();
+        const dados: Agendamento[] = extrairDadosLista<Agendamento>(payload);
         setProximasAulas(dados);
       }
     } catch (error) {

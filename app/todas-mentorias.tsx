@@ -9,17 +9,17 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import BarraBusca from "../components/BarraBusca";
 import CardAula from "../components/CardAula";
-import { API_URL } from "../config/api";
+import { API_URL, extrairDadosLista } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 
 // ==========================================
@@ -71,7 +71,8 @@ export default function TodasMentorias() {
         `${API_URL}/agendamentos/professor/${usuarioId}`,
       );
       if (resposta.ok) {
-        const dados: Agendamento[] = await resposta.json();
+        const payload: unknown = await resposta.json();
+        const dados = extrairDadosLista<Agendamento>(payload);
 
         // Ordena cronologicamente decrescente (mais recentes primeiro)
         const ordenados = dados.sort((a, b) => b.data.localeCompare(a.data));

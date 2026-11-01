@@ -2,7 +2,7 @@ import { CentralNotificacoesModal } from "@/components/CentralNotificacoesModal"
 import { ChatModal } from "@/components/ChatModal";
 import { CronometroAula } from "@/components/CronometroAula";
 import { ModalSuporteTicket } from "@/components/ModalSuporteTicket";
-import { API_URL, notificacaoApi } from "@/config/api";
+import { API_URL, extrairDadosLista, notificacaoApi } from "@/config/api";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { FontAwesome5 } from "@expo/vector-icons";
@@ -104,7 +104,8 @@ export default function Agenda() {
           : `${apiUrl}/aluno/${usuarioId}`;
 
       const response = await axios.get(endpoint);
-      setMeusAgendamentos(response.data);
+      const listaAgendamentos = extrairDadosLista<any>(response.data);
+      setMeusAgendamentos(listaAgendamentos);
     } catch (error) {
       console.log(error);
       Alert.alert(

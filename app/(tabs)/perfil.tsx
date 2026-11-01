@@ -25,7 +25,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { BotaoCustomizado } from "../../components/BotaoCustomizado";
 import { InputCustomizado } from "../../components/InputCustomizado";
-import { API_URL } from "../../config/api";
+import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 
 const diasDaSemanaDisponiveis = [
@@ -129,7 +129,8 @@ export default function PerfilPeca1() {
           `${URL_BACKEND}/api/usuarios/${usuarioId}`,
         );
         if (resposta.ok) {
-          const dados = await resposta.json();
+          const payloadUsuario = await resposta.json();
+          const dados = extrairDadosObjeto<any>(payloadUsuario);
           setNome(dados.nome || "");
           setEmail(dados.email || "");
           setNascimento(dados.dataNascimento || "");
@@ -143,7 +144,9 @@ export default function PerfilPeca1() {
 
         const resSaberes = await fetch(`${URL_BACKEND}/api/saberes`);
         if (resSaberes.ok) {
-          setCatalogoSaberesBD(await resSaberes.json());
+          const payloadSaberes = await resSaberes.json();
+          const catalogo = extrairDadosLista<any>(payloadSaberes);
+          setCatalogoSaberesBD(catalogo);
         }
       } catch (error) {
         console.error("Erro ao inicializar:", error);

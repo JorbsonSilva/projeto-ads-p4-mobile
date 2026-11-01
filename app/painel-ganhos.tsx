@@ -11,15 +11,15 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { API_URL } from "../config/api";
+import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 
 // ==========================================
@@ -92,7 +92,8 @@ export default function PainelGanhos() {
       let precoHoraPadrao = 50.0;
       const resProf = await fetch(`${API_URL}/api/usuarios/${usuarioId}`);
       if (resProf.ok) {
-        const dadosProf: UsuarioProfessor = await resProf.json();
+        const payloadProf: unknown = await resProf.json();
+        const dadosProf = extrairDadosObjeto<UsuarioProfessor>(payloadProf);
         if (dadosProf.aptidoes && dadosProf.aptidoes.length > 0) {
           precoHoraPadrao = dadosProf.aptidoes[0].precoHora;
         }
@@ -103,7 +104,8 @@ export default function PainelGanhos() {
         `${API_URL}/agendamentos/professor/${usuarioId}`,
       );
       if (resAgendamentos.ok) {
-        const agendamentos: Agendamento[] = await resAgendamentos.json();
+        const payloadAgendamentos: unknown = await resAgendamentos.json();
+        const agendamentos = extrairDadosLista<Agendamento>(payloadAgendamentos);
 
         let acumuladorTotal = 0;
         let acumuladorMes = 0;
