@@ -1,13 +1,15 @@
 /**
  * Cliente HTTP da API Orienta (v1) para React Native / Expo.
  * Rastreabilidade: Fase 4 - f4-t1, f4-t8, f4-t9
- * 
+ *
  * Centraliza requisições com baseURL '/api/v1', interceptors para injeção automática de Bearer Token,
  * e tratamento padronizado de respostas de erro (400, 401, 403, 409, 422).
  */
-import axios, { AxiosError } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios, { AxiosError } from "axios";
 import { Agendamento, AgendamentoRequest, ApiResponse, JustificativaRequest, RemarcarAgendamentoRequest } from "../types/agendamento";
+
+export type { ApiResponse };
 
 const RAW_API_URL = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080").replace(/\/+$/, "");
 // Garante URL raiz para chamadas que já utilizam '/api/...' ou '/agendamentos'
@@ -69,6 +71,206 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+
+// ============================================================================
+// HELPERS DEFENSIVOS DE TRATAMENTO DO ENVELOPE ApiResponse<T> (Prioridade 1 - Lote 1)
+// ============================================================================
+
+/**
+ * Type guard que valida estritamente se o payload recebido possui a estrutura do envelope ApiResponse<T>.
+ * Valida não-nulidade, presença de data e expressamente o tipo booleano de success.
+ * Rejeita valores textuais como "true", "false" ou "sim".
+ *
+ * Rastreabilidade: Prioridade 1 - Lote 1 (Refinamento de Robustez)
+ */
+export function isApiResponse<T = any>(payload: unknown): payload is ApiResponse<T> {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "success" in payload &&
+    typeof (payload as { success: unknown }).success === "boolean" &&
+    "data" in payload
+  );
+}
+
+/**
+ * Verifica se a resposta representa um erro explícito emitido pelo backend Orienta.
+ * Alinhado estritamente com ErrorResponseDTO.java e envelopes ApiResponse com falha.
+ *
+ * Regras contra falsos positivos:
+ * - Não classifica como erro apenas por possuir status numérico (ex: status: 200 ou status de entidade).
+ * - Não classifica como erro apenas por possuir error textual (ex: campo de formulário ou log).
+ * - Exige status HTTP de erro (status >= 400) em conjunto com chaves estruturais do ErrorResponseDTO (error, message, path ou fieldErrors).
+ * - Reconhece envelopes ApiResponse onde success === false.
+ *
+ * Rastreabilidade: Prioridade 1 - Lote 1 (Refinamento de Robustez)
+ */
+export function isApiError(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null) return false;
+  const p = payload as Record<string, unknown>;
+
+  // Formato 1: ErrorResponseDTO emitido pelo GlobalExceptionHandler
+  // Requer status numérico HTTP >= 400 conjugado com estrutura de erro do backend
+  if (
+    typeof p.status === "number" &&
+    p.status >= 400 &&
+    (typeof p.error === "string" || typeof p.message === "string" || "fieldErrors" in p || "path" in p)
+  ) {
+    return true;
+  }
+
+  // Formato 2: Envelope ApiResponse onde a operação falhou expressamente (success === false)
+  if (
+    "success" in p &&
+    p.success === false &&
+    ("message" in p || "error" in p || "data" in p)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Helper defensivo para extração tipada de coleções da API Orienta.
+ *
+ * Regras estritas de validação:
+ * - Resposta válida contendo lista (direta ou no campo data de ApiResponse): retorna T[].
+ * - Resposta válida sem dados (data null ou undefined com success: true): retorna [].
+ * - Resposta válida contendo objeto (não-lista): lança TypeError para não mascarar contrato de tela.
+ * - Resposta inválida ou com erro de comunicação (success: false, status de erro ou payload nulo): lança Error com a mensagem da API.
+ *
+ * Rastreabilidade: Prioridade 1 - Lote 1 (Refinamento de Robustez)
+ */
+export function extrairDadosLista<T>(resposta: unknown): T[] {
+  if (resposta === null || resposta === undefined) {
+    throw new Error("Resposta inválida da API: payload nulo ou indefinido.");
+  }
+
+  // Verifica se é erro explícito retornado pelo backend
+  if (isApiError(resposta)) {
+    const err = resposta as Record<string, any>;
+    const msg = err.message || err.error || "Erro de comunicação retornado pela API.";
+    throw new Error(`[Orienta API Error] ${msg}`);
+  }
+
+  // Se já for array direto
+  if (Array.isArray(resposta)) {
+    return resposta as T[];
+  }
+
+  // Se for envelope ApiResponse
+  if (isApiResponse<any>(resposta)) {
+    if (resposta.success === false) {
+      throw new Error(`[Orienta API Error] ${resposta.message || "Operação não teve sucesso no servidor."}`);
+    }
+
+    if (resposta.data === null || resposta.data === undefined) {
+      // Resposta válida sem dados (ex: lista vazia no servidor representada por null)
+      return [];
+    }
+
+    if (Array.isArray(resposta.data)) {
+      return resposta.data as T[];
+    }
+
+    // Se data for um objeto ou valor primitivo e não uma lista
+    throw new TypeError(
+      `Contrato inválido: esperava-se uma lista no campo data do ApiResponse, mas foi recebido ${typeof resposta.data}.`
+    );
+  }
+
+  // Se for um objeto direto mas não for lista
+  if (typeof resposta === "object") {
+    throw new TypeError(
+      "Contrato inválido: a resposta da API é um objeto e não uma lista de registros."
+    );
+  }
+
+  throw new Error(`Resposta da API em formato inesperado (${typeof resposta}).`);
+}
+
+/**
+ * Helper defensivo especializado para extração tipada de um único registro ou entidade.
+ *
+ * Regras estritas de validação:
+ * - Desempacota o campo data se estiver envelopado em ApiResponse<T>.
+ * - Rejeita listas quando se espera um único objeto, lançando TypeError.
+ * - Preserva tratamento de erros da API sem transformar respostas inválidas em objetos vazios.
+ * - Rejeita payloads nulos/indefinidos com erro explícito.
+ *
+ * Rastreabilidade: Prioridade 1 - Lote 1 (Refinamento de Robustez)
+ */
+export function extrairDadosObjeto<T>(resposta: unknown): T {
+  if (resposta === null || resposta === undefined) {
+    throw new Error("Resposta inválida da API: payload nulo ou indefinido.");
+  }
+
+  if (isApiError(resposta)) {
+    const err = resposta as Record<string, any>;
+    const msg = err.message || err.error || "Erro retornado pela API.";
+    throw new Error(`[Orienta API Error] ${msg}`);
+  }
+
+  // Rejeita array direto recebido quando se esperava um único objeto
+  if (Array.isArray(resposta)) {
+    throw new TypeError(
+      "Contrato inválido: esperava-se um único objeto/registro, mas foi recebida uma lista."
+    );
+  }
+
+  let payloadExtraido: unknown = resposta;
+
+  if (isApiResponse<T>(resposta)) {
+    if (resposta.success === false) {
+      throw new Error(`[Orienta API Error] ${resposta.message || "Operação não teve sucesso no servidor."}`);
+    }
+    payloadExtraido = resposta.data;
+  }
+
+  // Rejeita array dentro do campo data quando se esperava um único objeto
+  if (Array.isArray(payloadExtraido)) {
+    throw new TypeError(
+      "Contrato inválido: esperava-se um único objeto/registro no campo data do ApiResponse, mas foi recebida uma lista."
+    );
+  }
+
+  if (payloadExtraido === null || payloadExtraido === undefined) {
+    throw new Error("Resposta da API não contém dados do registro esperado (campo data vazio).");
+  }
+
+  return payloadExtraido as T;
+}
+
+/**
+ * Utilitário genérico para desempacotar o campo data de um envelope ApiResponse<T>,
+ * ou retornar o payload diretamente caso já esteja desempacotado.
+ * Ao contrário de extrairDadosObjeto, não rejeita arrays (retorna qualquer tipo T contido no envelope).
+ * Valida respostas de erro para não mascarar falhas da API.
+ *
+ * Rastreabilidade: Prioridade 1 - Lote 1 (Refinamento de Robustez)
+ */
+export function desempacotarResposta<T>(resposta: unknown): T {
+  if (resposta === null || resposta === undefined) {
+    throw new Error("Resposta inválida da API: payload nulo ou indefinido.");
+  }
+
+  if (isApiError(resposta)) {
+    const err = resposta as Record<string, any>;
+    const msg = err.message || err.error || "Erro retornado pela API.";
+    throw new Error(`[Orienta API Error] ${msg}`);
+  }
+
+  if (isApiResponse<T>(resposta)) {
+    if (resposta.success === false) {
+      throw new Error(`[Orienta API Error] ${resposta.message || "Operação não teve sucesso no servidor."}`);
+    }
+    return resposta.data;
+  }
+
+  return resposta as T;
+}
 
 // Módulos de serviço da API v1 padronizados
 export const agendamentoApi = {
