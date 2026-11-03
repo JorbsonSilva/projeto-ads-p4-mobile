@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
+import { Assets } from "../constants/assets";
 
 const { width: LARGURA_TELA, height: ALTURA_TELA } = Dimensions.get("window");
 
@@ -245,10 +246,12 @@ export default function VerificarEmailScreen() {
 
   return (
     <View style={estilos.containerGeral}>
-      {/* 1. Detalhes de curvas âmbar nos cantos (Identidade Visual Orienta) */}
-      <View style={estilos.curvaSuperiorEsquerda} />
-      <View style={estilos.curvaInferiorDireita} />
-      <View style={estilos.curvaInferiorEsquerda} />
+      {/* 1. Imagem de fundo oficial suave (Assets.backgrounds.verificacao - IMG-020) */}
+      <Image
+        source={Assets.backgrounds.verificacao}
+        style={estilos.fundoAbsoluto}
+        resizeMode="cover"
+      />
 
       <SafeAreaView style={estilos.safeArea} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
@@ -272,7 +275,7 @@ export default function VerificarEmailScreen() {
 
               <View style={estilos.areaLogo}>
                 <Image
-                  source={require("../assets/images/logo.png")}
+                  source={Assets.logo.transparent}
                   style={estilos.logoImg}
                   resizeMode="contain"
                 />
@@ -452,14 +455,12 @@ const estilos = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FDFBF9",
   },
-  curvaSuperiorEsquerda: {
+  fundoAbsoluto: {
     position: "absolute",
-    top: -60,
-    left: -70,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255, 122, 0, 0.18)",
+    top: 0,
+    left: 0,
+    width: LARGURA_TELA,
+    height: ALTURA_TELA,
   },
   curvaInferiorDireita: {
     position: "absolute",

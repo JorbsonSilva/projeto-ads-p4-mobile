@@ -16,26 +16,51 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
+import { Input, formatCPF } from "../components/ui";
+import { Assets } from "../constants/assets";
 
 export default function LoginScreen() {
   const { loginGlobal } = useAuth() as any;
   const [emailOrCpf, setEmailOrCpf] = useState("");
   const [senha, setSenha] = useState("");
-  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
+  const [erroConexao, setErroConexao] = useState<string | null>(null);
+  const [erroEmailOrCpf, setErroEmailOrCpf] = useState<string | undefined>(undefined);
+  const [erroSenha, setErroSenha] = useState<string | undefined>(undefined);
+
+  const isDemo =
+    typeof window !== "undefined" &&
+    (window.location.search.includes("demo=true") ||
+      window.location.search.includes("preview=true"));
 
   const executarLogin = async () => {
-    if (!emailOrCpf.trim() || !senha.trim()) {
-      Alert.alert("Campos obrigatórios", "Por favor, preencha o e-mail/CPF e a senha.");
+    setErroConexao(null);
+    let temErro = false;
+
+    if (!emailOrCpf.trim()) {
+      setErroEmailOrCpf("Informe seu e-mail ou CPF cadastrado.");
+      temErro = true;
+    } else {
+      setErroEmailOrCpf(undefined);
+    }
+
+    if (!senha.trim()) {
+      setErroSenha("A senha de acesso é obrigatória.");
+      temErro = true;
+    } else {
+      setErroSenha(undefined);
+    }
+
+    if (temErro) {
       return;
     }
+
 
     setCarregando(true);
     try {
@@ -62,16 +87,22 @@ export default function LoginScreen() {
         Alert.alert("Erro de autenticação", erro.message || "Credenciais inválidas.");
       }
     } catch {
-      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor Spring Boot.");
+      setErroConexao(
+        "Servidor Spring Boot indisponível (http://localhost:8080). Nenhuma conta real foi autenticada."
+      );
+      Alert.alert(
+        "API Indisponível",
+        "Não foi possível conectar ao servidor Spring Boot em http://localhost:8080. Para visualizar as telas sem backend, utilize o Modo de Visualização no Dashboard."
+      );
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    // 1. O plano de fundo cobre a tela INTEIRA do celular (Plano_fundo.jpeg)
+    // 1. O plano de fundo cobre a tela INTEIRA do celular (Assets.backgrounds.login - IMG-019)
     <ImageBackground
-      source={require("../assets/images/Plano_fundo.jpeg")}
+      source={Assets.backgrounds.login}
       style={estilos.fundoTotal}
       resizeMode="cover"
     >
@@ -90,7 +121,7 @@ export default function LoginScreen() {
           <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
             <View style={estilos.haloIluminacao}>
               <Image
-                source={require("../assets/images/logo.png")}
+                source={Assets.logo.transparent}
                 style={estilos.logoImg}
                 resizeMode="contain"
               />
@@ -103,38 +134,45 @@ export default function LoginScreen() {
             <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
             <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
 
-            {/* Input E-mail ou CPF com Ícone */}
-            <View style={estilos.inputBox}>
-              <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="E-mail ou CPF"
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="none"
-                value={emailOrCpf}
-                onChangeText={setEmailOrCpf}
-              />
-            </View>
+            {/* Input E-mail ou CPF com Ícone e Máscara Dinâmica */}
+            <Input
+              label="E-mail ou CPF"
+              placeholder="exemplo@email.com ou 000.000.000-00"
+              value={emailOrCpf}
+              onChangeText={(texto) => {
+                setErroEmailOrCpf(undefined);
+                const apenasDigitos = texto.replace(/\D/g, "");
+                if (apenasDigitos.length > 0 && !texto.includes("@") && !/[a-zA-Z]/.test(texto)) {
+                  setEmailOrCpf(formatCPF(texto));
+                } else {
+                  setEmailOrCpf(texto);
+                }
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              leftIcon={<Feather name="user" size={18} color="#64748B" />}
+              error={erroEmailOrCpf}
+              disabled={carregando}
+              accessibilityLabel="Campo de e-mail ou CPF"
+              testID="login-input-email-cpf"
+            />
 
-            {/* Input Senha com Alternador de Visibilidade */}
-            <View style={estilos.inputBox}>
-              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="Senha"
-                placeholderTextColor="#94A3B8"
-                secureTextEntry={!mostrarSenha}
-                value={senha}
-                onChangeText={setSenha}
-              />
-              <TouchableOpacity onPress={() => setMostrarSenha((v) => !v)} style={estilos.iconeOlho}>
-                <Ionicons
-                  name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-                  size={19}
-                  color="#94A3B8"
-                />
-              </TouchableOpacity>
-            </View>
+            {/* Input Senha com Alternador de Visibilidade e Ícone */}
+            <Input
+              label="Senha"
+              placeholder="Digite sua senha de acesso"
+              value={senha}
+              onChangeText={(texto) => {
+                setSenha(texto);
+                setErroSenha(undefined);
+              }}
+              isPassword
+              leftIcon={<Feather name="lock" size={18} color="#64748B" />}
+              error={erroSenha}
+              disabled={carregando}
+              accessibilityLabel="Campo de senha"
+              testID="login-input-senha"
+            />
 
             {/* Link Esqueceu sua senha? */}
             <TouchableOpacity
@@ -143,6 +181,57 @@ export default function LoginScreen() {
             >
               <Text style={estilos.txtEsqueceuSenha}>Esqueceu sua senha?</Text>
             </TouchableOpacity>
+
+            {/* Aviso visual de API Offline */}
+            {erroConexao && (
+              <View
+                style={{
+                  backgroundColor: "#FEF2F2",
+                  borderWidth: 1,
+                  borderColor: "#FCA5A5",
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#B91C1C",
+                    fontSize: 12,
+                    fontWeight: "600",
+                    textAlign: "center",
+                    lineHeight: 16,
+                  }}
+                >
+                  {erroConexao}
+                </Text>
+              </View>
+            )}
+
+            {/* Identificador de Modo Demonstração */}
+            {isDemo && (
+              <View
+                style={{
+                  backgroundColor: "#ECFDF5",
+                  borderWidth: 1,
+                  borderColor: "#A7F3D0",
+                  borderRadius: 10,
+                  padding: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#047857",
+                    fontSize: 11,
+                    fontWeight: "600",
+                    textAlign: "center",
+                  }}
+                >
+                  Modo de Demonstração Ativo (Visualização Sem API)
+                </Text>
+              </View>
+            )}
 
             {/* Botão Primário Laranja Degradê */}
             <TouchableOpacity
@@ -177,7 +266,7 @@ export default function LoginScreen() {
               style={estilos.btnGoogle}
             >
               <Image
-                source={require("../assets/images/google.png")}
+                source={Assets.icons.google}
                 style={estilos.googleIcon}
                 resizeMode="contain"
               />

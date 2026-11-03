@@ -19,6 +19,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
+import { Input } from "../components/ui";
+import { Assets } from "../constants/assets";
 
 const { width: LARGURA_TELA, height: ALTURA_TELA } = Dimensions.get("window");
 
@@ -187,9 +189,9 @@ export default function CadastroScreen() {
 
   return (
     <View style={estilos.containerGeral}>
-      {/* 1. Imagem de fundo travada nas dimensões físicas da tela (evita efeito zoom ao rolar o formulário) */}
+      {/* 1. Imagem de fundo oficial (Assets.backgrounds.cadastro - IMG-020) */}
       <Image
-        source={require("../assets/images/Plano_fundo_cadastro.jpeg")}
+        source={Assets.backgrounds.cadastro}
         style={estilos.fundoAbsoluto}
         resizeMode="cover"
       />
@@ -205,7 +207,7 @@ export default function CadastroScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Top Bar: Botão Voltar e Logo Centralizado */}
+          {/* Top Bar: Botão Voltar e Logo Centralizado (Assets.logo.transparent - IMG-004) */}
           <View style={estilos.cabecalhoTopo}>
             <TouchableOpacity
               onPress={() => router.back()}
@@ -217,7 +219,7 @@ export default function CadastroScreen() {
 
             <View style={estilos.areaLogo}>
               <Image
-                source={require("../assets/images/logo.png")}
+                source={Assets.logo.transparent}
                 style={estilos.logoImg}
                 resizeMode="contain"
               />
@@ -237,114 +239,80 @@ export default function CadastroScreen() {
           {/* Formulário com os 6 campos idênticos ao design */}
           <View style={estilos.formulario}>
             {/* 1. Nome completo */}
-            <View style={estilos.inputBox}>
-              <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="Nome completo"
-                placeholderTextColor="#94A3B8"
-                value={nome}
-                onChangeText={setNome}
-                autoCapitalize="words"
-              />
-            </View>
+            <Input
+              label="Nome completo"
+              placeholder="Digite seu nome completo"
+              value={nome}
+              onChangeText={setNome}
+              autoCapitalize="words"
+              leftIcon={<Feather name="user" size={18} color="#64748B" />}
+              disabled={carregando}
+              testID="cadastro-input-nome"
+            />
 
             {/* 2. E-mail */}
-            <View style={estilos.inputBox}>
-              <Feather name="mail" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="E-mail"
-                placeholderTextColor="#94A3B8"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
+            <Input
+              label="E-mail"
+              placeholder="exemplo@email.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              leftIcon={<Feather name="mail" size={18} color="#64748B" />}
+              disabled={carregando}
+              testID="cadastro-input-email"
+            />
 
-            {/* 3. CPF */}
-            <View style={estilos.inputBox}>
-              <Feather name="credit-card" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <View style={estilos.inputConteudoDuplo}>
-                <Text style={estilos.inputLabelMini}>CPF</Text>
-                <TextInput
-                  style={estilos.inputTextoMini}
-                  placeholder="000.000.000-00"
-                  placeholderTextColor="#94A3B8"
-                  value={cpf}
-                  onChangeText={handleMudarCpf}
-                  keyboardType="numeric"
-                  maxLength={14}
-                />
-              </View>
-            </View>
+            {/* 3. CPF com máscara formatada */}
+            <Input
+              label="CPF"
+              placeholder="000.000.000-00"
+              value={cpf}
+              onChangeText={setCpf}
+              mask="cpf"
+              maxLength={14}
+              leftIcon={<Feather name="credit-card" size={18} color="#64748B" />}
+              disabled={carregando}
+              testID="cadastro-input-cpf"
+            />
 
-            {/* 4. Data de nascimento */}
-            <View style={estilos.inputBox}>
-              <Feather name="calendar" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <View style={estilos.inputConteudoDuplo}>
-                <Text style={estilos.inputLabelMini}>Data de nascimento</Text>
-                <TextInput
-                  style={estilos.inputTextoMini}
-                  placeholder="DD/MM/AAAA"
-                  placeholderTextColor="#94A3B8"
-                  value={dataNascimento}
-                  onChangeText={handleMudarData}
-                  keyboardType="numeric"
-                  maxLength={10}
-                />
-              </View>
-              <Feather name="calendar" size={18} color="#94A3B8" style={estilos.inputIconeDireita} />
-            </View>
+            {/* 4. Data de nascimento com máscara formatada */}
+            <Input
+              label="Data de nascimento"
+              placeholder="DD/MM/AAAA"
+              value={dataNascimento}
+              onChangeText={setDataNascimento}
+              mask="date"
+              maxLength={10}
+              leftIcon={<Feather name="calendar" size={18} color="#64748B" />}
+              rightIcon={<Feather name="calendar" size={18} color="#94A3B8" />}
+              disabled={carregando}
+              testID="cadastro-input-nascimento"
+            />
 
-            {/* 5. Senha */}
-            <View style={estilos.inputBox}>
-              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="Senha"
-                placeholderTextColor="#94A3B8"
-                value={senha}
-                onChangeText={setSenha}
-                secureTextEntry={!mostrarSenha}
-              />
-              <TouchableOpacity
-                onPress={() => setMostrarSenha((v) => !v)}
-                style={estilos.iconeOlho}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons
-                  name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-                  size={19}
-                  color="#94A3B8"
-                />
-              </TouchableOpacity>
-            </View>
+            {/* 5. Senha com alternador de visibilidade */}
+            <Input
+              label="Senha"
+              placeholder="Mínimo 8 caracteres"
+              value={senha}
+              onChangeText={setSenha}
+              isPassword
+              leftIcon={<Feather name="lock" size={18} color="#64748B" />}
+              disabled={carregando}
+              testID="cadastro-input-senha"
+            />
 
-            {/* 6. Confirmar senha */}
-            <View style={estilos.inputBox}>
-              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="Confirmar senha"
-                placeholderTextColor="#94A3B8"
-                value={confirmarSenha}
-                onChangeText={setConfirmarSenha}
-                secureTextEntry={!mostrarConfirmarSenha}
-              />
-              <TouchableOpacity
-                onPress={() => setMostrarConfirmarSenha((v) => !v)}
-                style={estilos.iconeOlho}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons
-                  name={mostrarConfirmarSenha ? "eye-off-outline" : "eye-outline"}
-                  size={19}
-                  color="#94A3B8"
-                />
-              </TouchableOpacity>
-            </View>
+            {/* 6. Confirmar senha com alternador de visibilidade */}
+            <Input
+              label="Confirmar senha"
+              placeholder="Repita sua senha"
+              value={confirmarSenha}
+              onChangeText={setConfirmarSenha}
+              isPassword
+              leftIcon={<Feather name="lock" size={18} color="#64748B" />}
+              disabled={carregando}
+              testID="cadastro-input-confirmar-senha"
+            />
 
             {/* Banner de feedback inline (Erro ou Sucesso) */}
             {feedback && (
@@ -404,7 +372,7 @@ export default function CadastroScreen() {
               style={estilos.btnGoogle}
             >
               <Image
-                source={require("../assets/images/google.png")}
+                source={Assets.icons.google}
                 style={estilos.googleIcon}
                 resizeMode="contain"
               />
