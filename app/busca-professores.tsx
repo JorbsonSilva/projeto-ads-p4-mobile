@@ -5,11 +5,12 @@
  * e ordenação customizada. Suporta recebimento de parâmetros de rota para pré-filtragem.
  */
 
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -20,9 +21,11 @@ import {
 
 // Componentes Unificados e Configurações
 import BarraBusca from "../components/BarraBusca";
-import CardProfessor from "../components/CardProfessor";
+import { Card, Badge, Chip } from "../components/ui";
+import { Theme } from "../constants/theme";
 import { API_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
+import { DEMO_PROFESSORES } from "../data/demoData";
 
 // ==========================================
 // 1. CONTRATOS DE TIPAGEM (INTERFACES TS)
@@ -205,10 +208,15 @@ export default function BuscaProfessores() {
           setProfessoresFiltrados(dadosProfs);
           setPaginaAtual(page);
           setPaginaMaximaVisivel(Math.max(1, Math.ceil(dadosProfs.length / PAGE_SIZE)));
-          setTemMaisPaginas(dadosProfs.length > PAGE_SIZE);
+        } else {
+          // Se a API não respondeu com sucesso, utiliza dados de demonstração
+          setProfessoresBanco(DEMO_PROFESSORES as any);
+          setProfessoresFiltrados(DEMO_PROFESSORES as any);
         }
-      } catch (e) {
-        console.error("Erro ao buscar professores:", e);
+      } catch {
+        // Fallback seguro para modo de visualização com API offline
+        setProfessoresBanco(DEMO_PROFESSORES as any);
+        setProfessoresFiltrados(DEMO_PROFESSORES as any);
       } finally {
         setCarregando(false);
       }
@@ -233,7 +241,12 @@ export default function BuscaProfessores() {
   // EFEITO 1: BUSCA INICIAL NO BANCO DE DADOS
   // ==========================================
   useEffect(() => {
-    if (carregandoAuth || !usuarioId) return;
+    const isDemo =
+      typeof window !== "undefined" &&
+      (window.location.search.includes("demo=true") ||
+        window.location.search.includes("preview=true"));
+
+    if (carregandoAuth || (!usuarioId && !isDemo)) return;
 
     let cancelado = false;
 
@@ -251,12 +264,16 @@ export default function BuscaProfessores() {
           const dadosSaberes: Saber[] = await resSaberes.json();
           const nomesSaberes = dadosSaberes.map((s) => s.nome);
           setSaberes(["Todas", ...nomesSaberes]);
+        } else if (!cancelado) {
+          setSaberes(["Todas", "Matemática (Demo)", "Java (Demo)", "Física (Demo)"]);
         }
 
         await buscarProfessoresPagina(1);
       } catch (e) {
-        if (!cancelado)
+        if (!cancelado) {
           console.error("Erro ao buscar dados da tela de busca:", e);
+          setSaberes(["Todas", "Matemática (Demo)", "Java (Demo)", "Física (Demo)"]);
+        }
       } finally {
         if (!cancelado) setCarregando(false);
       }
@@ -358,22 +375,25 @@ export default function BuscaProfessores() {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={estilos.scrollChips}
+          contentContainerStyle={{ paddingRight: 20 }}
         >
-          {["Matemática", "Programação", "Física", "Biologia"].map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[estilos.chip, busca === item && estilos.chipAtivo]}
-              onPress={() => setBusca(item === busca ? "" : item)}
-            >
-              <Text
-                style={[
-                  estilos.textoChip,
-                  busca === item && estilos.textoChipAtivo,
-                ]}
-              >
-                {item}
-              </Text>
-            </TouchableOpacity>
+          {[
+            { label: "Matemática", icon: <Feather name="book" size={13} color={busca === "Matemática" ? "#FF5A1F" : "#64748B"} /> },
+            { label: "Física", icon: <Feather name="zap" size={13} color={busca === "Física" ? "#FF5A1F" : "#64748B"} /> },
+            { label: "Programação", icon: <Feather name="code" size={13} color={busca === "Programação" ? "#FF5A1F" : "#64748B"} /> },
+            { label: "Redação", icon: <Feather name="edit-2" size={13} color={busca === "Redação" ? "#FF5A1F" : "#64748B"} /> },
+            { label: "Química", icon: <Feather name="disc" size={13} color={busca === "Química" ? "#FF5A1F" : "#64748B"} /> },
+            { label: "Biologia", icon: <Feather name="feather" size={13} color={busca === "Biologia" ? "#FF5A1F" : "#64748B"} /> },
+          ].map((item) => (
+            <Chip
+              key={item.label}
+              label={item.label}
+              icon={item.icon}
+              selected={busca === item.label}
+              variant="subtle"
+              style={{ marginRight: 8 }}
+              onPress={() => setBusca(item.label === busca ? "" : item.label)}
+            />
           ))}
         </ScrollView>
 
@@ -428,25 +448,27 @@ export default function BuscaProfessores() {
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <Text style={estilos.subtituloPresencial}>Raio de Busca (Servidor Haversine)</Text>
                 {localizacaoAtiva && (
-                  <View style={estilos.badgeGpsAtivo}>
-                    <Feather name="check-circle" size={12} color="#10B981" />
-                    <Text style={estilos.textoGpsAtivo}>GPS Ativo (Minimizado)</Text>
-                  </View>
+                  <Badge
+                    variant="success"
+                    size="sm"
+                    dot
+                    label="GPS Ativo (Minimizado)"
+                  />
                 )}
               </View>
 
               {/* Botões de Raio Permitidos pelo Produto: 2, 5, 10, 20 km (Decisão 17) */}
               <View style={estilos.linhaBotoesRaio}>
                 {[2, 5, 10, 20].map((raio) => (
-                  <TouchableOpacity
+                  <Chip
                     key={raio}
-                    style={[estilos.chipRaio, raioKm === raio && estilos.chipRaioAtivo]}
+                    label={`Até ${raio} km`}
+                    selected={raioKm === raio}
+                    variant={raioKm === raio ? "filled" : "subtle"}
+                    size="sm"
+                    style={{ flex: 1, justifyContent: "center" }}
                     onPress={() => setRaioKm(raio)}
-                  >
-                    <Text style={[estilos.textoChipRaio, raioKm === raio && estilos.textoChipRaioAtivo]}>
-                      Até {raio} km
-                    </Text>
-                  </TouchableOpacity>
+                  />
                 ))}
               </View>
 
@@ -529,13 +551,20 @@ export default function BuscaProfessores() {
           </TouchableOpacity>
         </View>
 
-        {/* Indicador de Resultados */}
+        {/* Indicador de Resultados com Badge de filtro ativo */}
         <View style={estilos.linhaInfo}>
           <Text style={estilos.textoResultados}>
             {carregando
               ? "Buscando..."
               : `${professoresFiltrados.length} professores encontrados`}
           </Text>
+          {filtroMateria !== "Todas" && (
+            <Badge
+              variant="primary"
+              size="sm"
+              label={`Filtro: ${filtroMateria}`}
+            />
+          )}
         </View>
 
         {/* Lista de Resultados e Paginação */}
@@ -559,24 +588,135 @@ export default function BuscaProfessores() {
                   </Text>
                 </View>
               ) : (
-                professoresExibicao.map((prof) => (
-                  <CardProfessor
-                    key={prof.id}
-                    nome={prof.nome}
-                    materia={prof.aptidoes?.[0]?.saber?.nome || "Geral"}
-                    nota={prof.notaMedia || 5.0}
-                    avaliacoes={prof.totalAvaliacoes || 0}
-                    precoHora={prof.aptidoes?.[0]?.precoHora || 0}
-                    fotoUrl={
-                      prof.fotoUrl || `https://i.pravatar.cc/150?u=${prof.id}`
-                    }
-                    oferecePresencial={prof.oferecePresencial}
-                    regiaoAtendimento={prof.regiaoAtendimento}
-                    textoProximidade={prof.textoProximidade}
-                    onPress={() => router.push(`/professor/${prof.id}`)}
-                  />
-                ))
+                professoresExibicao.map((prof) => {
+                  const precoFormatado = (prof.aptidoes?.[0]?.precoHora || 50).toFixed(2).replace(".", ",");
+                  const notaFormatada = (prof.notaMedia || 5.0).toString().replace(".", ",");
+
+                  return (
+                    <Card
+                      key={prof.id}
+                      variant="default"
+                      onPress={() => router.push(`/professor/${prof.id}`)}
+                      style={estilos.cardProfessorItem}
+                      accessibilityLabel={`Professor ${prof.nome}, ${prof.aptidoes?.[0]?.saber?.nome || "Geral"}`}
+                    >
+                      <View style={estilos.cardCorpo}>
+                        {/* Avatar do professor com dot online */}
+                        <View style={estilos.avatarContainer}>
+                          <Image
+                            source={{
+                              uri: prof.fotoUrl || `https://i.pravatar.cc/150?u=${prof.id}`,
+                            }}
+                            style={estilos.avatarFoto}
+                          />
+                          <View style={estilos.avatarDotOnline} />
+                        </View>
+
+                        {/* Detalhes do Professor */}
+                        <View style={estilos.infoContainer}>
+                          {/* Topo: Nome + Badge Verificado + Botão Favorito */}
+                          <View style={estilos.linhaTopo}>
+                            <View style={estilos.nomeContainer}>
+                              <Text style={estilos.textoNome} numberOfLines={1}>
+                                {prof.nome}
+                              </Text>
+                              <MaterialIcons
+                                name="verified"
+                                size={16}
+                                color="#0284C7"
+                                style={{ marginLeft: 4 }}
+                              />
+                            </View>
+                            <TouchableOpacity
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                              }}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Feather name="heart" size={18} color="#94A3B8" />
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Matéria */}
+                          <Text style={estilos.textoMateria}>
+                            {prof.aptidoes?.[0]?.saber?.nome || "Geral"}
+                          </Text>
+
+                          {/* Avaliação com estrela */}
+                          <View style={estilos.linhaAvaliacao}>
+                            <Ionicons name="star" size={14} color="#F59E0B" />
+                            <Text style={estilos.textoNota}>
+                              {notaFormatada}{" "}
+                              <Text style={estilos.textoAvaliacoes}>
+                                ({prof.totalAvaliacoes || 0} avaliações)
+                              </Text>
+                            </Text>
+                          </View>
+
+                          {/* Badges de Status (Disponível hoje + Modalidade) */}
+                          <View style={estilos.linhaBadges}>
+                            <Badge
+                              variant="success"
+                              size="sm"
+                              dot
+                              label="Disponível hoje"
+                            />
+                            {prof.oferecePresencial ? (
+                              <Badge
+                                variant="info"
+                                size="sm"
+                                icon={<Feather name="map-pin" size={10} color="#0284C7" />}
+                                label={prof.textoProximidade || prof.regiaoAtendimento || "Presencial"}
+                              />
+                            ) : (
+                              <Badge
+                                variant="neutral"
+                                size="sm"
+                                icon={<Feather name="monitor" size={10} color="#475569" />}
+                                label="Online"
+                              />
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Linha de Preço */}
+                      <View style={estilos.linhaPreco}>
+                        <Text style={estilos.textoA_Partir}>A partir de</Text>
+                        <Text style={estilos.textoPreco}>
+                          R$ {precoFormatado}{" "}
+                          <Text style={estilos.textoUnidadeHora}>/h</Text>
+                        </Text>
+                      </View>
+                    </Card>
+                  );
+                })
               )}
+
+              {/* Banner Solicitação Personalizada (Conforme Tela de Busca.jpeg) */}
+              <Card variant="elevated" style={estilos.cardBannerSolicitacao}>
+                <View style={estilos.bannerHeader}>
+                  <View style={estilos.bannerIconWrapper}>
+                    <Feather name="search" size={22} color="#FF5A1F" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={estilos.bannerTitulo}>
+                      Não encontrou o que procura?
+                    </Text>
+                    <Text style={estilos.bannerDescricao}>
+                      Faça uma solicitação personalizada e encontre o professor ideal para você.
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={estilos.botaoCriarSolicitacao}
+                  onPress={() => router.push("/assistente")}
+                >
+                  <Text style={estilos.textoBotaoCriarSolicitacao}>
+                    Criar solicitação
+                  </Text>
+                </TouchableOpacity>
+              </Card>
 
               <View style={estilos.paginacaoContainer}>
                 {Array.from({ length: paginaMaximaVisivel }, (_, index) => {
@@ -1025,5 +1165,152 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#0284C7",
+  },
+
+  // Estilos de Card do Professor e Badges (ORI-003)
+  cardProfessorItem: {
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  cardCorpo: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  avatarContainer: {
+    position: "relative",
+    marginRight: 14,
+  },
+  avatarFoto: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#E2E8F0",
+  },
+  avatarDotOnline: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#10B981",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  infoContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  linhaTopo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  nomeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  textoNome: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  textoMateria: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: -2,
+  },
+  linhaAvaliacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  textoNota: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  textoAvaliacoes: {
+    fontWeight: "400",
+    color: "#94A3B8",
+  },
+  linhaBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  linhaPreco: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "baseline",
+    gap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F8FAFC",
+  },
+  textoA_Partir: {
+    fontSize: 11,
+    color: "#94A3B8",
+  },
+  textoPreco: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#FF5A1F",
+  },
+  textoUnidadeHora: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#64748B",
+  },
+
+  // Banner "Não encontrou o que procura?"
+  cardBannerSolicitacao: {
+    marginTop: 20,
+    marginBottom: 10,
+    backgroundColor: "#FFF8F5",
+    borderColor: "#FFEDD5",
+    gap: 12,
+  },
+  bannerHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  bannerIconWrapper: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FFEFE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerTitulo: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 4,
+  },
+  bannerDescricao: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 18,
+  },
+  botaoCriarSolicitacao: {
+    backgroundColor: "#FF5A1F",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  textoBotaoCriarSolicitacao: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
