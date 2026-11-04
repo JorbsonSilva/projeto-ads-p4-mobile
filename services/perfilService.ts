@@ -209,3 +209,230 @@ export async function salvarPerfilAluno(
     return true; // Sucesso na simulação local
   }
 }
+
+// ==============================================================================
+// 2. CONTRATOS E SERVIÇOS DO PERFIL DO PROFESSOR [ORI-018 / IMG-017]
+// ==============================================================================
+
+export interface AvaliacaoRecenteDocente {
+  id: number;
+  alunoNome: string;
+  alunoFoto: string;
+  materia: string;
+  nota: number;
+  comentario: string;
+  data: string;
+}
+
+export interface ResumoMesDocente {
+  aulasRealizadas: number;
+  alunosAtendidos: number;
+  horasMinistradas: number;
+  ganhosMes: number;
+}
+
+export interface ConfiguracoesEnsinoDocente {
+  precoHoraOnline: number;
+  precoHoraPresencial: number;
+  aceitaOnline: boolean;
+  aceitaPresencial: boolean;
+  chavePix: string;
+  tipoChavePix: "CPF" | "EMAIL" | "TELEFONE" | "ALEATORIA";
+  banco: string;
+}
+
+export interface PerfilProfessorData {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string;
+  cidade: string;
+  estado: string;
+  tipo: "PROFESSOR";
+  fotoUrl: string;
+  titulacao: string;
+  bio: string;
+  resumoMes: ResumoMesDocente;
+  configuracoesEnsino: ConfiguracoesEnsinoDocente;
+  materias: string[];
+  avaliacoesRecentes: AvaliacaoRecenteDocente[];
+}
+
+export interface ResultadoPerfilProfessor {
+  dados: PerfilProfessorData;
+  isSimulado: boolean;
+}
+
+export const MOCK_PERFIL_PROFESSOR_OFICIAL: PerfilProfessorData = {
+  id: 2,
+  nome: "Prof. Carlos Mendes",
+  email: "carlos.mendes@orienta.edu.br",
+  telefone: "(83) 99123-4567",
+  cidade: "Campina Grande",
+  estado: "PB",
+  tipo: "PROFESSOR",
+  fotoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+  titulacao: "Mestre em Ciência da Computação • UFCG",
+  bio: "Professor universitário e pesquisador com mais de 8 anos de experiência docente. Especialista em Matemática Discreta, Algoritmos Avançados e Engenharia de Software. Foco em metodologia ativa e resolução de problemas reais.",
+  resumoMes: {
+    aulasRealizadas: 24,
+    alunosAtendidos: 38,
+    horasMinistradas: 36,
+    ganhosMes: 2480.0,
+  },
+  configuracoesEnsino: {
+    precoHoraOnline: 60.0,
+    precoHoraPresencial: 80.0,
+    aceitaOnline: true,
+    aceitaPresencial: true,
+    chavePix: "carlos.mendes@orienta.edu.br",
+    tipoChavePix: "EMAIL",
+    banco: "Banco do Brasil - Ag 1234 CC 56789-0",
+  },
+  materias: [
+    "Matemática Discreta",
+    "Cálculo I e II",
+    "Álgebra Linear",
+    "Algoritmos e Estrutura de Dados",
+    "Banco de Dados SQL",
+  ],
+  avaliacoesRecentes: [
+    {
+      id: 201,
+      alunoNome: "Mariana Souza",
+      alunoFoto: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      materia: "Cálculo Diferencial",
+      nota: 5.0,
+      comentario: "Excelente didática! Consegui entender derivadas parciais em apenas duas aulas.",
+      data: "Hoje às 11:30",
+    },
+    {
+      id: 202,
+      alunoNome: "Rafael Lima",
+      alunoFoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      materia: "Álgebra Linear",
+      nota: 5.0,
+      comentario: "Muito atencioso e pontual. Material de apoio impecável.",
+      data: "Ontem às 17:00",
+    },
+    {
+      id: 203,
+      alunoNome: "Beatriz Costa",
+      alunoFoto: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80",
+      materia: "Estrutura de Dados",
+      nota: 4.9,
+      comentario: "Explicou árvores binárias de um jeito muito simples e prático. Recomendo demais!",
+      data: "3 dias atrás",
+    },
+  ],
+};
+
+let perfilProfessorEmMemoria: PerfilProfessorData = {
+  ...MOCK_PERFIL_PROFESSOR_OFICIAL,
+};
+
+/**
+ * Consulta o perfil do professor com resiliência contra indisponibilidade da API.
+ */
+export async function obterPerfilProfessor(
+  usuarioId: number = 2
+): Promise<ResultadoPerfilProfessor> {
+  const isDemo =
+    typeof window !== "undefined" &&
+    (window.location.search.includes("demo=true") ||
+      window.location.search.includes("preview=true") ||
+      window.location.protocol === "https:");
+
+  if (isDemo) {
+    return {
+      dados: { ...perfilProfessorEmMemoria },
+      isSimulado: true,
+    };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+
+    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/perfil`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const json = await res.json();
+      const u = json.dados || json.data || json;
+
+      if (u && (u.nome || u.email)) {
+        const dadosMapeados: PerfilProfessorData = {
+          ...perfilProfessorEmMemoria,
+          id: u.id || usuarioId,
+          nome: u.nome || perfilProfessorEmMemoria.nome,
+          email: u.email || perfilProfessorEmMemoria.email,
+          telefone: u.telefone || perfilProfessorEmMemoria.telefone,
+          cidade: u.cidade || "Campina Grande",
+          estado: u.estado || "PB",
+          fotoUrl: u.fotoUrl || perfilProfessorEmMemoria.fotoUrl,
+          bio: u.bioProfessor || u.bio || perfilProfessorEmMemoria.bio,
+        };
+
+        perfilProfessorEmMemoria = dadosMapeados;
+        return {
+          dados: dadosMapeados,
+          isSimulado: false,
+        };
+      }
+    }
+
+    return {
+      dados: { ...perfilProfessorEmMemoria },
+      isSimulado: true,
+    };
+  } catch {
+    return {
+      dados: { ...perfilProfessorEmMemoria },
+      isSimulado: true,
+    };
+  }
+}
+
+/**
+ * Salva atualizações do perfil do professor em memória e tenta sincronizar com o backend.
+ */
+export async function salvarPerfilProfessor(
+  usuarioId: number = 2,
+  novosDados: Partial<PerfilProfessorData>
+): Promise<boolean> {
+  perfilProfessorEmMemoria = {
+    ...perfilProfessorEmMemoria,
+    ...novosDados,
+    resumoMes: {
+      ...perfilProfessorEmMemoria.resumoMes,
+      ...(novosDados.resumoMes || {}),
+    },
+    configuracoesEnsino: {
+      ...perfilProfessorEmMemoria.configuracoesEnsino,
+      ...(novosDados.configuracoesEnsino || {}),
+    },
+  };
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+
+    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/professor`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: novosDados.nome || perfilProfessorEmMemoria.nome,
+        bio: novosDados.bio || perfilProfessorEmMemoria.bio,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return true; // Sucesso na simulação local
+  }
+}
+

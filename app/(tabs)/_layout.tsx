@@ -10,28 +10,8 @@ export default function TabsLayout() {
     <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: Colors.secondary,
-          tabBarInactiveTintColor: "#888888",
           tabBarStyle: {
-            backgroundColor: "#FFFFFF",
-            borderTopWidth: 0,
-            elevation: 10,
-            shadowColor: "#000",
-            shadowOpacity: 0.1,
-            shadowOffset: { width: 0, height: -3 },
-
-            // 🟢 A MÁGICA AQUI:
-            // Tamanho base (60) + o tamanho exato dos botões de navegação do Android (insets.bottom)
-            height: 60 + insets.bottom,
-
-            // 🟢 O respiro inferior ajustável:
-            // Se o celular tiver botões (insets.bottom > 0), o respiro é o tamanho dos botões.
-            // Se for um iPhone sem botões, o respiro é 10.
-            paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
-          },
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: "600",
+            display: "none",
           },
         }}
       >

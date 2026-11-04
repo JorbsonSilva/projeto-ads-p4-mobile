@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Importações de Componentes Globais e Contexto de Sessão
 import BotaoRapido from "../../components/BotaoRapido";
@@ -227,6 +228,7 @@ export default function Index() {
 // ==========================================
 
 function HomeAluno({ nome }: { nome: string }) {
+  const insets = useSafeAreaInsets();
   const { usuarioId } = useAuth() as any;
   const [professores, setProfessores] = useState<ProfessorDestaque[]>(
     PROFESSORES_DESTAQUE_IMG005
@@ -678,6 +680,64 @@ function HomeAluno({ nome }: { nome: string }) {
         onClose={() => setModalNotificacoes(false)}
         usuarioId={usuarioId || 1}
       />
+
+      {/* Barra de Navegação Inferior Dockada (5 Abas Oficiais do Aluno) */}
+      <View
+        style={[
+          estilos.tabBarContainer,
+          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
+        ]}
+      >
+        <TouchableOpacity
+          style={estilos.tabItem}
+          onPress={() => {}}
+          activeOpacity={0.8}
+          accessibilityLabel="Aba Home"
+        >
+          <FontAwesome5 name="home" size={20} color="#FF5A1F" />
+          <Text style={[estilos.tabLabel, { color: "#FF5A1F", fontWeight: "700" }]}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={estilos.tabItem}
+          onPress={() => router.push("/busca-professores" as any)}
+          activeOpacity={0.8}
+          accessibilityLabel="Aba Buscar"
+        >
+          <Feather name="search" size={20} color="#64748B" />
+          <Text style={estilos.tabLabel}>Buscar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={estilos.tabItem}
+          onPress={() => router.push("/chat" as any)}
+          activeOpacity={0.8}
+          accessibilityLabel="Aba Chat"
+        >
+          <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
+          <Text style={estilos.tabLabel}>Chat</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={estilos.tabItem}
+          onPress={() => router.push("/agenda" as any)}
+          activeOpacity={0.8}
+          accessibilityLabel="Aba Agenda"
+        >
+          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
+          <Text style={estilos.tabLabel}>Agenda</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={estilos.tabItem}
+          onPress={() => router.push("/perfil" as any)}
+          activeOpacity={0.8}
+          accessibilityLabel="Aba Perfil"
+        >
+          <FontAwesome5 name="user-alt" size={18} color="#64748B" />
+          <Text style={estilos.tabLabel}>Perfil</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -1648,5 +1708,30 @@ const estilos = StyleSheet.create({
     color: "#777",
     fontWeight: "600",
     fontSize: 14,
+  },
+  tabBarContainer: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingTop: 8,
+    paddingHorizontal: 8,
+    elevation: 12,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#64748B",
+    marginTop: 3,
   },
 });

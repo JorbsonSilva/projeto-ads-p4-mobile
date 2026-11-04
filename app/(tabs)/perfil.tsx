@@ -1,23 +1,16 @@
 /**
  * @file perfil.tsx
- * @description Redesign do Perfil do Aluno - Orienta 2.0 [ORI-017].
- * Implementado com estrita fidelidade visual à especificação oficial IMG-016 (Perfil Aluno.png).
- * 
- * Funcionalidades:
- * - Header com título centralizado "Meu Perfil" e botão de logout seguro
- * - Hero do estudante com avatar, botão de câmera flutuante, badge semântico azul "Aluno" e localização
- * - Card azul marinho de Progresso Geral (Matérias Cursando, Mentorias Realizadas, Horas Acumuladas)
- * - Seção "Sobre você" com biografia acadêmica e chips de interesses
- * - Menu de navegação da conta com chevrons (Informações Pessoais, Preferências, Notificações, Segurança)
- * - Feed de Atividade Recente com histórico de mentorias, status e avaliações
- * - Modal tátil e funcional de "Editar perfil" (Nome, Telefone, Cidade, Bio)
- * - Modal de confirmação de Logout e modal de Segurança (Troca de senha)
- * - Barra inferior de navegação dockada com 5 abas (Home, Buscar, Chat, Agenda, Perfil)
- * - Serviço híbrido resiliente com fallback offline e badge de modo de simulação
+ * @description Redesign Unificado do Perfil - Orienta 2.0 [ORI-017 / ORI-018].
+ * Implementação de alta fidelidade visual para as duas personas:
+ * - Perfil do Aluno (IMG-016 / ORI-017): Hero com avatar, badge "Aluno", card azul de progresso
+ *   (7 matérias, 12 mentorias, 45h), bio, menu da conta com chevrons, atividade recente e 5 abas Aluno.
+ * - Perfil do Professor (IMG-017 / ORI-018): Hero docente com avatar, badge "Professor", card bege/creme
+ *   de resumo do mês (24 aulas, 38 alunos, 36h, R$ 2.480,00), opções de ensino (bio, tarifas online/presencial,
+ *   chave PIX), feed de avaliações dos alunos e 5 abas Professor.
  */
 
 import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -38,42 +31,93 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import {
   MOCK_PERFIL_ALUNO_OFICIAL,
+  MOCK_PERFIL_PROFESSOR_OFICIAL,
   obterPerfilAluno,
+  obterPerfilProfessor,
   PerfilAlunoData,
+  PerfilProfessorData,
   ResultadoPerfilAluno,
+  ResultadoPerfilProfessor,
   salvarPerfilAluno,
+  salvarPerfilProfessor,
 } from "../../services/perfilService";
 
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
-  const { logoutGlobal, nomeUsuario } = useAuth() as any;
+  const params = useLocalSearchParams<{ persona?: string; papel?: string }>();
+  const { logoutGlobal } = useAuth() as any;
 
-  const [perfil, setPerfil] = useState<PerfilAlunoData>(MOCK_PERFIL_ALUNO_OFICIAL);
+  // Estado da persona ativa: "Aluno" ou "Professor"
+  const [personaAtiva, setPersonaAtiva] = useState<"Aluno" | "Professor">("Aluno");
+
+  // Estados dos dados de perfil
+  const [perfilAluno, setPerfilAluno] = useState<PerfilAlunoData>(MOCK_PERFIL_ALUNO_OFICIAL);
+  const [perfilProfessor, setPerfilProfessor] = useState<PerfilProfessorData>(MOCK_PERFIL_PROFESSOR_OFICIAL);
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
 
-  // Modais de Edição e Ação
-  const [modalEditarVisivel, setModalEditarVisivel] = useState<boolean>(false);
+  // Controle de visibilidade de saldo do resumo do professor
+  const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
+
+  // Modais de Ação
+  const [modalEditarAluno, setModalEditarAluno] = useState<boolean>(false);
+  const [modalEditarProf, setModalEditarProf] = useState<boolean>(false);
   const [modalLogoutVisivel, setModalLogoutVisivel] = useState<boolean>(false);
   const [modalSegurancaVisivel, setModalSegurancaVisivel] = useState<boolean>(false);
 
-  // Campos do formulário de edição
-  const [formNome, setFormNome] = useState<string>("");
-  const [formTelefone, setFormTelefone] = useState<string>("");
-  const [formCidade, setFormCidade] = useState<string>("");
-  const [formBio, setFormBio] = useState<string>("");
+  // Formulário Aluno
+  const [formAlunoNome, setFormAlunoNome] = useState<string>("");
+  const [formAlunoTelefone, setFormAlunoTelefone] = useState<string>("");
+  const [formAlunoCidade, setFormAlunoCidade] = useState<string>("");
+  const [formAlunoBio, setFormAlunoBio] = useState<string>("");
+
+  // Formulário Professor
+  const [formProfNome, setFormProfNome] = useState<string>("");
+  const [formProfTitulacao, setFormProfTitulacao] = useState<string>("");
+  const [formProfTelefone, setFormProfTelefone] = useState<string>("");
+  const [formProfCidade, setFormProfCidade] = useState<string>("");
+  const [formProfBio, setFormProfBio] = useState<string>("");
+  const [formProfPrecoOnline, setFormProfPrecoOnline] = useState<string>("");
+  const [formProfPrecoPresencial, setFormProfPrecoPresencial] = useState<string>("");
+  const [formProfPix, setFormProfPix] = useState<string>("");
+
   const [salvandoEdicao, setSalvandoEdicao] = useState<boolean>(false);
 
-  const carregarPerfil = useCallback(async () => {
+  // Sincronizar com parâmetro de rota se fornecido
+  useEffect(() => {
+    if (params.persona === "professor" || params.papel === "professor") {
+      setPersonaAtiva("Professor");
+    } else if (params.persona === "aluno" || params.papel === "aluno") {
+      setPersonaAtiva("Aluno");
+    }
+  }, [params.persona, params.papel]);
+
+  // Carregar dados de ambos os perfis
+  const carregarDados = useCallback(async () => {
     try {
-      const res: ResultadoPerfilAluno = await obterPerfilAluno(1);
-      setPerfil(res.dados);
-      setIsSimulado(res.isSimulado);
-      setFormNome(res.dados.nome);
-      setFormTelefone(res.dados.telefone);
-      setFormCidade(res.dados.cidade);
-      setFormBio(res.dados.bio);
+      const [resAluno, resProf]: [ResultadoPerfilAluno, ResultadoPerfilProfessor] =
+        await Promise.all([obterPerfilAluno(1), obterPerfilProfessor(2)]);
+
+      setPerfilAluno(resAluno.dados);
+      setPerfilProfessor(resProf.dados);
+      setIsSimulado(resAluno.isSimulado || resProf.isSimulado);
+
+      // Preencher formulário aluno
+      setFormAlunoNome(resAluno.dados.nome);
+      setFormAlunoTelefone(resAluno.dados.telefone);
+      setFormAlunoCidade(resAluno.dados.cidade);
+      setFormAlunoBio(resAluno.dados.bio);
+
+      // Preencher formulário professor
+      setFormProfNome(resProf.dados.nome);
+      setFormProfTitulacao(resProf.dados.titulacao);
+      setFormProfTelefone(resProf.dados.telefone);
+      setFormProfCidade(resProf.dados.cidade);
+      setFormProfBio(resProf.dados.bio);
+      setFormProfPrecoOnline(String(resProf.dados.configuracoesEnsino.precoHoraOnline));
+      setFormProfPrecoPresencial(String(resProf.dados.configuracoesEnsino.precoHoraPresencial));
+      setFormProfPix(resProf.dados.configuracoesEnsino.chavePix);
     } catch {
       setIsSimulado(true);
     } finally {
@@ -83,32 +127,72 @@ export default function PerfilScreen() {
   }, []);
 
   useEffect(() => {
-    carregarPerfil();
-  }, [carregarPerfil]);
+    carregarDados();
+  }, [carregarDados]);
 
   const onRefresh = () => {
     setAtualizando(true);
-    carregarPerfil();
+    carregarDados();
   };
 
-  const handleSalvarEdicao = async () => {
+  const handleSalvarAluno = async () => {
     setSalvandoEdicao(true);
     try {
-      await salvarPerfilAluno(perfil.id, {
-        nome: formNome,
-        telefone: formTelefone,
-        cidade: formCidade,
-        bio: formBio,
+      await salvarPerfilAluno(perfilAluno.id, {
+        nome: formAlunoNome,
+        telefone: formAlunoTelefone,
+        cidade: formAlunoCidade,
+        bio: formAlunoBio,
       });
 
-      setPerfil((prev) => ({
+      setPerfilAluno((prev) => ({
         ...prev,
-        nome: formNome,
-        telefone: formTelefone,
-        cidade: formCidade,
-        bio: formBio,
+        nome: formAlunoNome,
+        telefone: formAlunoTelefone,
+        cidade: formAlunoCidade,
+        bio: formAlunoBio,
       }));
-      setModalEditarVisivel(false);
+      setModalEditarAluno(false);
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
+  const handleSalvarProfessor = async () => {
+    setSalvandoEdicao(true);
+    try {
+      const precoOnlineNum = parseFloat(formProfPrecoOnline) || 60;
+      const precoPresencialNum = parseFloat(formProfPrecoPresencial) || 80;
+
+      await salvarPerfilProfessor(perfilProfessor.id, {
+        nome: formProfNome,
+        titulacao: formProfTitulacao,
+        telefone: formProfTelefone,
+        cidade: formProfCidade,
+        bio: formProfBio,
+        configuracoesEnsino: {
+          ...perfilProfessor.configuracoesEnsino,
+          precoHoraOnline: precoOnlineNum,
+          precoHoraPresencial: precoPresencialNum,
+          chavePix: formProfPix,
+        },
+      });
+
+      setPerfilProfessor((prev) => ({
+        ...prev,
+        nome: formProfNome,
+        titulacao: formProfTitulacao,
+        telefone: formProfTelefone,
+        cidade: formProfCidade,
+        bio: formProfBio,
+        configuracoesEnsino: {
+          ...prev.configuracoesEnsino,
+          precoHoraOnline: precoOnlineNum,
+          precoHoraPresencial: precoPresencialNum,
+          chavePix: formProfPix,
+        },
+      }));
+      setModalEditarProf(false);
     } finally {
       setSalvandoEdicao(false);
     }
@@ -126,17 +210,15 @@ export default function PerfilScreen() {
     return (
       <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#FF5A1F" />
-        <Text style={estilos.loadingTexto}>Carregando perfil...</Text>
+        <Text style={estilos.loadingText}>Carregando perfil...</Text>
       </View>
     );
   }
 
-  const { progresso, atividadesRecentes, interesses } = perfil;
-
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
       {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE SIMULAÇÃO OFFLINE                        */}
+      {/* 0. BANNER DISCRETO DE MODO SIMULAÇÃO (OFFLINE)                 */}
       {/* ============================================================== */}
       {isSimulado && (
         <View style={estilos.bannerSimulacao}>
@@ -153,14 +235,21 @@ export default function PerfilScreen() {
       <View style={estilos.header}>
         <TouchableOpacity
           style={estilos.botaoHeaderCircular}
-          onPress={() => router.push("/(tabs)" as any)}
+          onPress={() =>
+            router.push(personaAtiva === "Professor" ? ("/home-professor" as any) : ("/(tabs)" as any))
+          }
           activeOpacity={0.7}
           accessibilityLabel="Voltar para a Home"
         >
           <Feather name="arrow-left" size={20} color="#0F172A" />
         </TouchableOpacity>
 
-        <Text style={estilos.headerTitulo}>Meu Perfil</Text>
+        <View style={estilos.headerTituloContainer}>
+          <Text style={estilos.headerTitulo}>Meu Perfil</Text>
+          <Text style={estilos.headerSubtitulo}>
+            {personaAtiva === "Professor" ? "Visão Docente" : "Visão do Estudante"}
+          </Text>
+        </View>
 
         <TouchableOpacity
           style={estilos.botaoLogout}
@@ -172,6 +261,50 @@ export default function PerfilScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ============================================================== */}
+      {/* 2. ALTERNADOR DE PERSONAS (ALUNO / PROFESSOR)                  */}
+      {/* ============================================================== */}
+      <View style={estilos.alternadorContainer}>
+        <TouchableOpacity
+          style={[
+            estilos.botaoAlternador,
+            personaAtiva === "Aluno" && estilos.botaoAlternadorAtivoAluno,
+          ]}
+          onPress={() => setPersonaAtiva("Aluno")}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              estilos.textoAlternador,
+              personaAtiva === "Aluno" && estilos.textoAlternadorAtivo,
+            ]}
+          >
+            🎓 Aluno (IMG-016)
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            estilos.botaoAlternador,
+            personaAtiva === "Professor" && estilos.botaoAlternadorAtivoProf,
+          ]}
+          onPress={() => setPersonaAtiva("Professor")}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              estilos.textoAlternador,
+              personaAtiva === "Professor" && estilos.textoAlternadorAtivo,
+            ]}
+          >
+            👨‍🏫 Professor (IMG-017)
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ============================================================== */}
+      {/* CONTEÚDO SCROLLÁVEL                                            */}
+      {/* ============================================================== */}
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
@@ -186,412 +319,700 @@ export default function PerfilScreen() {
         }
       >
         {/* ============================================================== */}
-        {/* 2. HERO DO ESTUDANTE COM AVATAR E LOCALIZAÇÃO (IMG-016)        */}
+        {/* SEÇÃO 3A: VISÃO DO ALUNO [ORI-017 / IMG-016]                  */}
         {/* ============================================================== */}
-        <View style={estilos.heroContainer}>
-          <View style={estilos.avatarContainer}>
-            <Image
-              source={{ uri: perfil.fotoUrl }}
-              style={estilos.avatarImagem}
-              accessibilityLabel="Foto de Perfil do Aluno"
-            />
-            {/* Botão Câmera Flutuante */}
-            <TouchableOpacity
-              style={estilos.botaoCameraFlutuante}
-              activeOpacity={0.85}
-              onPress={() => setModalEditarVisivel(true)}
-              accessibilityLabel="Alterar foto de perfil"
-            >
-              <Ionicons name="camera" size={14} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
+        {personaAtiva === "Aluno" && (
+          <>
+            {/* HERO DO ALUNO */}
+            <View style={estilos.heroContainer}>
+              <View style={estilos.avatarContainer}>
+                <Image
+                  source={{ uri: perfilAluno.fotoUrl }}
+                  style={estilos.avatarImagem}
+                  accessibilityLabel="Foto de Perfil do Aluno"
+                />
+                <TouchableOpacity
+                  style={estilos.botaoCameraFlutuante}
+                  activeOpacity={0.85}
+                  onPress={() => setModalEditarAluno(true)}
+                  accessibilityLabel="Alterar foto de perfil"
+                >
+                  <Ionicons name="camera" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
 
-          <View style={estilos.heroInfo}>
-            <View style={estilos.linhaNomeBadge}>
-              <Text style={estilos.nomeEstudante}>{perfil.nome}</Text>
-              <View style={estilos.badgeAluno}>
-                <Text style={estilos.textoBadgeAluno}>Aluno</Text>
+              <View style={estilos.heroInfo}>
+                <View style={estilos.linhaNomeBadge}>
+                  <Text style={estilos.nomeEstudante}>{perfilAluno.nome}</Text>
+                  <View style={estilos.badgeAluno}>
+                    <Text style={estilos.textoBadgeAluno}>Aluno</Text>
+                  </View>
+                </View>
+
+                <Text style={estilos.emailEstudante}>{perfilAluno.email}</Text>
+
+                <View style={estilos.linhaLocalizacao}>
+                  <Ionicons name="location-sharp" size={13} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={estilos.textoLocalizacao}>
+                    {perfilAluno.cidade}, {perfilAluno.estado}
+                  </Text>
+                  <Text style={estilos.pontoSeparador}>•</Text>
+                  <Ionicons name="call-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={estilos.textoLocalizacao}>{perfilAluno.telefone}</Text>
+                </View>
               </View>
             </View>
 
-            <Text style={estilos.emailEstudante}>{perfil.email}</Text>
-
-            <View style={estilos.linhaLocalizacao}>
-              <Ionicons name="location-sharp" size={13} color="#64748B" style={{ marginRight: 4 }} />
-              <Text style={estilos.textoLocalizacao}>
-                {perfil.cidade}, {perfil.estado}
-              </Text>
-              <Text style={estilos.pontoDivisor}>•</Text>
-              <Feather name="phone" size={12} color="#64748B" style={{ marginRight: 4 }} />
-              <Text style={estilos.textoLocalizacao}>{perfil.telefone}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 3. CARD AZUL DE PROGRESSO GERAL - 3 MÉTRICAS (IMG-016)         */}
-        {/* ============================================================== */}
-        <View style={estilos.cardProgressoGeral}>
-          <View style={estilos.cabecalhoProgresso}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="trending-up" size={16} color="#38BDF8" style={{ marginRight: 6 }} />
-              <Text style={estilos.tituloProgresso}>Progresso acadêmico</Text>
-            </View>
-            <View style={estilos.tagSemestre}>
-              <Text style={estilos.textoTagSemestre}>2026.2</Text>
-            </View>
-          </View>
-
-          <View style={estilos.gridMetricas3x1}>
-            {/* 1. Matérias cursando */}
-            <View style={estilos.colunaMetrica}>
-              <View style={[estilos.iconeMetricaWrap, { backgroundColor: "rgba(56, 189, 248, 0.15)" }]}>
-                <Feather name="book-open" size={16} color="#38BDF8" />
+            {/* CARD AZUL MARINHO DE PROGRESSO GERAL (IMG-016) */}
+            <View style={estilos.cardProgressoGeral}>
+              <View style={estilos.cardProgressoHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View style={estilos.iconeProgressoWrap}>
+                    <FontAwesome5 name="chart-pie" size={13} color="#FF5A1F" />
+                  </View>
+                  <Text style={estilos.cardProgressoTitulo}>Progresso Geral</Text>
+                </View>
+                <Text style={estilos.cardProgressoSubtitulo}>Neste Semestre</Text>
               </View>
-              <Text style={estilos.valorMetrica}>{progresso.materiasCursando}</Text>
-              <Text style={estilos.labelMetrica}>Matérias cursando</Text>
-            </View>
 
-            <View style={estilos.divisorVerticalMetrica} />
+              <View style={estilos.divisorCardProgresso} />
 
-            {/* 2. Mentorias realizadas */}
-            <View style={estilos.colunaMetrica}>
-              <View style={[estilos.iconeMetricaWrap, { backgroundColor: "rgba(52, 211, 153, 0.15)" }]}>
-                <Feather name="check-circle" size={16} color="#34D399" />
+              <View style={estilos.gridMetricasProgresso}>
+                <View style={estilos.colunaMetrica}>
+                  <Text style={estilos.valorMetrica}>{perfilAluno.progresso.materiasCursando}</Text>
+                  <Text style={estilos.labelMetrica}>Matérias</Text>
+                </View>
+
+                <View style={estilos.divisorVerticalMetrica} />
+
+                <View style={estilos.colunaMetrica}>
+                  <Text style={estilos.valorMetrica}>{perfilAluno.progresso.mentoriasRealizadas}</Text>
+                  <Text style={estilos.labelMetrica}>Mentorias</Text>
+                </View>
+
+                <View style={estilos.divisorVerticalMetrica} />
+
+                <View style={estilos.colunaMetrica}>
+                  <Text style={estilos.valorMetrica}>{perfilAluno.progresso.horasAcumuladas}h</Text>
+                  <Text style={estilos.labelMetrica}>Horas</Text>
+                </View>
               </View>
-              <Text style={estilos.valorMetrica}>{progresso.mentoriasRealizadas}</Text>
-              <Text style={estilos.labelMetrica}>Aulas realizadas</Text>
             </View>
 
-            <View style={estilos.divisorVerticalMetrica} />
-
-            {/* 3. Horas acumuladas */}
-            <View style={estilos.colunaMetrica}>
-              <View style={[estilos.iconeMetricaWrap, { backgroundColor: "rgba(251, 146, 60, 0.15)" }]}>
-                <Feather name="clock" size={16} color="#FB923C" />
+            {/* SEÇÃO SOBRE VOCÊ */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Sobre você</Text>
+              <View style={estilos.cardSobre}>
+                <Text style={estilos.textoBio}>{perfilAluno.bio}</Text>
+                <View style={estilos.divisorSuave} />
+                <Text style={estilos.subtituloInteresses}>Disciplinas de interesse:</Text>
+                <View style={estilos.chipsContainer}>
+                  {perfilAluno.interesses.map((item, idx) => (
+                    <View key={idx} style={estilos.chipInteresse}>
+                      <Text style={estilos.textoChipInteresse}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-              <Text style={estilos.valorMetrica}>{progresso.horasAcumuladas}h</Text>
-              <Text style={estilos.labelMetrica}>Horas de estudo</Text>
             </View>
-          </View>
-        </View>
 
-        {/* ============================================================== */}
-        {/* 4. SEÇÃO "SOBRE VOCÊ" / BIO ACADÊMICA (IMG-016)                */}
-        {/* ============================================================== */}
-        <View style={estilos.cardSecaoBranco}>
-          <View style={estilos.secaoTituloLinha}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Feather name="user" size={16} color="#0F172A" style={{ marginRight: 6 }} />
-              <Text style={estilos.secaoTituloTexto}>Sobre você</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setModalEditarVisivel(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={estilos.linkEditar}>Editar</Text>
-            </TouchableOpacity>
-          </View>
+            {/* MENU DA CONTA COM CHEVRONS */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Configurações da conta</Text>
+              <View style={estilos.menuContaContainer}>
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalEditarAluno(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FFF0E7" }]}>
+                    <Feather name="user" size={17} color="#FF5A1F" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Informações pessoais</Text>
+                    <Text style={estilos.subtituloMenuItem}>Nome, contato e localização</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
 
-          <Text style={estilos.textoBio}>{perfil.bio}</Text>
+                <View style={estilos.divisorMenu} />
 
-          <Text style={estilos.subtituloInteresses}>Interesses e disciplinas:</Text>
-          <View style={estilos.containerChipsInteresse}>
-            {interesses.map((item, idx) => (
-              <View key={`interesse-${idx}`} style={estilos.chipInteresseItem}>
-                <Text style={estilos.textoChipInteresse}>{item}</Text>
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => router.push("/explorar-disciplinas" as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#EFF6FF" }]}>
+                    <Feather name="book-open" size={17} color="#3B82F6" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Preferências de estudo</Text>
+                    <Text style={estilos.subtituloMenuItem}>Modalidade e disciplinas ativas</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => router.push("/notificacoes" as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FAF5FF" }]}>
+                    <Feather name="bell" size={17} color="#8B5CF6" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Central de Notificações</Text>
+                    <Text style={estilos.subtituloMenuItem}>Alertas de aula e avisos</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalSegurancaVisivel(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#F0FDF4" }]}>
+                    <Feather name="shield" size={17} color="#10B981" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Segurança e privacidade</Text>
+                    <Text style={estilos.subtituloMenuItem}>Troca de senha e proteção</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
               </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 5. MENU DE NAVEGAÇÃO DA CONTA COM CHEVRONS (IMG-016)           */}
-        {/* ============================================================== */}
-        <View style={estilos.cardSecaoBranco}>
-          <Text style={[estilos.secaoTituloTexto, { marginBottom: 12 }]}>Configurações da conta</Text>
-
-          {/* Item 1: Informações pessoais */}
-          <TouchableOpacity
-            style={estilos.itemMenuLinha}
-            onPress={() => setModalEditarVisivel(true)}
-            activeOpacity={0.7}
-          >
-            <View style={[estilos.iconeMenuWrap, { backgroundColor: "#EFF6FF" }]}>
-              <Feather name="user" size={18} color="#2563EB" />
             </View>
-            <View style={estilos.infoMenuColuna}>
-              <Text style={estilos.tituloMenuItem}>Informações pessoais</Text>
-              <Text style={estilos.descricaoMenuItem}>Nome, e-mail, telefone e endereço</Text>
-            </View>
-            <Feather name="chevron-right" size={18} color="#94A3B8" />
-          </TouchableOpacity>
 
-          <View style={estilos.divisorHorizontalMenu} />
+            {/* ATIVIDADE RECENTE */}
+            <View style={estilos.secaoContainer}>
+              <View style={estilos.secaoHeaderLinha}>
+                <Text style={estilos.secaoTitulo}>Atividade recente</Text>
+                <TouchableOpacity onPress={() => router.push("/agenda" as any)}>
+                  <Text style={estilos.linkVerTodas}>Ver agenda &gt;</Text>
+                </TouchableOpacity>
+              </View>
 
-          {/* Item 2: Preferências de estudo */}
-          <TouchableOpacity
-            style={estilos.itemMenuLinha}
-            onPress={() => router.push("/explorar-disciplinas" as any)}
-            activeOpacity={0.7}
-          >
-            <View style={[estilos.iconeMenuWrap, { backgroundColor: "#ECFDF5" }]}>
-              <Feather name="book-open" size={18} color="#059669" />
-            </View>
-            <View style={estilos.infoMenuColuna}>
-              <Text style={estilos.tituloMenuItem}>Preferências de estudo</Text>
-              <Text style={estilos.descricaoMenuItem}>Disciplinas de interesse e modalidades</Text>
-            </View>
-            <Feather name="chevron-right" size={18} color="#94A3B8" />
-          </TouchableOpacity>
-
-          <View style={estilos.divisorHorizontalMenu} />
-
-          {/* Item 3: Notificações */}
-          <TouchableOpacity
-            style={estilos.itemMenuLinha}
-            onPress={() => router.push("/notificacoes" as any)}
-            activeOpacity={0.7}
-          >
-            <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FFF7ED" }]}>
-              <Feather name="bell" size={18} color="#EA580C" />
-            </View>
-            <View style={estilos.infoMenuColuna}>
-              <Text style={estilos.tituloMenuItem}>Notificações</Text>
-              <Text style={estilos.descricaoMenuItem}>Central de avisos e alertas da conta</Text>
-            </View>
-            <Feather name="chevron-right" size={18} color="#94A3B8" />
-          </TouchableOpacity>
-
-          <View style={estilos.divisorHorizontalMenu} />
-
-          {/* Item 4: Segurança e privacidade */}
-          <TouchableOpacity
-            style={estilos.itemMenuLinha}
-            onPress={() => setModalSegurancaVisivel(true)}
-            activeOpacity={0.7}
-          >
-            <View style={[estilos.iconeMenuWrap, { backgroundColor: "#F5F3FF" }]}>
-              <Feather name="shield" size={18} color="#7C3AED" />
-            </View>
-            <View style={estilos.infoMenuColuna}>
-              <Text style={estilos.tituloMenuItem}>Segurança e privacidade</Text>
-              <Text style={estilos.descricaoMenuItem}>Alteração de senha e autenticação</Text>
-            </View>
-            <Feather name="chevron-right" size={18} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 6. FEED DE ATIVIDADE RECENTE (IMG-016)                         */}
-        {/* ============================================================== */}
-        <View style={estilos.cardSecaoBranco}>
-          <View style={estilos.secaoTituloLinha}>
-            <Text style={estilos.secaoTituloTexto}>Atividade recente</Text>
-            <TouchableOpacity
-              onPress={() => router.push("/agenda" as any)}
-              activeOpacity={0.7}
-            >
-              <Text style={estilos.linkVerTodas}>Ver agenda →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={estilos.listaAtividades}>
-            {atividadesRecentes.map((item) => (
-              <TouchableOpacity
-                key={`atv-${item.id}`}
-                style={estilos.itemAtividadeCard}
-                onPress={() => router.push("/chat" as any)}
-                activeOpacity={0.8}
-              >
-                <Image source={{ uri: item.professorFoto }} style={estilos.avatarAtividade} />
-                <View style={estilos.infoAtividadeColuna}>
-                  <View style={estilos.linhaNomeStatusAtividade}>
-                    <Text style={estilos.materiaAtividade} numberOfLines={1}>
-                      {item.materia}
-                    </Text>
+              <View style={estilos.listaAtividades}>
+                {perfilAluno.atividadesRecentes.map((item) => (
+                  <View key={item.id} style={estilos.cardAtividade}>
+                    <Image source={{ uri: item.professorFoto }} style={estilos.avatarAtividade} />
+                    <View style={estilos.infoAtividade}>
+                      <Text style={estilos.materiaAtividade}>{item.materia}</Text>
+                      <Text style={estilos.professorAtividade}>{item.professorNome}</Text>
+                      <Text style={estilos.dataAtividade}>{item.data}</Text>
+                    </View>
                     <View
                       style={[
                         estilos.badgeStatusAtividade,
-                        item.status === "CONCLUIDA"
-                          ? estilos.badgeConcluida
-                          : estilos.badgeConfirmada,
+                        item.status === "CONFIRMADA"
+                          ? estilos.badgeConfirmada
+                          : estilos.badgeConcluida,
                       ]}
                     >
                       <Text
                         style={[
-                          estilos.textoStatusAtividade,
-                          item.status === "CONCLUIDA"
-                            ? estilos.textoConcluida
-                            : estilos.textoConfirmada,
+                          estilos.textoBadgeStatus,
+                          item.status === "CONFIRMADA"
+                            ? estilos.textoStatusConfirmada
+                            : estilos.textoStatusConcluida,
                         ]}
                       >
-                        {item.status === "CONCLUIDA" ? "Concluída" : "Confirmada"}
+                        {item.status === "CONFIRMADA" ? "Confirmada" : "Concluída"}
                       </Text>
                     </View>
                   </View>
+                ))}
+              </View>
+            </View>
 
-                  <Text style={estilos.docenteAtividade}>{item.professorNome}</Text>
+            {/* BOTÃO PRIMÁRIO ALUNO */}
+            <TouchableOpacity
+              style={estilos.botaoEditarPerfilLaranja}
+              onPress={() => setModalEditarAluno(true)}
+              activeOpacity={0.85}
+            >
+              <Feather name="edit-3" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={estilos.textoBotaoEditarPerfil}>Editar perfil do aluno</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-                  <View style={estilos.linhaMetaAtividade}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Feather name="clock" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
-                      <Text style={estilos.dataAtividade}>{item.data}</Text>
-                    </View>
-                    {item.nota && (
-                      <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Text style={estilos.estrelaNota}>★</Text>
-                        <Text style={estilos.valorNota}>{item.nota.toFixed(1)}</Text>
-                      </View>
-                    )}
+        {/* ============================================================== */}
+        {/* SEÇÃO 3B: VISÃO DO PROFESSOR [ORI-018 / IMG-017]               */}
+        {/* ============================================================== */}
+        {personaAtiva === "Professor" && (
+          <>
+            {/* HERO DO PROFESSOR */}
+            <View style={estilos.heroContainer}>
+              <View style={estilos.avatarContainer}>
+                <Image
+                  source={{ uri: perfilProfessor.fotoUrl }}
+                  style={[estilos.avatarImagem, { borderColor: "#10B981" }]}
+                  accessibilityLabel="Foto de Perfil do Professor"
+                />
+                <TouchableOpacity
+                  style={[estilos.botaoCameraFlutuante, { backgroundColor: "#10B981" }]}
+                  activeOpacity={0.85}
+                  onPress={() => setModalEditarProf(true)}
+                  accessibilityLabel="Alterar foto docente"
+                >
+                  <Ionicons name="camera" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={estilos.heroInfo}>
+                <View style={estilos.linhaNomeBadge}>
+                  <Text style={estilos.nomeEstudante}>{perfilProfessor.nome}</Text>
+                  <View style={estilos.badgeProfessor}>
+                    <FontAwesome5 name="chalkboard-teacher" size={10} color="#065F46" style={{ marginRight: 4 }} />
+                    <Text style={estilos.textoBadgeProfessor}>Professor</Text>
                   </View>
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
-        {/* ============================================================== */}
-        {/* 7. BOTÃO DE AÇÃO PRIMÁRIA "EDITAR PERFIL"                      */}
-        {/* ============================================================== */}
-        <TouchableOpacity
-          style={estilos.botaoEditarPerfilLaranja}
-          onPress={() => setModalEditarVisivel(true)}
-          activeOpacity={0.85}
-        >
-          <Feather name="edit-3" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={estilos.textoBotaoEditarPerfil}>Editar perfil</Text>
-        </TouchableOpacity>
+                <Text style={estilos.titulacaoDocente}>{perfilProfessor.titulacao}</Text>
+                <Text style={estilos.emailEstudante}>{perfilProfessor.email}</Text>
+
+                <View style={estilos.linhaLocalizacao}>
+                  <Ionicons name="location-sharp" size={13} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={estilos.textoLocalizacao}>
+                    {perfilProfessor.cidade}, {perfilProfessor.estado}
+                  </Text>
+                  <Text style={estilos.pontoSeparador}>•</Text>
+                  <Ionicons name="call-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={estilos.textoLocalizacao}>{perfilProfessor.telefone}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* CARD BEGE / CREME / DOURADO DE RESUMO DO MÊS (IMG-017) */}
+            <View style={estilos.cardResumoMesDocente}>
+              <View style={estilos.cardResumoMesHeader}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View style={estilos.iconeResumoMesWrap}>
+                    <FontAwesome5 name="wallet" size={13} color="#D97706" />
+                  </View>
+                  <Text style={estilos.cardResumoMesTitulo}>Resumo do Mês</Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setSaldoVisivel(!saldoVisivel)}
+                  style={estilos.botaoOlhoSaldo}
+                  activeOpacity={0.7}
+                >
+                  <Feather name={saldoVisivel ? "eye" : "eye-off"} size={14} color="#92400E" />
+                  <Text style={estilos.textoOlhoSaldo}>{saldoVisivel ? "Ocultar" : "Mostrar"}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={estilos.divisorCardResumoMes} />
+
+              <View style={estilos.gridMetricasDocente}>
+                <View style={estilos.blocoMetricaDocente}>
+                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#FEF3C7" }]}>
+                    <Feather name="calendar" size={13} color="#D97706" />
+                  </View>
+                  <Text style={estilos.valorMetricaDocente}>
+                    {perfilProfessor.resumoMes.aulasRealizadas}
+                  </Text>
+                  <Text style={estilos.labelMetricaDocente}>Aulas realizadas</Text>
+                </View>
+
+                <View style={estilos.blocoMetricaDocente}>
+                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#DBEAFE" }]}>
+                    <Feather name="users" size={13} color="#2563EB" />
+                  </View>
+                  <Text style={estilos.valorMetricaDocente}>
+                    {perfilProfessor.resumoMes.alunosAtendidos}
+                  </Text>
+                  <Text style={estilos.labelMetricaDocente}>Alunos atendidos</Text>
+                </View>
+
+                <View style={estilos.blocoMetricaDocente}>
+                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#F3E8FF" }]}>
+                    <Feather name="clock" size={13} color="#9333EA" />
+                  </View>
+                  <Text style={estilos.valorMetricaDocente}>
+                    {perfilProfessor.resumoMes.horasMinistradas}h
+                  </Text>
+                  <Text style={estilos.labelMetricaDocente}>Horas ministradas</Text>
+                </View>
+
+                <View style={estilos.blocoMetricaDocente}>
+                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#D1FAE5" }]}>
+                    <Feather name="dollar-sign" size={13} color="#059669" />
+                  </View>
+                  <Text style={[estilos.valorMetricaDocente, { color: "#059669" }]}>
+                    {saldoVisivel
+                      ? `R$ ${perfilProfessor.resumoMes.ganhosMes.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                        })}`
+                      : "R$ ••••••"}
+                  </Text>
+                  <Text style={estilos.labelMetricaDocente}>Ganhos no mês</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* SEÇÃO APRESENTAÇÃO DOCENTE & DISCIPLINAS */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Apresentação profissional</Text>
+              <View style={estilos.cardSobre}>
+                <Text style={estilos.textoBio}>{perfilProfessor.bio}</Text>
+                <View style={estilos.divisorSuave} />
+                <Text style={estilos.subtituloInteresses}>Disciplinas lecionadas:</Text>
+                <View style={estilos.chipsContainer}>
+                  {perfilProfessor.materias.map((mat, idx) => (
+                    <View key={idx} style={estilos.chipMateriaDocente}>
+                      <FontAwesome5 name="book-reader" size={10} color="#047857" style={{ marginRight: 6 }} />
+                      <Text style={estilos.textoChipMateriaDocente}>{mat}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* OPÇÕES EXCLUSIVAS DE ENSINO & CONFIGURAÇÕES (IMG-017) */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Gestão de ensino & Conta</Text>
+              <View style={estilos.menuContaContainer}>
+                {/* 1. Perfil Profissional */}
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalEditarProf(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#ECFDF5" }]}>
+                    <Feather name="award" size={17} color="#059669" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Perfil profissional</Text>
+                    <Text style={estilos.subtituloMenuItem}>Titulação, biografia e foto docente</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                {/* 2. Formatos e Tarifas */}
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalEditarProf(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FFFBEB" }]}>
+                    <Feather name="tag" size={17} color="#D97706" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Formatos de aula e tarifas</Text>
+                    <Text style={estilos.subtituloMenuItem}>
+                      Online: R$ {perfilProfessor.configuracoesEnsino.precoHoraOnline.toFixed(2)}/h • Presencial: R$ {perfilProfessor.configuracoesEnsino.precoHoraPresencial.toFixed(2)}/h
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                {/* 3. Métodos de Pagamento e Saque */}
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => router.push("/saque" as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#EFF6FF" }]}>
+                    <Feather name="credit-card" size={17} color="#2563EB" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Métodos de pagamento & Saque</Text>
+                    <Text style={estilos.subtituloMenuItem}>
+                      PIX: {perfilProfessor.configuracoesEnsino.chavePix}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                {/* 4. Notificações */}
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => router.push("/notificacoes" as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FAF5FF" }]}>
+                    <Feather name="bell" size={17} color="#8B5CF6" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Central de Notificações</Text>
+                    <Text style={estilos.subtituloMenuItem}>Alertas de solicitações de aula</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                <View style={estilos.divisorMenu} />
+
+                {/* 5. Segurança */}
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalSegurancaVisivel(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#F0FDF4" }]}>
+                    <Feather name="shield" size={17} color="#10B981" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Segurança e privacidade</Text>
+                    <Text style={estilos.subtituloMenuItem}>Troca de senha e proteção</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* FEED DE AVALIAÇÕES RECENTES DOS ALUNOS (IMG-017) */}
+            <View style={estilos.secaoContainer}>
+              <View style={estilos.secaoHeaderLinha}>
+                <Text style={estilos.secaoTitulo}>Avaliações dos alunos</Text>
+                <View style={estilos.badgeMediaAvaliacao}>
+                  <Ionicons name="star" size={12} color="#F59E0B" />
+                  <Text style={estilos.textoMediaAvaliacao}>5.0 (38)</Text>
+                </View>
+              </View>
+
+              <View style={estilos.listaAvaliacoes}>
+                {perfilProfessor.avaliacoesRecentes.map((rev) => (
+                  <View key={rev.id} style={estilos.cardAvaliacao}>
+                    <View style={estilos.headerAvaliacao}>
+                      <Image source={{ uri: rev.alunoFoto }} style={estilos.avatarAvaliacao} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={estilos.nomeAlunoAvaliacao}>{rev.alunoNome}</Text>
+                        <Text style={estilos.materiaAvaliacao}>{rev.materia}</Text>
+                      </View>
+                      <View style={estilos.estrelasRow}>
+                        {[...Array(5)].map((_, i) => (
+                          <Ionicons key={i} name="star" size={11} color="#F59E0B" />
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={estilos.comentarioAvaliacao}>"{rev.comentario}"</Text>
+                    <Text style={estilos.dataAvaliacao}>{rev.data}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* BOTÃO PRIMÁRIO PROFESSOR */}
+            <TouchableOpacity
+              style={[estilos.botaoEditarPerfilLaranja, { backgroundColor: "#FF5A1F" }]}
+              onPress={() => setModalEditarProf(true)}
+              activeOpacity={0.85}
+            >
+              <Feather name="edit-3" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={estilos.textoBotaoEditarPerfil}>Editar perfil profissional</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
 
       {/* ============================================================== */}
-      {/* 8. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
+      {/* 4. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
       {/* ============================================================== */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/(tabs)" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Home"
+      {personaAtiva === "Aluno" ? (
+        /* Barra de 5 Abas do Aluno: Home, Buscar, Chat, Agenda, Perfil */
+        <View
+          style={[
+            estilos.tabBarContainer,
+            { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
+          ]}
         >
-          <FontAwesome5 name="home" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Home</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/(tabs)" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Home"
+          >
+            <FontAwesome5 name="home" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Home</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/busca-professores" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Buscar"
-        >
-          <Feather name="search" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Buscar</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/busca-professores" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Buscar"
+          >
+            <Feather name="search" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Buscar</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/chat" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Chat"
-        >
-          <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabLabel}>Chat</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/chat" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Chat"
+          >
+            <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
+            <Text style={estilos.tabLabel}>Chat</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Agenda"
-        >
-          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Agenda</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/agenda" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Agenda"
+          >
+            <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Agenda</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            // Já na tela de perfil
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Perfil"
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => {}}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Perfil"
+          >
+            <FontAwesome5 name="user-alt" size={19} color="#FF5A1F" />
+            <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Perfil</Text>
+            <View style={estilos.tabIndicadorAtivo} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        /* Barra de 5 Abas do Professor: Home, Notificações, Agenda, Ganhos, Perfil */
+        <View
+          style={[
+            estilos.tabBarContainer,
+            { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
+          ]}
         >
-          <FontAwesome5 name="user-alt" size={19} color="#FF5A1F" />
-          <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Perfil</Text>
-          <View style={estilos.tabIndicadorAtivo} />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/home-professor" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Home Professor"
+          >
+            <FontAwesome5 name="home" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Home</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/notificacoes" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Notificações"
+          >
+            <Feather name="bell" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Notícias</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/agenda" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Agenda"
+          >
+            <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
+            <Text style={estilos.tabLabel}>Agenda</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => router.push("/painel-ganhos" as any)}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Ganhos"
+          >
+            <FontAwesome5 name="chart-line" size={19} color="#64748B" />
+            <Text style={estilos.tabLabel}>Ganhos</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={estilos.tabItem}
+            onPress={() => {}}
+            activeOpacity={0.8}
+            accessibilityLabel="Aba Perfil Professor"
+          >
+            <FontAwesome5 name="user-tie" size={19} color="#FF5A1F" />
+            <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Perfil</Text>
+            <View style={estilos.tabIndicadorAtivo} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ============================================================== */}
       {/* MODAL 1: EDITAR PERFIL DO ALUNO                                */}
       {/* ============================================================== */}
-      <Modal visible={modalEditarVisivel} transparent animationType="slide">
+      <Modal visible={modalEditarAluno} transparent animationType="slide">
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalCardEdicao}>
-            <View style={estilos.modalHeader}>
-              <Text style={estilos.modalTitulo}>Editar Perfil</Text>
-              <TouchableOpacity onPress={() => setModalEditarVisivel(false)}>
-                <Feather name="x" size={20} color="#64748B" />
+            <View style={estilos.modalHeaderLinha}>
+              <Text style={estilos.modalTitulo}>Editar Perfil do Aluno</Text>
+              <TouchableOpacity onPress={() => setModalEditarAluno(false)}>
+                <Feather name="x" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-              <Text style={estilos.campoLabel}>Nome Completo</Text>
+              <Text style={estilos.labelInput}>Nome Completo</Text>
               <TextInput
-                style={estilos.inputTexto}
-                value={formNome}
-                onChangeText={setFormNome}
-                placeholder="Seu nome"
+                style={estilos.inputFormulario}
+                value={formAlunoNome}
+                onChangeText={setFormAlunoNome}
+                placeholder="Ex: Jorbson Silva"
+                placeholderTextColor="#94A3B8"
               />
 
-              <Text style={estilos.campoLabel}>Telefone / WhatsApp</Text>
+              <Text style={estilos.labelInput}>Telefone / WhatsApp</Text>
               <TextInput
-                style={estilos.inputTexto}
-                value={formTelefone}
-                onChangeText={setFormTelefone}
-                placeholder="(83) 99999-9999"
+                style={estilos.inputFormulario}
+                value={formAlunoTelefone}
+                onChangeText={setFormAlunoTelefone}
+                placeholder="(83) 98765-4321"
+                placeholderTextColor="#94A3B8"
+                keyboardType="phone-pad"
               />
 
-              <Text style={estilos.campoLabel}>Cidade / Estado</Text>
+              <Text style={estilos.labelInput}>Cidade</Text>
               <TextInput
-                style={estilos.inputTexto}
-                value={formCidade}
-                onChangeText={setFormCidade}
+                style={estilos.inputFormulario}
+                value={formAlunoCidade}
+                onChangeText={setFormAlunoCidade}
                 placeholder="João Pessoa"
+                placeholderTextColor="#94A3B8"
               />
 
-              <Text style={estilos.campoLabel}>Apresentação / Bio</Text>
+              <Text style={estilos.labelInput}>Apresentação / Bio</Text>
               <TextInput
-                style={[estilos.inputTexto, { height: 90, textAlignVertical: "top" }]}
-                value={formBio}
-                onChangeText={setFormBio}
+                style={[estilos.inputFormulario, { height: 90, textAlignVertical: "top" }]}
+                value={formAlunoBio}
+                onChangeText={setFormAlunoBio}
+                placeholder="Fale um pouco sobre seus objetivos de estudo..."
+                placeholderTextColor="#94A3B8"
                 multiline
-                placeholder="Conte sobre seus estudos e metas..."
+                numberOfLines={3}
               />
             </ScrollView>
 
-            <View style={estilos.modalBotoesLinha}>
+            <View style={estilos.modalAcoesLinha}>
               <TouchableOpacity
-                style={estilos.botaoCancelarModal}
-                onPress={() => setModalEditarVisivel(false)}
+                style={estilos.botaoModalCancelar}
+                onPress={() => setModalEditarAluno(false)}
               >
-                <Text style={estilos.textoBotaoCancelarModal}>Cancelar</Text>
+                <Text style={estilos.textoBotaoCancelar}>Cancelar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={estilos.botaoSalvarModal}
-                onPress={handleSalvarEdicao}
+                style={estilos.botaoModalSalvar}
+                onPress={handleSalvarAluno}
                 disabled={salvandoEdicao}
               >
                 {salvandoEdicao ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={estilos.textoBotaoSalvarModal}>Salvar alterações</Text>
+                  <Text style={estilos.textoBotaoSalvar}>Salvar alterações</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -600,45 +1021,122 @@ export default function PerfilScreen() {
       </Modal>
 
       {/* ============================================================== */}
-      {/* MODAL 2: SEGURANÇA E ALTERAÇÃO DE SENHA                        */}
+      {/* MODAL 2: EDITAR PERFIL DO PROFESSOR (ORI-018)                   */}
       {/* ============================================================== */}
-      <Modal visible={modalSegurancaVisivel} transparent animationType="fade">
+      <Modal visible={modalEditarProf} transparent animationType="slide">
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalCardEdicao}>
-            <View style={estilos.modalHeader}>
-              <Text style={estilos.modalTitulo}>Segurança da Conta</Text>
-              <TouchableOpacity onPress={() => setModalSegurancaVisivel(false)}>
-                <Feather name="x" size={20} color="#64748B" />
+            <View style={estilos.modalHeaderLinha}>
+              <Text style={estilos.modalTitulo}>Editar Perfil Docente</Text>
+              <TouchableOpacity onPress={() => setModalEditarProf(false)}>
+                <Feather name="x" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ fontSize: 13, color: "#64748B", marginBottom: 14 }}>
-              Atualize sua senha de acesso protegida por BCrypt.
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <Text style={estilos.labelInput}>Nome Completo</Text>
+              <TextInput
+                style={estilos.inputFormulario}
+                value={formProfNome}
+                onChangeText={setFormProfNome}
+                placeholder="Ex: Prof. Carlos Mendes"
+                placeholderTextColor="#94A3B8"
+              />
 
-            <Text style={estilos.campoLabel}>Senha Atual</Text>
-            <TextInput
-              style={estilos.inputTexto}
-              secureTextEntry
-              placeholder="Digite sua senha atual"
-            />
+              <Text style={estilos.labelInput}>Titulação Acadêmica</Text>
+              <TextInput
+                style={estilos.inputFormulario}
+                value={formProfTitulacao}
+                onChangeText={setFormProfTitulacao}
+                placeholder="Mestre em Ciência da Computação • UFCG"
+                placeholderTextColor="#94A3B8"
+              />
 
-            <Text style={estilos.campoLabel}>Nova Senha</Text>
-            <TextInput
-              style={estilos.inputTexto}
-              secureTextEntry
-              placeholder="Mínimo de 8 caracteres"
-            />
+              <Text style={estilos.labelInput}>Telefone / WhatsApp</Text>
+              <TextInput
+                style={estilos.inputFormulario}
+                value={formProfTelefone}
+                onChangeText={setFormProfTelefone}
+                placeholder="(83) 99123-4567"
+                placeholderTextColor="#94A3B8"
+                keyboardType="phone-pad"
+              />
 
-            <TouchableOpacity
-              style={estilos.botaoSalvarModal}
-              onPress={() => {
-                Alert.alert("Sucesso", "Senha alterada com sucesso!");
-                setModalSegurancaVisivel(false);
-              }}
-            >
-              <Text style={estilos.textoBotaoSalvarModal}>Atualizar Senha</Text>
-            </TouchableOpacity>
+              <Text style={estilos.labelInput}>Cidade</Text>
+              <TextInput
+                style={estilos.inputFormulario}
+                value={formProfCidade}
+                onChangeText={setFormProfCidade}
+                placeholder="Campina Grande"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={estilos.labelInput}>Preço Online (R$/h)</Text>
+                  <TextInput
+                    style={estilos.inputFormulario}
+                    value={formProfPrecoOnline}
+                    onChangeText={setFormProfPrecoOnline}
+                    placeholder="60.00"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={estilos.labelInput}>Preço Presencial (R$/h)</Text>
+                  <TextInput
+                    style={estilos.inputFormulario}
+                    value={formProfPrecoPresencial}
+                    onChangeText={setFormProfPrecoPresencial}
+                    placeholder="80.00"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <Text style={estilos.labelInput}>Chave PIX de Recebimento</Text>
+              <TextInput
+                style={estilos.inputFormulario}
+                value={formProfPix}
+                onChangeText={setFormProfPix}
+                placeholder="carlos.mendes@orienta.edu.br"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={estilos.labelInput}>Biografia e Metodologia</Text>
+              <TextInput
+                style={[estilos.inputFormulario, { height: 90, textAlignVertical: "top" }]}
+                value={formProfBio}
+                onChangeText={setFormProfBio}
+                placeholder="Descreva sua experiência acadêmica e didática..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                numberOfLines={3}
+              />
+            </ScrollView>
+
+            <View style={estilos.modalAcoesLinha}>
+              <TouchableOpacity
+                style={estilos.botaoModalCancelar}
+                onPress={() => setModalEditarProf(false)}
+              >
+                <Text style={estilos.textoBotaoCancelar}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[estilos.botaoModalSalvar, { backgroundColor: "#FF5A1F" }]}
+                onPress={handleSalvarProfessor}
+                disabled={salvandoEdicao}
+              >
+                {salvandoEdicao ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={estilos.textoBotaoSalvar}>Salvar perfil docente</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -648,28 +1146,87 @@ export default function PerfilScreen() {
       {/* ============================================================== */}
       <Modal visible={modalLogoutVisivel} transparent animationType="fade">
         <View style={estilos.modalOverlay}>
-          <View style={estilos.modalCardConfirmacao}>
-            <View style={estilos.iconeLogoutModalWrap}>
+          <View style={estilos.modalCardLogout}>
+            <View style={estilos.iconeLogoutWrap}>
               <Feather name="log-out" size={26} color="#EF4444" />
             </View>
-            <Text style={estilos.tituloLogoutModal}>Deseja sair da conta?</Text>
-            <Text style={estilos.descricaoLogoutModal}>
-              Você precisará fazer login novamente para acessar suas aulas e mensagens.
+            <Text style={estilos.tituloLogout}>Encerrar Sessão</Text>
+            <Text style={estilos.subtituloLogout}>
+              Tem certeza que deseja sair da sua conta Orienta? Seus dados salvos permanecerão sincronizados.
             </Text>
 
-            <View style={estilos.modalBotoesLinha}>
+            <View style={estilos.linhaBotoesLogout}>
               <TouchableOpacity
-                style={estilos.botaoCancelarModal}
+                style={estilos.botaoCancelarLogout}
                 onPress={() => setModalLogoutVisivel(false)}
               >
-                <Text style={estilos.textoBotaoCancelarModal}>Cancelar</Text>
+                <Text style={estilos.textoCancelarLogout}>Voltar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[estilos.botaoSalvarModal, { backgroundColor: "#EF4444" }]}
+                style={estilos.botaoConfirmarLogout}
                 onPress={handleConfirmarLogout}
               >
-                <Text style={estilos.textoBotaoSalvarModal}>Sair agora</Text>
+                <Text style={estilos.textoConfirmarLogout}>Sim, sair</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ============================================================== */}
+      {/* MODAL 4: SEGURANÇA E PRIVACIDADE                              */}
+      {/* ============================================================== */}
+      <Modal visible={modalSegurancaVisivel} transparent animationType="slide">
+        <View style={estilos.modalOverlay}>
+          <View style={estilos.modalCardEdicao}>
+            <View style={estilos.modalHeaderLinha}>
+              <Text style={estilos.modalTitulo}>Segurança da Conta</Text>
+              <TouchableOpacity onPress={() => setModalSegurancaVisivel(false)}>
+                <Feather name="x" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={estilos.labelInput}>Senha Atual</Text>
+            <TextInput
+              style={estilos.inputFormulario}
+              placeholder="Digite sua senha atual"
+              placeholderTextColor="#94A3B8"
+              secureTextEntry
+            />
+
+            <Text style={estilos.labelInput}>Nova Senha</Text>
+            <TextInput
+              style={estilos.inputFormulario}
+              placeholder="Mínimo de 8 caracteres"
+              placeholderTextColor="#94A3B8"
+              secureTextEntry
+            />
+
+            <Text style={estilos.labelInput}>Confirmar Nova Senha</Text>
+            <TextInput
+              style={estilos.inputFormulario}
+              placeholder="Repita a nova senha"
+              placeholderTextColor="#94A3B8"
+              secureTextEntry
+            />
+
+            <View style={estilos.modalAcoesLinha}>
+              <TouchableOpacity
+                style={estilos.botaoModalCancelar}
+                onPress={() => setModalSegurancaVisivel(false)}
+              >
+                <Text style={estilos.textoBotaoCancelar}>Fechar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={estilos.botaoModalSalvar}
+                onPress={() => {
+                  setModalSegurancaVisivel(false);
+                  Alert.alert("Sucesso", "Senha atualizada com sucesso!");
+                }}
+              >
+                <Text style={estilos.textoBotaoSalvar}>Atualizar senha</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -679,6 +1236,10 @@ export default function PerfilScreen() {
   );
 }
 
+// ==============================================================================
+// ESTILOS VISUAIS UNIFICADOS (DESIGN SYSTEM ORIENTA 2.0)
+// ==============================================================================
+
 const estilos = StyleSheet.create({
   container: {
     flex: 1,
@@ -686,11 +1247,11 @@ const estilos = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
+    backgroundColor: "#F8FAFC",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
   },
-  loadingTexto: {
+  loadingText: {
     marginTop: 12,
     fontSize: 14,
     color: "#64748B",
@@ -699,10 +1260,9 @@ const estilos = StyleSheet.create({
   bannerSimulacao: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#FEF3C7",
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#FDE68A",
   },
@@ -711,8 +1271,6 @@ const estilos = StyleSheet.create({
     color: "#92400E",
     fontWeight: "600",
   },
-
-  // 1. Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -721,76 +1279,118 @@ const estilos = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: "#E2E8F0",
   },
-  botaoHeaderCircular: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F8FAFC",
+  headerTituloContainer: {
     alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
   },
   headerTitulo: {
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 17,
+    fontWeight: "700",
     color: "#0F172A",
-    letterSpacing: -0.3,
   },
-  botaoLogout: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FEF2F2",
+  headerSubtitulo: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  botaoHeaderCircular: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#FEE2E2",
   },
-
+  botaoLogout: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  alternadorContainer: {
+    flexDirection: "row",
+    backgroundColor: "#E2E8F0",
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 12,
+    padding: 3,
+  },
+  botaoAlternador: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  botaoAlternadorAtivoAluno: {
+    backgroundColor: "#1D4ED8",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  botaoAlternadorAtivoProf: {
+    backgroundColor: "#059669",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  textoAlternador: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  textoAlternadorAtivo: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 28,
-    gap: 16,
   },
-
-  // 2. Hero
   heroContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#000",
+    elevation: 2,
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 6,
   },
   avatarContainer: {
     position: "relative",
     marginRight: 14,
   },
   avatarImagem: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "#E2E8F0",
-    borderWidth: 2,
-    borderColor: "#FF5A1F",
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 2.5,
+    borderColor: "#3B82F6",
   },
   botaoCameraFlutuante: {
     position: "absolute",
     bottom: -2,
     right: -2,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
     backgroundColor: "#FF5A1F",
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -802,31 +1402,49 @@ const estilos = StyleSheet.create({
   linhaNomeBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 3,
   },
   nomeEstudante: {
-    fontSize: 17,
-    fontWeight: "800",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#0F172A",
   },
   badgeAluno: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#DBEAFE",
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#DBEAFE",
+    borderRadius: 9999,
   },
   textoBadgeAluno: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
-    color: "#1D4ED8",
+    color: "#1E40AF",
+  },
+  badgeProfessor: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 9999,
+  },
+  textoBadgeProfessor: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  titulacaoDocente: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#059669",
+    marginBottom: 2,
   },
   emailEstudante: {
     fontSize: 12,
     color: "#64748B",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   linhaLocalizacao: {
     flexDirection: "row",
@@ -836,46 +1454,54 @@ const estilos = StyleSheet.create({
   textoLocalizacao: {
     fontSize: 11,
     color: "#64748B",
+    fontWeight: "500",
   },
-  pontoDivisor: {
-    marginHorizontal: 6,
-    color: "#CBD5E1",
+  pontoSeparador: {
+    marginHorizontal: 5,
+    color: "#94A3B8",
+    fontSize: 10,
   },
-
-  // 3. Card Progresso Geral
   cardProgressoGeral: {
-    backgroundColor: "#0F172A",
+    backgroundColor: "#0B1728",
     borderRadius: 20,
-    padding: 18,
-    shadowColor: "#0F172A",
+    padding: 16,
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: "#0B1728",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
-    elevation: 4,
   },
-  cabecalhoProgresso: {
+  cardProgressoHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  tituloProgresso: {
+  iconeProgressoWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 90, 31, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  cardProgressoTitulo: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#F8FAFC",
+    color: "#FFFFFF",
   },
-  tagSemestre: {
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  textoTagSemestre: {
+  cardProgressoSubtitulo: {
     fontSize: 11,
-    fontWeight: "700",
-    color: "#38BDF8",
+    color: "#94A3B8",
   },
-  gridMetricas3x1: {
+  divisorCardProgresso: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 14,
+  },
+  gridMetricasProgresso: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -884,253 +1510,382 @@ const estilos = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
-  iconeMetricaWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
   valorMetrica: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "800",
     color: "#FFFFFF",
+    marginBottom: 2,
   },
   labelMetrica: {
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: "600",
     color: "#94A3B8",
-    marginTop: 2,
-    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   divisorVerticalMetrica: {
     width: 1,
-    height: 36,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    height: 28,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
-
-  // 4, 5, 6. Cards Seção Branco
-  cardSecaoBranco: {
-    backgroundColor: "#FFFFFF",
+  cardResumoMesDocente: {
+    backgroundColor: "#FFFBEB",
     borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: "#FDE68A",
+    elevation: 3,
+    shadowColor: "#D97706",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  secaoTituloLinha: {
+  cardResumoMesHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  secaoTituloTexto: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0F172A",
+  iconeResumoMesWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
   },
-  linkEditar: {
-    fontSize: 12,
+  cardResumoMesTitulo: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#FF5A1F",
+    color: "#92400E",
   },
-  textoBio: {
-    fontSize: 13,
-    color: "#475569",
-    lineHeight: 20,
+  botaoOlhoSaldo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+  },
+  textoOlhoSaldo: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#92400E",
+  },
+  divisorCardResumoMes: {
+    height: 1,
+    backgroundColor: "#FDE68A",
     marginBottom: 12,
   },
-  subtituloInteresses: {
-    fontSize: 12,
+  gridMetricasDocente: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  blocoMetricaDocente: {
+    width: "48%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#FEF3C7",
+  },
+  miniIconeDocenteWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  valorMetricaDocente: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  labelMetricaDocente: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  secaoContainer: {
+    marginBottom: 18,
+  },
+  secaoHeaderLinha: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  secaoTitulo: {
+    fontSize: 14,
     fontWeight: "700",
     color: "#0F172A",
     marginBottom: 8,
   },
-  containerChipsInteresse: {
+  linkVerTodas: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FF5A1F",
+  },
+  badgeMediaAvaliacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    gap: 4,
+  },
+  textoMediaAvaliacao: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  cardSobre: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  textoBio: {
+    fontSize: 13,
+    color: "#334155",
+    lineHeight: 19,
+  },
+  divisorSuave: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginVertical: 10,
+  },
+  subtituloInteresses: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+  },
+  chipsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
   },
-  chipInteresseItem: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+  chipInteresse: {
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#DBEAFE",
   },
   textoChipInteresse: {
     fontSize: 11,
-    color: "#334155",
     fontWeight: "600",
+    color: "#1E40AF",
   },
-
-  // 5. Menu da Conta
-  itemMenuLinha: {
+  chipMateriaDocente: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  textoChipMateriaDocente: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#065F46",
+  },
+  menuContaContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   iconeMenuWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
   },
-  infoMenuColuna: {
+  infoMenuItem: {
     flex: 1,
   },
   tituloMenuItem: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
     color: "#0F172A",
   },
-  descricaoMenuItem: {
-    fontSize: 11.5,
+  subtituloMenuItem: {
+    fontSize: 11,
     color: "#64748B",
-    marginTop: 2,
+    marginTop: 1,
   },
-  divisorHorizontalMenu: {
+  divisorMenu: {
     height: 1,
     backgroundColor: "#F1F5F9",
-    marginVertical: 4,
-  },
-
-  // 6. Atividades Recentes
-  linkVerTodas: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FF5A1F",
+    marginLeft: 58,
   },
   listaAtividades: {
-    gap: 10,
+    gap: 8,
   },
-  itemAtividadeCard: {
+  cardAtividade: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
   },
   avatarAtividade: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    marginRight: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
   },
-  infoAtividadeColuna: {
+  infoAtividade: {
     flex: 1,
-  },
-  linhaNomeStatusAtividade: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   materiaAtividade: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#0F172A",
-    flex: 1,
+  },
+  professorAtividade: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  dataAtividade: {
+    fontSize: 10,
+    color: "#94A3B8",
+    marginTop: 2,
   },
   badgeStatusAtividade: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6,
   },
-  badgeConcluida: {
-    backgroundColor: "#DCFCE7",
-  },
   badgeConfirmada: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#FFF0E7",
   },
-  textoStatusAtividade: {
+  badgeConcluida: {
+    backgroundColor: "#F0FDF4",
+  },
+  textoBadgeStatus: {
     fontSize: 10,
     fontWeight: "700",
   },
-  textoConcluida: {
-    color: "#15803D",
+  textoStatusConfirmada: {
+    color: "#FF5A1F",
   },
-  textoConfirmada: {
-    color: "#1D4ED8",
+  textoStatusConcluida: {
+    color: "#10B981",
   },
-  docenteAtividade: {
-    fontSize: 11.5,
-    color: "#64748B",
-    marginTop: 2,
+  listaAvaliacoes: {
+    gap: 8,
   },
-  linhaMetaAtividade: {
+  cardAvaliacao: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  headerAvaliacao: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 4,
+    marginBottom: 6,
   },
-  dataAtividade: {
-    fontSize: 10.5,
-    color: "#94A3B8",
+  avatarAvaliacao: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
   },
-  estrelaNota: {
-    color: "#F59E0B",
-    fontSize: 11,
-    marginRight: 2,
-  },
-  valorNota: {
-    fontSize: 11,
+  nomeAlunoAvaliacao: {
+    fontSize: 12,
     fontWeight: "700",
     color: "#0F172A",
   },
-
-  // 7. Botão Primário Laranja
+  materiaAvaliacao: {
+    fontSize: 10,
+    color: "#64748B",
+  },
+  estrelasRow: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  comentarioAvaliacao: {
+    fontSize: 12,
+    color: "#334155",
+    fontStyle: "italic",
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  dataAvaliacao: {
+    fontSize: 10,
+    color: "#94A3B8",
+  },
   botaoEditarPerfilLaranja: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FF5A1F",
+    borderRadius: 14,
     paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: "#FF5A1F",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    marginTop: 6,
+    marginBottom: 10,
     elevation: 3,
-    marginTop: 4,
+    shadowColor: "#FF5A1F",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
   },
   textoBotaoEditarPerfil: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
     color: "#FFFFFF",
   },
-
-  // 8. Tab Bar (RN-001)
   tabBarContainer: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
-    height: 64,
     paddingTop: 8,
+    paddingHorizontal: 8,
     elevation: 12,
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.08,
-    shadowRadius: 6,
+    shadowRadius: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 4,
     position: "relative",
   },
   tabLabel: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#64748B",
     marginTop: 3,
   },
@@ -1140,110 +1895,142 @@ const estilos = StyleSheet.create({
   },
   tabIndicadorAtivo: {
     position: "absolute",
-    bottom: -4,
-    width: 16,
+    bottom: -6,
+    width: 14,
     height: 3,
-    borderRadius: 2,
     backgroundColor: "#FF5A1F",
+    borderRadius: 2,
   },
-
-  // Modais
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.6)",
-    justifyContent: "center",
-    padding: 20,
+    justifyContent: "flex-end",
   },
   modalCardEdicao: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
     maxHeight: "85%",
   },
-  modalCardConfirmacao: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 24,
-    alignItems: "center",
-  },
-  iconeLogoutModalWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: "#FEF2F2",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  tituloLogoutModal: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  descricaoLogoutModal: {
-    fontSize: 13,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  modalHeader: {
+  modalHeaderLinha: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
   },
   modalTitulo: {
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#0F172A",
   },
-  campoLabel: {
+  labelInput: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#334155",
     marginBottom: 4,
-    marginTop: 10,
+    marginTop: 8,
   },
-  inputTexto: {
+  inputFormulario: {
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     fontSize: 13,
     color: "#0F172A",
   },
-  modalBotoesLinha: {
+  modalAcoesLinha: {
     flexDirection: "row",
     gap: 10,
     marginTop: 18,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
   },
-  botaoCancelarModal: {
+  botaoModalCancelar: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
     backgroundColor: "#F1F5F9",
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: "center",
-    justifyContent: "center",
   },
-  textoBotaoCancelarModal: {
+  textoBotaoCancelar: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#475569",
   },
-  botaoSalvarModal: {
-    flex: 1.5,
-    paddingVertical: 12,
-    borderRadius: 12,
+  botaoModalSalvar: {
+    flex: 2,
     backgroundColor: "#FF5A1F",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  textoBotaoSalvar: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  modalCardLogout: {
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 24,
+    marginVertical: "auto",
+    borderRadius: 20,
+    padding: 22,
+    alignItems: "center",
+  },
+  iconeLogoutWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#FEE2E2",
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 12,
   },
-  textoBotaoSalvarModal: {
+  tituloLogout: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 6,
+  },
+  subtituloLogout: {
+    fontSize: 12,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+  linhaBotoesLogout: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  botaoCancelarLogout: {
+    flex: 1,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  textoCancelarLogout: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  botaoConfirmarLogout: {
+    flex: 1,
+    backgroundColor: "#EF4444",
+    paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  textoConfirmarLogout: {
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
