@@ -439,49 +439,7 @@ export default function PerfilProfessorScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ============================================================== */}
-      {/* 11. MODAL DE CONFIRMAÇÃO DE AGENDAMENTO                        */}
-      {/* ============================================================== */}
-      <Modal visible={modalSucessoVisivel} transparent animationType="fade">
-        <View style={estilos.modalOverlay}>
-          <View style={estilos.modalCard}>
-            <View style={estilos.modalIconeSucesso}>
-              <Ionicons name="checkmark-circle" size={48} color="#10B981" />
-            </View>
-            <Text style={estilos.modalTitulo}>Horário Selecionado!</Text>
-            <Text style={estilos.modalMensagem}>
-              Você selecionou uma aula {modalidade === "ONLINE" ? "Online" : "Presencial"} com {professor.nome} para{" "}
-              {diaAtual?.diaSemana} ({diaAtual?.diaMes}) às {horarioSelecionado}.
-            </Text>
 
-            <View style={estilos.modalResumoBox}>
-              <Text style={estilos.modalResumoLinha}>
-                <Text style={{ fontWeight: "700" }}>Modalidade:</Text> {modalidade === "ONLINE" ? "Online (Google Meet)" : "Presencial (Caruaru)"}
-              </Text>
-              <Text style={estilos.modalResumoLinha}>
-                <Text style={{ fontWeight: "700" }}>Investimento:</Text> R$ {precoAtual.toFixed(2).replace(".", ",")}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={estilos.botaoModalConfirmar}
-              onPress={() => {
-                setModalSucessoVisivel(false);
-                router.push("/agenda");
-              }}
-            >
-              <Text style={estilos.textoBotaoModal}>Ir para Minha Agenda</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.botaoModalFechar}
-              onPress={() => setModalSucessoVisivel(false)}
-            >
-              <Text style={estilos.textoModalFechar}>Continuar visualizando</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
