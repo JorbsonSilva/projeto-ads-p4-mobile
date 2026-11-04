@@ -420,7 +420,12 @@ export default function AgendaScreen() {
 
             <View style={estilos.listaCardsContainer}>
               {dados.aulasProfessor.map((aula) => (
-                <View key={`aula-${aula.id}`} style={estilos.cardAulaAgendada}>
+                <TouchableOpacity
+                  key={`aula-${aula.id}`}
+                  style={estilos.cardAulaAgendada}
+                  onPress={() => router.push("/chat" as any)}
+                  activeOpacity={0.85}
+                >
                   {/* Faixa Marcadora Azul Lateral */}
                   <View style={estilos.faixaMarcadoraAzul} />
 
@@ -452,7 +457,7 @@ export default function AgendaScreen() {
                       <Ionicons name="chevron-forward" size={14} color="#0A2540" />
                     </View>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </View>
