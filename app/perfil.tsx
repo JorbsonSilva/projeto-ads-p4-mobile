@@ -1,5 +1,9 @@
-import { Redirect } from "expo-router";
+import React from "react";
+import PerfilScreen from "./(tabs)/perfil";
 
-export default function Perfil() {
-  return <Redirect href="/(tabs)/perfil" />;
+/**
+ * Rota direta /perfil (ORI-017)
+ */
+export default function PerfilDirectRoute() {
+  return <PerfilScreen />;
 }
