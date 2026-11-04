@@ -165,7 +165,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <TouchableOpacity
               onPress={() => setModalDenunciaVisivel(true)}
               style={styles.botaoDenuncia}
-              title="Denunciar conduta"
+              accessibilityLabel="Denunciar conduta"
             >
               <FontAwesome5 name="flag" size={14} color="#EF4444" />
             </TouchableOpacity>

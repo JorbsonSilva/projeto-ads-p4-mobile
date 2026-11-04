@@ -17,6 +17,9 @@ interface AuthContextData {
   refreshToken: string | null;
   carregandoAuth: boolean;
   isAuthenticated: boolean;
+  isDemoMode: boolean;
+  apiDisponivel: boolean;
+  ativarModoDemo: () => void;
   alternarPerfilGlobal: (novoPerfil: string) => Promise<void>;
   loginGlobal: (
     id: string,
@@ -40,13 +43,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [carregandoAuth, setCarregandoAuth] = useState<boolean>(true);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [apiDisponivel, setApiDisponivel] = useState<boolean>(true);
+
+  const ativarModoDemo = () => {
+    setIsDemoMode(true);
+    setUsuarioId("demo-aluno-1");
+    setNomeUsuario("Usuário Demonstração");
+    setPerfilAtivo("Aluno");
+  };
 
   /**
    * Efeito colateral inicializador que roda automaticamente ao abrir o aplicativo.
-   * Verifica se há resíduos de sessão persistidos no armazenamento do celular.
+   * Verifica se há resíduos de sessão persistidos no armazenamento do celular
+   * ou se a tela foi solicitada em modo de demonstração/visualização.
    */
   useEffect(() => {
     const carregarSessaoPersistida = async () => {
+      // 1. Detecção não-bloqueante de modo de visualização (URL param ?demo=true ou preview no AI Studio)
+      const urlSolicitaDemo =
+        typeof window !== "undefined" &&
+        (window.location.search.includes("demo=true") ||
+          window.location.search.includes("preview=true") ||
+          window.location.protocol === "https:");
+
+      // 2. Sondagem de integridade da API backend em background não-bloqueante (nunca trava a tela)
+      if (typeof window !== "undefined" && window.location.protocol !== "https:") {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
+          fetch(`${API_URL}/api/v1/health`, { method: "GET", signal: controller.signal })
+            .then((res) => {
+              clearTimeout(timeoutId);
+              setApiDisponivel(res.ok);
+            })
+            .catch(() => setApiDisponivel(false));
+        } catch {
+          setApiDisponivel(false);
+        }
+      } else {
+        setApiDisponivel(false);
+      }
+
       try {
         const [idSalvo, perfilSalvo, nomeSalvo, tokenSalvo, refreshSalvo] =
           await Promise.all([
@@ -57,16 +95,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             AsyncStorage.getItem("@orienta_refresh_token"),
           ]);
 
-        if (idSalvo) setUsuarioId(idSalvo);
+        if (idSalvo) {
+          setUsuarioId(idSalvo);
+        } else if (urlSolicitaDemo) {
+          // Ativa sessão de demonstração imediata para navegação fluida
+          setIsDemoMode(true);
+          setUsuarioId("demo-aluno-1");
+          setNomeUsuario("Jorbson");
+        }
+
         if (perfilSalvo) setPerfilAtivo(perfilSalvo);
         if (nomeSalvo) setNomeUsuario(nomeSalvo);
         if (tokenSalvo) setToken(tokenSalvo);
         if (refreshSalvo) setRefreshToken(refreshSalvo);
       } catch (error) {
-        console.error(
-          "Erro ao ler dados do AsyncStorage no bootstrap do app:",
-          error
-        );
+        console.error("Erro ao ler dados do AsyncStorage no bootstrap:", error);
       } finally {
         setCarregandoAuth(false);
       }
@@ -161,6 +204,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         refreshToken,
         carregandoAuth,
         isAuthenticated: !!token || !!usuarioId,
+        isDemoMode,
+        apiDisponivel,
+        ativarModoDemo,
         alternarPerfilGlobal: _alternarPerfilGlobal,
         loginGlobal: _loginGlobal,
         logoutGlobal: _logoutGlobal,

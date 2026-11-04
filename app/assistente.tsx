@@ -190,8 +190,8 @@ export default function AssistenteScreen() {
   const handleNavigateToBooking = (professorId: number) => {
     // Redireciona para tela oficial de agendamento (F9-T4)
     router.push({
-      pathname: '/agendamento',
-      params: { professorId, disciplina: disciplinaNome, assunto: assuntoNome },
+      pathname: '/professor/[id]' as any,
+      params: { id: professorId, disciplina: disciplinaNome, assunto: assuntoNome },
     });
   };
 
@@ -297,7 +297,7 @@ export default function AssistenteScreen() {
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={iniciarTriagem}
-          title="Reiniciar Triagem"
+          accessibilityLabel="Reiniciar Triagem"
         >
           <RotateCcw size={18} color="#94a3b8" />
         </TouchableOpacity>
