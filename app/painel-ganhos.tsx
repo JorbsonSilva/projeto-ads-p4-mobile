@@ -269,6 +269,19 @@ export default function PainelGanhos() {
                 <Text style={estilos.subtextoCard}>A receber/futuras</Text>
               </View>
             </View>
+
+            {/* Acesso Direto ao Saque (ORI-014) */}
+            <TouchableOpacity
+              style={estilos.botaoAcessarSaque}
+              onPress={() => router.push("/saque" as any)}
+              activeOpacity={0.85}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="wallet-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={estilos.textoBotaoAcessarSaque}>Solicitar Saque (Pix / Transferência)</Text>
+              </View>
+              <Feather name="arrow-right" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
 
           {/* LISTAGEM: EXTRATO DE MENTORIAS */}
@@ -471,5 +484,25 @@ const estilos = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "600",
     marginTop: 2,
+  },
+  botaoAcessarSaque: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FF5A1F",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 14,
+    shadowColor: "#FF5A1F",
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  textoBotaoAcessarSaque: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
