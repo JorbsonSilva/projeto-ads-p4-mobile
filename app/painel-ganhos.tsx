@@ -28,6 +28,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, G, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 import { useAuth } from "../context/AuthContext";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   DadosDesempenho,
   DADOS_DESEMPENHO_MOCK,
@@ -724,62 +725,7 @@ export default function PainelGanhosScreen() {
       {/* ============================================================== */}
       {/* 5. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS PROFESSOR - RN) */}
       {/* ============================================================== */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/home-professor" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Home Professor"
-        >
-          <FontAwesome5 name="home" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/notificacoes" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Notícias"
-        >
-          <Feather name="bell" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Notícias</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Agenda"
-        >
-          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Agenda</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {}}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Ganhos (Ativa)"
-        >
-          <FontAwesome5 name="chart-line" size={19} color="#FF5A1F" />
-          <Text style={[estilos.tabLabel, estilos.tabLabelAtiva]}>Ganhos</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/perfil?persona=professor" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Perfil"
-        >
-          <FontAwesome5 name="user-alt" size={19} color="#64748B" />
-          <Text style={estilos.tabLabel}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
+      <TabBarRN001 abaAtiva="ganhos" perfilForcado="Professor" />
     </SafeAreaView>
   );
 }

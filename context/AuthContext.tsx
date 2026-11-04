@@ -67,6 +67,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           window.location.search.includes("preview=true") ||
           window.location.protocol === "https:");
 
+      // 1.1 Detecção de persona via URL (?persona=professor ou ?perfil=professor)
+      const urlParamLower = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
+      const solicitaProfessorUrl =
+        urlParamLower.includes("persona=professor") ||
+        urlParamLower.includes("perfil=professor");
+      const solicitaAlunoUrl =
+        urlParamLower.includes("persona=aluno") ||
+        urlParamLower.includes("perfil=aluno");
+
       // 2. Sondagem de integridade da API backend em background não-bloqueante (nunca trava a tela)
       if (typeof window !== "undefined" && window.location.protocol !== "https:") {
         try {
@@ -101,11 +110,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           // Ativa sessão de demonstração imediata para navegação fluida
           setIsDemoMode(true);
           setUsuarioId("demo-aluno-1");
-          setNomeUsuario("Jorbson");
         }
 
-        if (perfilSalvo) setPerfilAtivo(perfilSalvo);
-        if (nomeSalvo) setNomeUsuario(nomeSalvo);
+        // Precedência de perfil: URL explícita > Storage persistido > Padrão Aluno
+        if (solicitaProfessorUrl) {
+          setPerfilAtivo("Professor");
+          setNomeUsuario(nomeSalvo || "Prof. Lucas Rocha");
+          await AsyncStorage.setItem("@orienta_perfil", "Professor");
+        } else if (solicitaAlunoUrl) {
+          setPerfilAtivo("Aluno");
+          setNomeUsuario(nomeSalvo || "Jorbson");
+          await AsyncStorage.setItem("@orienta_perfil", "Aluno");
+        } else if (perfilSalvo) {
+          setPerfilAtivo(perfilSalvo);
+          if (nomeSalvo) setNomeUsuario(nomeSalvo);
+        } else {
+          setPerfilAtivo("Aluno");
+          setNomeUsuario(nomeSalvo || "Jorbson");
+        }
+
         if (tokenSalvo) setToken(tokenSalvo);
         if (refreshSalvo) setRefreshToken(refreshSalvo);
       } catch (error) {
@@ -116,6 +139,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     carregarSessaoPersistida();
+
+    // Listener para troca em tempo real de perfil via postMessage vindo da bancada do preview
+    const handleMensagemBancada = (event: MessageEvent) => {
+      if (event.data && event.data.type === "ORIENTA_SET_PERFIL" && typeof event.data.perfil === "string") {
+        const novoPerfilNormalizado = event.data.perfil.toLowerCase() === "professor" ? "Professor" : "Aluno";
+        setPerfilAtivo(novoPerfilNormalizado);
+        setNomeUsuario(novoPerfilNormalizado === "Professor" ? "Prof. Lucas Rocha" : "Jorbson");
+        AsyncStorage.setItem("@orienta_perfil", novoPerfilNormalizado).catch(() => {});
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("message", handleMensagemBancada);
+      return () => window.removeEventListener("message", handleMensagemBancada);
+    }
   }, []);
 
   /**
@@ -123,8 +161,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
    * @param {string} novoPerfil - O nome do novo perfil ("Aluno" ou "Professor")
    */
   const _alternarPerfilGlobal = async (novoPerfil: string) => {
-    setPerfilAtivo(novoPerfil);
-    await AsyncStorage.setItem("@orienta_perfil", novoPerfil);
+    const normalizado = novoPerfil.toLowerCase() === "professor" ? "Professor" : "Aluno";
+    setPerfilAtivo(normalizado);
+    setNomeUsuario(normalizado === "Professor" ? "Prof. Lucas Rocha" : "Jorbson");
+    await AsyncStorage.setItem("@orienta_perfil", normalizado);
   };
 
   /**

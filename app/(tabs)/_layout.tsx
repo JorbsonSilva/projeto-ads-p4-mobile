@@ -1,60 +1,76 @@
-import { Colors } from "@/constants/colors";
-import { FontAwesome5 } from "@expo/vector-icons";
+/**
+ * @file _layout.tsx
+ * @description Layout Global de Navegação em Abas do Expo Router (app/(tabs)/).
+ * Implementa com precisão o Requisito Funcional RN-001:
+ * 
+ * - Barra de navegação inferior dinâmica de exatamente 5 abas segundo o perfil ativo:
+ *   - ALUNO: Home (/(tabs)), Buscar (/busca-professores), Chat (/chat), Agenda (/(tabs)/agenda), Perfil (/(tabs)/perfil).
+ *   - PROFESSOR: Home (/(tabs)), Notificações (/notificacoes), Agenda (/(tabs)/agenda), Ganhos (/painel-ganhos), Perfil (/(tabs)/perfil?persona=professor).
+ * 
+ * - Descarte oficial da aba Notícias como aba fixa (RN-001), preservando rotas sob demanda.
+ * - Eliminação estrita de qualquer duplicidade ou sobreposição de barras.
+ */
+
 import { Tabs } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React from "react";
+import TabBarRN001, { AbaChaveRN001 } from "../../components/navigation/TabBarRN001";
+import { useAuth } from "../../context/AuthContext";
 
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets();
+  const auth = useAuth();
+  const perfilAtivo = auth?.perfilAtivo?.toLowerCase() === "professor" ? "Professor" : "Aluno";
 
   return (
     <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            display: "none",
-          },
+      tabBar={(props) => {
+        const routeName = props.state.routes[props.state.index]?.name;
+        let abaAtiva: AbaChaveRN001 = "home";
+
+        if (routeName === "agenda") {
+          abaAtiva = "agenda";
+        } else if (routeName === "perfil") {
+          abaAtiva = "perfil";
+        } else {
+          abaAtiva = "home";
+        }
+
+        return <TabBarRN001 abaAtiva={abaAtiva} perfilForcado={perfilAtivo} />;
+      }}
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      {/* 1. Aba Home (Renderiza HomeAluno ou HomeProfessor dependendo do perfil) */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
         }}
-      >
-        <Tabs.Screen
-          name="index" // Vai puxar o arquivo index.tsx (Home)
-          options={{
-            title: "Home",
-            // Função que desenha o ícone. O 'color' já vem automático dependendo se está ativo ou inativo.
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="home" size={24} color={color} />
-            ),
-          }}
-        />
+      />
 
-        <Tabs.Screen
-          name="noticias"
-          options={{
-            title: "Notícias",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="newspaper" size={24} color={color} />
-            ),
-          }}
-        />
+      {/* 2. Aba Agenda Unificada (Aluno & Professor) */}
+      <Tabs.Screen
+        name="agenda"
+        options={{
+          title: "Agenda",
+        }}
+      />
 
-        <Tabs.Screen
-          name="agenda" // Vai puxar o arquivo agenda.tsx
-          options={{
-            title: "Agenda",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="calendar-alt" size={24} color={color} />
-            ),
-          }}
-        />
+      {/* 3. Aba Perfil (Aluno ou Professor com opções docentes) */}
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+        }}
+      />
 
-        <Tabs.Screen
-          name="perfil" // Vai puxar o arquivo perfil.tsx
-          options={{
-            title: "Perfil",
-            tabBarIcon: ({ color }) => (
-              <FontAwesome5 name="user-alt" size={24} color={color} />
-            ),
-          }}
-        />
-      </Tabs>
+      {/* 4. Rota legada de notícias: formalmente descartada da barra inferior (RN-001) */}
+      <Tabs.Screen
+        name="noticias"
+        options={{
+          href: null, // Descartada oficialmente como item de barra dockada
+        }}
+      />
+    </Tabs>
   );
 }

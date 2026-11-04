@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CentralNotificacoesModal } from "../components/CentralNotificacoesModal";
 import { Assets } from "../constants/assets";
 import { useAuth } from "../context/AuthContext";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   DadosHomeProfessor,
   MOCK_HOME_PROFESSOR_OFICIAL,
@@ -39,7 +40,11 @@ import {
   ResultadoHomeProfessor,
 } from "../services/professorHomeService";
 
-export default function HomeProfessorScreen() {
+export default function HomeProfessorScreen({
+  exibirBarraInferior = true,
+}: {
+  exibirBarraInferior?: boolean;
+} = {}) {
   const insets = useSafeAreaInsets();
   const { nomeUsuario } = useAuth() as any;
 
@@ -427,70 +432,9 @@ export default function HomeProfessorScreen() {
       {/* ============================================================== */}
       {/* 8. BARRA DE NAVEGAÇÃO INFERIOR DO PROFESSOR (5 ABAS - RN-001)  */}
       {/* ============================================================== */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            // Já na Home do Professor
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Home"
-        >
-          <FontAwesome5 name="home" size={20} color="#FF5A1F" />
-          <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Home</Text>
-          <View style={estilos.tabIndicadorAtivo} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => setModalNotificacoes(true)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Notificações"
-        >
-          <View style={{ position: "relative" }}>
-            <Feather name="bell" size={20} color="#64748B" />
-            {dados.solicitacoesPendentesCount > 0 && (
-              <View style={estilos.badgeDotTab} />
-            )}
-          </View>
-          <Text style={estilos.tabLabel}>Notificações</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Agenda"
-        >
-          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Agenda</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/painel-ganhos" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Ganhos"
-        >
-          <Ionicons name="wallet-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabLabel}>Ganhos</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/perfil-professor" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Perfil"
-        >
-          <FontAwesome5 name="user-alt" size={19} color="#64748B" />
-          <Text style={estilos.tabLabel}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
+      {exibirBarraInferior && (
+        <TabBarRN001 abaAtiva="home" perfilForcado="Professor" />
+      )}
 
       {/* Modal Central de Notificações */}
       <CentralNotificacoesModal

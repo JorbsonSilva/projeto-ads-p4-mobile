@@ -696,58 +696,6 @@ export default function AgendaScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* ============================================================== */}
-      {/* 9. BARRA DE NAVEGAÇÃO INFERIOR OFICIAL (5 ABAS)                */}
-      {/* ============================================================== */}
-      <View style={estilos.tabBar}>
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.replace("/(tabs)")}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="home-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabRotulo}>Início</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/busca-professores" as any)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="search-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabRotulo}>Buscar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={estilos.tabItem} activeOpacity={0.7}>
-          <Ionicons name="calendar" size={22} color="#FF6B1A" />
-          <Text style={[estilos.tabRotulo, estilos.tabRotuloAtivo]}>Agenda</Text>
-          <View style={estilos.tabIndicadorAtivo} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/noticias" as any)}
-          activeOpacity={0.7}
-        >
-          <View style={{ position: "relative" }}>
-            <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
-            <View style={estilos.badgeTabPequeno}>
-              <Text style={estilos.badgeTabPequenoTexto}>3</Text>
-            </View>
-          </View>
-          <Text style={estilos.tabRotulo}>Mensagens</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/perfil" as any)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="person-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabRotulo}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }

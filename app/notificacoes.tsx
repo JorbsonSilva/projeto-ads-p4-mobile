@@ -29,6 +29,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../context/AuthContext";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   CategoriaNotificacao,
   GrupoTemporal,
@@ -348,80 +349,7 @@ export default function NotificacoesScreen() {
       {/* ============================================================== */}
       {/* 4. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
       {/* ============================================================== */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            router.push(perfilAtivo === "Professor" ? "/home-professor" as any : "/(tabs)" as any);
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Home"
-        >
-          <FontAwesome5 name="home" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            // Já na tela de Notificações
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Notificações"
-        >
-          <View style={{ position: "relative" }}>
-            <Feather name="bell" size={20} color="#FF5A1F" />
-            {totalNaoLidas > 0 && <View style={estilos.badgeDotTab} />}
-          </View>
-          <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Notificações</Text>
-          <View style={estilos.tabIndicadorAtivo} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Agenda"
-        >
-          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Agenda</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            router.push(perfilAtivo === "Professor" ? "/painel-ganhos" as any : "/chat" as any);
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel={perfilAtivo === "Professor" ? "Aba Ganhos" : "Aba Chat"}
-        >
-          {perfilAtivo === "Professor" ? (
-            <Ionicons name="wallet-outline" size={22} color="#64748B" />
-          ) : (
-            <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
-          )}
-          <Text style={estilos.tabLabel}>
-            {perfilAtivo === "Professor" ? "Ganhos" : "Chat"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {
-            router.push(perfilAtivo === "Professor" ? "/perfil-professor" as any : "/perfil" as any);
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Perfil"
-        >
-          <FontAwesome5 name="user-alt" size={19} color="#64748B" />
-          <Text style={estilos.tabLabel}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
+      <TabBarRN001 abaAtiva="notificacoes" />
     </View>
   );
 }

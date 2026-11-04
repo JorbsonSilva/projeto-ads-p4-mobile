@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   CategoriaTicket,
   criarTicketSuporte,
@@ -858,108 +859,7 @@ export default function SuporteScreen() {
       {/* ============================================================== */}
       {/* 7. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
       {/* ============================================================== */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        {perfilAtivo === "Professor" ? (
-          <>
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/home-professor" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="home" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Home</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/notificacoes" as any)}
-              activeOpacity={0.8}
-            >
-              <Feather name="bell" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Notícias</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/agenda" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Agenda</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/painel-ganhos" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="chart-line" size={19} color="#64748B" />
-              <Text style={estilos.tabLabel}>Ganhos</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/perfil?persona=professor" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="user-alt" size={19} color="#64748B" />
-              <Text style={estilos.tabLabel}>Perfil</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/(tabs)" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="home" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Home</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/busca-professores" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="search" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Buscar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/chat" as any)}
-              activeOpacity={0.8}
-            >
-              <Feather name="message-square" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Chat</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/agenda" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-              <Text style={estilos.tabLabel}>Agenda</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={estilos.tabItem}
-              onPress={() => router.push("/perfil" as any)}
-              activeOpacity={0.8}
-            >
-              <FontAwesome5 name="user-alt" size={19} color="#64748B" />
-              <Text style={estilos.tabLabel}>Perfil</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
+      <TabBarRN001 />
     </SafeAreaView>
   );
 }

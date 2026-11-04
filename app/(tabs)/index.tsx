@@ -217,7 +217,7 @@ export default function Index() {
   const { perfilAtivo, nomeUsuario } = useAuth() as any;
 
   return perfilAtivo === "Professor" ? (
-    <HomeProfessorScreen />
+    <HomeProfessorScreen exibirBarraInferior={false} />
   ) : (
     <HomeAluno nome={nomeUsuario} />
   );
@@ -680,64 +680,6 @@ function HomeAluno({ nome }: { nome: string }) {
         onClose={() => setModalNotificacoes(false)}
         usuarioId={usuarioId || 1}
       />
-
-      {/* Barra de Navegação Inferior Dockada (5 Abas Oficiais do Aluno) */}
-      <View
-        style={[
-          estilos.tabBarContainer,
-          { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
-        ]}
-      >
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => {}}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Home"
-        >
-          <FontAwesome5 name="home" size={20} color="#FF5A1F" />
-          <Text style={[estilos.tabLabel, { color: "#FF5A1F", fontWeight: "700" }]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/busca-professores" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Buscar"
-        >
-          <Feather name="search" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Buscar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/chat" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Chat"
-        >
-          <Ionicons name="chatbubbles-outline" size={22} color="#64748B" />
-          <Text style={estilos.tabLabel}>Chat</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Agenda"
-        >
-          <FontAwesome5 name="calendar-alt" size={20} color="#64748B" />
-          <Text style={estilos.tabLabel}>Agenda</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/perfil" as any)}
-          activeOpacity={0.8}
-          accessibilityLabel="Aba Perfil"
-        >
-          <FontAwesome5 name="user-alt" size={18} color="#64748B" />
-          <Text style={estilos.tabLabel}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
