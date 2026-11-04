@@ -51,26 +51,12 @@ export default function PerfilProfessorScreen() {
   // Seleção de Modalidade (ONLINE vs PRESENCIAL)
   const [modalidade, setModalidade] = useState<"ONLINE" | "PRESENCIAL">("ONLINE");
 
-  // Seleção de Data e Horário
-  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(0);
-  const [horarioSelecionado, setHorarioSelecionado] = useState<string>("14:00");
-
-  // Modal de Confirmação de Agendamento
-  const [modalSucessoVisivel, setModalSucessoVisivel] = useState<boolean>(false);
-
   const carregarPerfil = useCallback(async () => {
     try {
       const professorId = Array.isArray(id) ? id[0] : id || "101";
       const res: ResultadoPerfilProfessor = await obterPerfilProfessorComFallback(professorId);
       setProfessor(res.professor);
       setIsSimulado(res.isSimulado);
-
-      // Define horário inicial disponível
-      const primeiroDia = res.professor.disponibilidadeSemanal?.[0];
-      const primeiroHorario = primeiroDia?.horarios?.find((h) => h.disponivel)?.hora;
-      if (primeiroHorario) {
-        setHorarioSelecionado(primeiroHorario);
-      }
     } catch {
       setIsSimulado(true);
     }
@@ -97,7 +83,7 @@ export default function PerfilProfessorScreen() {
   };
 
   const handleAgendarAula = () => {
-    setModalSucessoVisivel(true);
+    router.push("/marcar-aula" as any);
   };
 
   if (!professor) {
@@ -113,7 +99,6 @@ export default function PerfilProfessorScreen() {
   }
 
   const precoAtual = modalidade === "ONLINE" ? professor.precoOnline : professor.precoPresencial;
-  const diaAtual = professor.disponibilidadeSemanal?.[diaSelecionadoIdx];
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
@@ -370,94 +355,7 @@ export default function PerfilProfessorScreen() {
         </View>
 
         {/* ============================================================== */}
-        {/* 6. GRADE DE DISPONIBILIDADE SEMANAL INTERATIVA                */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoContainer}>
-          <Text style={estilos.secaoTitulo}>Disponibilidade Semanal</Text>
-          <Text style={estilos.secaoSubtitulo}>
-            Selecione o dia e o horário de sua preferência:
-          </Text>
-
-          {/* Faixa de Dias da Semana */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={estilos.diasSemanaScroll}
-          >
-            {(professor.disponibilidadeSemanal || []).map((dia, idx) => {
-              const selecionado = diaSelecionadoIdx === idx;
-              return (
-                <TouchableOpacity
-                  key={`dia-${idx}`}
-                  style={[
-                    estilos.diaCard,
-                    selecionado && estilos.diaCardAtivo,
-                  ]}
-                  onPress={() => setDiaSelecionadoIdx(idx)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[estilos.diaSemanaNome, selecionado && estilos.diaSemanaNomeAtivo]}>
-                    {dia.diaSemana}
-                  </Text>
-                  <Text style={[estilos.diaMesNumero, selecionado && estilos.diaMesNumeroAtivo]}>
-                    {dia.diaMes}
-                  </Text>
-                  {selecionado && <View style={estilos.dotDiaAtivo} />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Grade de Slots de Horários */}
-          <View style={estilos.horariosContainer}>
-            <Text style={estilos.labelTurno}>Horários disponíveis no dia:</Text>
-            <View style={estilos.gradeHorarios}>
-              {(diaAtual?.horarios || []).map((slot, sIdx) => {
-                const ativo = horarioSelecionado === slot.hora;
-                return (
-                  <TouchableOpacity
-                    key={`slot-${sIdx}`}
-                    style={[
-                      estilos.slotHorarioBotao,
-                      !slot.disponivel && estilos.slotHorarioIndisponivel,
-                      ativo && estilos.slotHorarioAtivo,
-                    ]}
-                    disabled={!slot.disponivel}
-                    onPress={() => setHorarioSelecionado(slot.hora)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="time-outline"
-                      size={14}
-                      color={ativo ? "#FFFFFF" : slot.disponivel ? "#0F172A" : "#94A3B8"}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
-                      style={[
-                        estilos.slotHorarioTexto,
-                        !slot.disponivel && estilos.slotHorarioTextoIndisponivel,
-                        ativo && estilos.slotHorarioTextoAtivo,
-                      ]}
-                    >
-                      {slot.hora}
-                    </Text>
-                    {ativo && (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={14}
-                        color="#FF6B1A"
-                        style={{ marginLeft: 4 }}
-                      />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 7. DISCIPLINAS E ESPECIALIDADES                                */}
+        {/* 6. DISCIPLINAS E ESPECIALIDADES                                */}
         {/* ============================================================== */}
         <View style={estilos.secaoContainer}>
           <Text style={estilos.secaoTitulo}>Disciplinas & Especialidades</Text>
