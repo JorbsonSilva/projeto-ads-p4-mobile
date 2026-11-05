@@ -33,6 +33,7 @@ import { Theme } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import CronometroAula from "../components/CronometroAula";
+import ChatModal from "../components/ChatModal";
 
 export default function SalaAulaScreen() {
   const { perfilAtivo, usuarioId } = useAuth();
@@ -42,6 +43,7 @@ export default function SalaAulaScreen() {
   const [copiado, setCopiado] = useState<boolean>(false);
   const [audioMutado, setAudioMutado] = useState<boolean>(false);
   const [cameraLigada, setCameraLigada] = useState<boolean>(true);
+  const [chatModalAberto, setChatModalAberto] = useState<boolean>(false);
 
   const linkSalaVirtual = "https://meet.google.com/ori-calc-2026";
 
@@ -85,7 +87,7 @@ export default function SalaAulaScreen() {
 
         <TouchableOpacity 
           style={styles.botaoChatAtalho}
-          onPress={() => router.push("/chat" as any)}
+          onPress={() => setChatModalAberto(true)}
           activeOpacity={0.7}
         >
           <Feather name="message-circle" size={18} color={Theme.colors.primary} />
@@ -325,6 +327,19 @@ export default function SalaAulaScreen() {
         {/* ESPAÇAMENTO INFERIOR PARA SCROLL LIMPO ACIMA DA TABBAR */}
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* MODAL DE CHAT EM TEMPO REAL E CANAL DE DENÚNCIAS (ORI-027) */}
+      <ChatModal
+        visible={chatModalAberto}
+        onClose={() => setChatModalAberto(false)}
+        agendamentoId={2026}
+        usuarioId={usuarioId ? Number(usuarioId) : 1}
+        outroUsuarioId={isProfessor ? 10 : 2}
+        outroUsuarioNome={isProfessor ? "Lucas Silveira" : "Prof. Dr. Ricardo Santos"}
+        disciplinaNome="Cálculo Diferencial e Integral I"
+        agendamentoStatus="Ao Vivo"
+        avatarIniciais={isProfessor ? "LS" : "RS"}
+      />
 
       {/* BARRA INFERIOR DE 5 ABAS FIXA (RN-001) */}
       <TabBarRN001 abaAtiva="agenda" />
