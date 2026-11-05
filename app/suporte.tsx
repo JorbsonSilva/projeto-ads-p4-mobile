@@ -36,6 +36,7 @@ import {
   ResultadoSuporte,
   TicketSuporteItem,
 } from "../services/suporteService";
+import ModalSuporteTicket from "../components/ModalSuporteTicket";
 
 export default function SuporteScreen() {
   const insets = useSafeAreaInsets();
@@ -46,6 +47,7 @@ export default function SuporteScreen() {
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [enviandoTicket, setEnviandoTicket] = useState<boolean>(false);
+  const [modalTicketAberto, setModalTicketAberto] = useState<boolean>(false);
 
   const [dadosSuporte, setDadosSuporte] = useState<ResultadoSuporte>({
     faq: [],
@@ -227,19 +229,30 @@ export default function SuporteScreen() {
           <Text style={estilos.headerSubtitulo}>Suporte, FAQ e mediação de chamados</Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() => carregarDados(true)}
-          style={estilos.botaoRefresh}
-          activeOpacity={0.7}
-          disabled={atualizando}
-          accessibilityLabel="Atualizar suporte"
-        >
-          {atualizando ? (
-            <ActivityIndicator size="small" color="#FF5A1F" />
-          ) : (
-            <Feather name="refresh-cw" size={19} color="#475569" />
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => setModalTicketAberto(true)}
+            style={estilos.botaoTicketRapido}
+            activeOpacity={0.7}
+            accessibilityLabel="Abrir Ticket Rápido"
+          >
+            <Feather name="plus-circle" size={18} color="#FF5A1F" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => carregarDados(true)}
+            style={estilos.botaoRefresh}
+            activeOpacity={0.7}
+            disabled={atualizando}
+            accessibilityLabel="Atualizar suporte"
+          >
+            {atualizando ? (
+              <ActivityIndicator size="small" color="#FF5A1F" />
+            ) : (
+              <Feather name="refresh-cw" size={18} color="#475569" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ============================================================== */}
@@ -857,7 +870,17 @@ export default function SuporteScreen() {
       </Modal>
 
       {/* ============================================================== */}
-      {/* 7. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
+      {/* 7. MODAL DE SUPORTE E TICKETS COM PROTOCOLO (ORI-028)          */}
+      {/* ============================================================== */}
+      <ModalSuporteTicket
+        visible={modalTicketAberto}
+        onClose={() => setModalTicketAberto(false)}
+        usuarioId={auth?.usuarioId ? Number(auth.usuarioId) : 1}
+        onTicketCriado={() => carregarDados(true)}
+      />
+
+      {/* ============================================================== */}
+      {/* 8. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)       */}
       {/* ============================================================== */}
       <TabBarRN001 />
     </SafeAreaView>
@@ -905,6 +928,16 @@ const estilos = StyleSheet.create({
     fontSize: 11,
     color: "#64748B",
     marginTop: 1,
+  },
+  botaoTicketRapido: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFD8B5",
+    alignItems: "center",
+    justifyContent: "center",
   },
   botaoRefresh: {
     width: 40,
