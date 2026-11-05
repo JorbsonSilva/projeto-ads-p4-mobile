@@ -1,9 +1,24 @@
-// app/login.tsx - 100% Fiel à Tela Alvo Enviada (Orienta Mobile)
-// Utilizando exatamente as imagens enviadas por você em assets/images/:
-// 1. Plano_fundo.jpeg - Wallpaper oficial das ondas orgânicas âmbar
-// 2. logo.png         - Logotipo oficial Orienta com fundo transparente
-// 3. google.png       - Ícone multicolorido oficial do Google
+/**
+ * @file login.tsx
+ * @description Tela de Login do Orienta 2.0 [ORI-005].
+ * 100% Fiel à referência visual IMG-014 (Login.png) e wallpaper IMG-019 (Plano_Fundo.jpeg).
+ * 
+ * Integrações:
+ * - Wallpaper de ondas orgânicas âmbar intensas (Assets.backgrounds.login)
+ * - Cabeçalho com Logotipo oficial transparente (Assets.logo.transparent), halo suave de iluminação
+ *   e slogan institucional "Seu futuro com as melhores escolhas."
+ * - Cartão branco flutuante curvo (borderRadius: 36) com elevação e espaçamento para visualização
+ *   das ondas orgânicas na base da tela
+ * - Componente universal Input com máscara dinâmica CPF/e-mail, ícones Feather e alternador de visibilidade
+ * - Botão primário "Entrar ->" com degradê institucional laranja e spinner de carregamento
+ * - Divisor estético horizontal "ou"
+ * - Botão social "Continuar com o Google" com ícone multicolorido oficial (Assets.icons.google)
+ * - Rodapé "Ainda não tem uma conta? Criar conta"
+ * - Integração real com POST /api/v1/auth/login e aviso contextual em caso de indisponibilidade da API
+ */
+
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -16,24 +31,49 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
+import { Input, formatCPF } from "../components/ui";
+import { Assets } from "../constants/assets";
+import { Theme } from "../constants/theme";
 
 export default function LoginScreen() {
   const { loginGlobal } = useAuth() as any;
   const [emailOrCpf, setEmailOrCpf] = useState("");
   const [senha, setSenha] = useState("");
-  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [carregando, setCarregando] = useState(false);
+  const [erroConexao, setErroConexao] = useState<string | null>(null);
+  const [erroEmailOrCpf, setErroEmailOrCpf] = useState<string | undefined>(undefined);
+  const [erroSenha, setErroSenha] = useState<string | undefined>(undefined);
+
+  const isDemo =
+    typeof window !== "undefined" &&
+    (window.location.search.includes("demo=true") ||
+      window.location.search.includes("preview=true"));
 
   const executarLogin = async () => {
-    if (!emailOrCpf.trim() || !senha.trim()) {
-      Alert.alert("Campos obrigatórios", "Por favor, preencha o e-mail/CPF e a senha.");
+    setErroConexao(null);
+    let temErro = false;
+
+    if (!emailOrCpf.trim()) {
+      setErroEmailOrCpf("Informe seu e-mail ou CPF cadastrado.");
+      temErro = true;
+    } else {
+      setErroEmailOrCpf(undefined);
+    }
+
+    if (!senha.trim()) {
+      setErroSenha("A senha de acesso é obrigatória.");
+      temErro = true;
+    } else {
+      setErroSenha(undefined);
+    }
+
+    if (temErro) {
       return;
     }
 
@@ -62,16 +102,22 @@ export default function LoginScreen() {
         Alert.alert("Erro de autenticação", erro.message || "Credenciais inválidas.");
       }
     } catch {
-      Alert.alert("Erro de Conexão", "Não foi possível conectar ao servidor Spring Boot.");
+      setErroConexao(
+        "Servidor Spring Boot indisponível (http://localhost:8080). Nenhuma conta real foi autenticada."
+      );
+      Alert.alert(
+        "API Indisponível",
+        "Não foi possível conectar ao servidor Spring Boot em http://localhost:8080. Para visualizar as telas sem backend, utilize o Modo de Visualização no Dashboard."
+      );
     } finally {
       setCarregando(false);
     }
   };
 
   return (
-    // 1. O plano de fundo cobre a tela INTEIRA do celular (Plano_fundo.jpeg)
+    // 1. O plano de fundo cobre a tela INTEIRA do celular (Assets.backgrounds.login - IMG-019)
     <ImageBackground
-      source={require("../assets/images/Plano_fundo.jpeg")}
+      source={Assets.backgrounds.login}
       style={estilos.fundoTotal}
       resizeMode="cover"
     >
@@ -79,117 +125,157 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={estilos.flexTotal}
       >
-        {/* 2. ScrollView envolvendo todo o conteúdo: o cabeçalho rola junto com o form, sem ficar fixo cobrindo os campos */}
         <ScrollView
           contentContainerStyle={estilos.scrollConteudo}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={true}
         >
-          {/* 3. Cabeçalho com Logo ampliado em destaque e Halo de Luz para contraste */}
-          <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
-            <View style={estilos.haloIluminacao}>
-              <Image
-                source={require("../assets/images/logo.png")}
-                style={estilos.logoImg}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={estilos.sloganTexto}>Seu futuro com{" "}as melhores escolhas.</Text>
-          </SafeAreaView>
-
-          {/* 4. Cartão Branco Curvo Flutuante (não vai até o final para que o fundo apareça no rodapé) */}
-          <View style={estilos.cartaoBranco}>
-            <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
-            <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
-
-            {/* Input E-mail ou CPF com Ícone */}
-            <View style={estilos.inputBox}>
-              <Feather name="user" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="E-mail ou CPF"
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="none"
-                value={emailOrCpf}
-                onChangeText={setEmailOrCpf}
-              />
-            </View>
-
-            {/* Input Senha com Alternador de Visibilidade */}
-            <View style={estilos.inputBox}>
-              <Feather name="lock" size={18} color="#64748B" style={estilos.inputIconeEsquerda} />
-              <TextInput
-                style={estilos.inputTexto}
-                placeholder="Senha"
-                placeholderTextColor="#94A3B8"
-                secureTextEntry={!mostrarSenha}
-                value={senha}
-                onChangeText={setSenha}
-              />
-              <TouchableOpacity onPress={() => setMostrarSenha((v) => !v)} style={estilos.iconeOlho}>
-                <Ionicons
-                  name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-                  size={19}
-                  color="#94A3B8"
+          <View style={estilos.containerCentralizado}>
+            {/* 2. Cabeçalho com Logotipo Orienta ampliado e halo de luz suave */}
+            <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
+              <View style={estilos.haloIluminacao}>
+                <Image
+                  source={Assets.logo.transparent}
+                  style={estilos.logoImg}
+                  resizeMode="contain"
+                  accessibilityLabel="Logotipo Orienta"
                 />
-              </TouchableOpacity>
-            </View>
-
-            {/* Link Esqueceu sua senha? */}
-            <TouchableOpacity
-              onPress={() => router.push("/esqueci-senha" as any)}
-              style={estilos.linkEsqueceuSenha}
-            >
-              <Text style={estilos.txtEsqueceuSenha}>Esqueceu sua senha?</Text>
-            </TouchableOpacity>
-
-            {/* Botão Primário Laranja Degradê */}
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={executarLogin}
-              disabled={carregando}
-              style={estilos.btnEntrarWrapper}
-            >
-              <View style={estilos.btnEntrar}>
-                {carregando ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <View style={estilos.btnEntrarConteudo}>
-                    <Text style={estilos.txtEntrar}>Entrar</Text>
-                    <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
-                  </View>
-                )}
               </View>
-            </TouchableOpacity>
+              <Text style={estilos.sloganTexto}>Seu futuro com as melhores escolhas.</Text>
+            </SafeAreaView>
 
-            {/* Divisor "ou" */}
-            <View style={estilos.divisorContainer}>
-              <View style={estilos.linhaDivisor} />
-              <Text style={estilos.txtOu}>ou</Text>
-              <View style={estilos.linhaDivisor} />
-            </View>
+            {/* 3. Cartão Branco Curvo Flutuante (borderRadius: 36) */}
+            <View style={estilos.cartaoBranco}>
+              <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
+              <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
 
-            {/* Botão Social Google com Ícone Oficial (google.png) */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => Alert.alert("Google OAuth", "Autenticação Google")}
-              style={estilos.btnGoogle}
-            >
-              <Image
-                source={require("../assets/images/google.png")}
-                style={estilos.googleIcon}
-                resizeMode="contain"
+              {/* Input E-mail ou CPF com Ícone e Máscara Dinâmica */}
+              <Input
+                label="E-mail ou CPF"
+                placeholder="exemplo@email.com ou 000.000.000-00"
+                value={emailOrCpf}
+                onChangeText={(texto) => {
+                  setErroEmailOrCpf(undefined);
+                  const apenasDigitos = texto.replace(/\D/g, "");
+                  if (apenasDigitos.length > 0 && !texto.includes("@") && !/[a-zA-Z]/.test(texto)) {
+                    setEmailOrCpf(formatCPF(texto));
+                  } else {
+                    setEmailOrCpf(texto);
+                  }
+                }}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                leftIcon={<Feather name="user" size={18} color="#64748B" />}
+                error={erroEmailOrCpf}
+                disabled={carregando}
+                accessibilityLabel="Campo de e-mail ou CPF"
+                testID="login-input-email-cpf"
               />
-              <Text style={estilos.txtGoogle}>Continuar com o Google</Text>
-            </TouchableOpacity>
 
-            {/* Rodapé Criar Conta */}
-            <View style={estilos.rodapeCadastro}>
-              <Text style={estilos.txtAindaNao}>Ainda não tem uma conta?</Text>
-              <TouchableOpacity onPress={() => router.push("/cadastro" as any)}>
-                <Text style={estilos.txtCriarConta}>Criar conta</Text>
+              {/* Input Senha com Alternador de Visibilidade e Ícone */}
+              <Input
+                label="Senha"
+                placeholder="Digite sua senha de acesso"
+                value={senha}
+                onChangeText={(texto) => {
+                  setSenha(texto);
+                  setErroSenha(undefined);
+                }}
+                isPassword
+                leftIcon={<Feather name="lock" size={18} color="#64748B" />}
+                error={erroSenha}
+                disabled={carregando}
+                accessibilityLabel="Campo de senha"
+                testID="login-input-senha"
+              />
+
+              {/* Link Esqueceu sua senha? */}
+              <TouchableOpacity
+                onPress={() => router.push("/esqueci-senha" as any)}
+                style={estilos.linkEsqueceuSenha}
+                activeOpacity={0.7}
+              >
+                <Text style={estilos.txtEsqueceuSenha}>Esqueceu sua senha?</Text>
               </TouchableOpacity>
+
+              {/* Aviso visual de API Offline */}
+              {erroConexao && (
+                <View style={estilos.avisoConexao}>
+                  <Feather name="alert-triangle" size={16} color="#DC2626" style={estilos.iconeAviso} />
+                  <Text style={estilos.txtAvisoConexao}>{erroConexao}</Text>
+                </View>
+              )}
+
+              {/* Identificador de Modo Demonstração */}
+              {isDemo && (
+                <View style={estilos.avisoDemo}>
+                  <Feather name="info" size={15} color="#047857" style={estilos.iconeAviso} />
+                  <Text style={estilos.txtAvisoDemo}>
+                    Modo de Demonstração Ativo (Visualização Sem API)
+                  </Text>
+                </View>
+              )}
+
+              {/* Botão Primário Laranja Degradê */}
+              <TouchableOpacity
+                activeOpacity={0.88}
+                onPress={executarLogin}
+                disabled={carregando}
+                style={estilos.btnEntrarWrapper}
+                accessibilityRole="button"
+                accessibilityLabel="Entrar"
+              >
+                <LinearGradient
+                  colors={carregando ? ["#FDA4AF", "#FCA5A5"] : ["#FF6A00", "#FF4500"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={estilos.btnEntrar}
+                >
+                  {carregando ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <View style={estilos.btnEntrarConteudo}>
+                      <Text style={estilos.txtEntrar}>Entrar</Text>
+                      <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                    </View>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              {/* Divisor "ou" */}
+              <View style={estilos.divisorContainer}>
+                <View style={estilos.linhaDivisor} />
+                <Text style={estilos.txtOu}>ou</Text>
+                <View style={estilos.linhaDivisor} />
+              </View>
+
+              {/* Botão Social Google com Ícone Oficial (Assets.icons.google) */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => Alert.alert("Google OAuth", "Autenticação Google")}
+                style={estilos.btnGoogle}
+                accessibilityRole="button"
+                accessibilityLabel="Continuar com o Google"
+              >
+                <Image
+                  source={Assets.icons.google}
+                  style={estilos.googleIcon}
+                  resizeMode="contain"
+                />
+                <Text style={estilos.txtGoogle}>Continuar com o Google</Text>
+              </TouchableOpacity>
+
+              {/* Rodapé Criar Conta */}
+              <View style={estilos.rodapeCadastro}>
+                <Text style={estilos.txtAindaNao}>Ainda não tem uma conta?</Text>
+                <TouchableOpacity
+                  onPress={() => router.push("/cadastro" as any)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={estilos.txtCriarConta}>Criar conta</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -209,57 +295,62 @@ const estilos = StyleSheet.create({
   },
   scrollConteudo: {
     flexGrow: 1,
-    justifyContent: "space-between",
-    paddingBottom: 20,
+    justifyContent: "center",
+    paddingVertical: 16,
+  },
+  containerCentralizado: {
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
   },
   areaCabecalho: {
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: Platform.OS === "android" ? 28 : 12,
-    paddingBottom: 12,
+    paddingTop: Platform.OS === "android" ? 20 : 12,
+    paddingBottom: 8,
     paddingHorizontal: 20,
   },
   haloIluminacao: {
-    width: 200,
-    height: 200,
+    width: 140,
+    height: 140,
     borderRadius: 70,
-    backgroundColor: "rgba(255, 255, 255, 0.12)", // Iluminação suave que destaca o logo
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
     alignItems: "center",
-    marginTop: 20,
     justifyContent: "center",
     shadowColor: "#FFFFFF",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
     elevation: 6,
     marginVertical: 4,
   },
   logoImg: {
-    width: 460,
-    height: 300,
+    width: 110,
+    height: 110,
     resizeMode: "contain",
   },
   sloganTexto: {
-    fontSize: 25,
-    color: "#2D3748",
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#334155",
     textAlign: "center",
     marginTop: 8,
-    fontWeight: "600",
-    lineHeight: 18,
+    marginBottom: 8,
+    letterSpacing: -0.2,
   },
   cartaoBranco: {
     backgroundColor: "#FFFFFF",
     borderRadius: 36,
     marginHorizontal: 18,
-    marginTop: 8,
-    marginBottom: 28, // Garante que as ondas de Plano_fundo.jpeg apareçam na base!
+    marginTop: 6,
+    marginBottom: 32, // Preserva a visibilidade das ondas de fundo na base
     paddingHorizontal: 24,
     paddingTop: 28,
-    paddingBottom: 28,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
+    paddingBottom: 26,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
     elevation: 8,
   },
   tituloBemVindo: {
@@ -273,28 +364,61 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     marginTop: 4,
     marginBottom: 20,
+    lineHeight: 18,
   },
-  inputBox: {
+  linkEsqueceuSenha: {
+    alignSelf: "flex-end",
+    marginTop: 2,
+    marginBottom: 16,
+    paddingVertical: 2,
+  },
+  txtEsqueceuSenha: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FF5A1F",
+  },
+  avisoConexao: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 16,
+  },
+  txtAvisoConexao: {
+    flex: 1,
+    color: "#B91C1C",
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  avisoDemo: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#ECFDF5",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 52,
-    backgroundColor: "#FFFFFF",
-    marginBottom: 12,
+    borderColor: "#A7F3D0",
+    borderRadius: 12,
+    padding: 9,
+    marginBottom: 16,
   },
-  inputIconeEsquerda: { marginRight: 10 },
-  inputTexto: { flex: 1, fontSize: 14, color: "#0F172A" },
-  iconeOlho: { padding: 4 },
-  linkEsqueceuSenha: { alignSelf: "flex-end", marginTop: 2, marginBottom: 18 },
-  txtEsqueceuSenha: { fontSize: 12, fontWeight: "600", color: "#EA580C" },
+  txtAvisoDemo: {
+    flex: 1,
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  iconeAviso: {
+    marginRight: 8,
+    marginTop: 1,
+  },
   btnEntrarWrapper: {
-    borderRadius: 24,
+    borderRadius: 26,
     overflow: "hidden",
     marginBottom: 18,
-    backgroundColor: "#FF6A00",
     shadowColor: "#FF6A00",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -302,37 +426,77 @@ const estilos = StyleSheet.create({
     elevation: 5,
   },
   btnEntrar: {
-    height: 50,
+    height: 52,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FF6A00",
-    borderRadius: 24,
+    borderRadius: 26,
   },
-  btnEntrarConteudo: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
-  txtEntrar: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  divisorContainer: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  linhaDivisor: { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
-  txtOu: { marginHorizontal: 12, fontSize: 12, color: "#94A3B8" },
+  btnEntrarConteudo: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  txtEntrar: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  divisorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  linhaDivisor: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E2E8F0",
+  },
+  txtOu: {
+    marginHorizontal: 14,
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#94A3B8",
+  },
   btnGoogle: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 24,
-    height: 48,
+    borderRadius: 26,
+    height: 50,
     backgroundColor: "#FFFFFF",
-    marginBottom: 22,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  googleIcon: { width: 20, height: 20, marginRight: 10 },
-  txtGoogle: { fontSize: 13, fontWeight: "600", color: "#1E293B" },
+  googleIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 10,
+  },
+  txtGoogle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E293B",
+  },
   rodapeCadastro: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
     gap: 6,
   },
-  txtAindaNao: { fontSize: 13, color: "#64748B" },
-  txtCriarConta: { fontSize: 13, fontWeight: "700", color: "#EA580C" },
+  txtAindaNao: {
+    fontSize: 13,
+    color: "#64748B",
+  },
+  txtCriarConta: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF5A1F",
+  },
 });
