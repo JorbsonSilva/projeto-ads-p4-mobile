@@ -1,6 +1,25 @@
-// app/verificar-email.tsx - 100% Fiel à Tela Alvo Enviada (Orienta Mobile)
-// Integração completa com o backend Spring Boot: POST /api/v1/auth/verificar-email e POST /api/v1/auth/reenviar-codigo
+/**
+ * @file verificar-email.tsx
+ * @description Tela de Verificação de E-mail OTP em Duas Etapas do Orienta 2.0 [ORI-007].
+ * 100% Fiel à referência visual IMG-018 e wallpaper suave IMG-020 (Assets.backgrounds.verificacao).
+ * 
+ * Especificações implementadas:
+ * - Fundo suave orgânico com Assets.backgrounds.verificacao (IMG-020).
+ * - Barra superior com botão voltar (Feather arrow-left) e Logotipo oficial transparente (Assets.logo.transparent).
+ * - Ilustração moderna central do envelope aberto com insígnia @ laranja e raios solares radiantes (IMG-018).
+ * - Título institucional "Verifique seu e-mail" e subtítulo destacando o e-mail do parâmetro de navegação.
+ * - Seis caixas de código OTP numérico com foco automático, avanço sequencial, retorno ao apagar (Backspace),
+ *   suporte a colar código completo e indicação visual de foco/preenchimento.
+ * - Desabilitação e validação visual do botão de envio enquanto o código não tiver 6 dígitos.
+ * - Botão principal "Verificar e-mail ->" com LinearGradient (#FF6A00 a #FF4500) e feedback de carregamento.
+ * - Temporizador regressivo visível iniciando em 90 segundos (01:30) com reenvio ativo após zerar.
+ * - Orientações de ajuda sobre pasta de spam e atalho para corrigir e-mail / voltar ao cadastro.
+ * - Banner de feedback inline para códigos incorretos, expirados, falhas de conexão ou sucesso.
+ * - Integração real com POST /api/v1/auth/verificar-email e POST /api/v1/auth/reenviar-codigo.
+ */
+
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -19,6 +38,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
+import { Assets } from "../constants/assets";
+import { Theme } from "../constants/theme";
 import { useAuth } from "../context/AuthContext";
 
 const { width: LARGURA_TELA, height: ALTURA_TELA } = Dimensions.get("window");
@@ -27,7 +48,7 @@ export default function VerificarEmailScreen() {
   const { email = "usuario@orienta.edu.br" } = useLocalSearchParams<{ email?: string }>();
   const { loginGlobal } = (useAuth ? useAuth() : {}) as any;
 
-  // Estado para os 6 dígitos do código OTP
+  // Estado dos 6 dígitos OTP
   const [digitos, setDigitos] = useState<string[]>(["", "", "", "", "", ""]);
   const [indiceFocado, setIndiceFocado] = useState<number>(0);
   const [carregando, setCarregando] = useState<boolean>(false);
@@ -35,7 +56,82 @@ export default function VerificarEmailScreen() {
   const [contaVerificada, setContaVerificada] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ tipo: "erro" | "sucesso"; texto: string } | null>(null);
 
-  // Navegação resiliente com suporte a Expo Router e Web Browser
+  // Timer regressivo iniciando em 90 segundos (01:30 conforme IMG-018)
+  const [tempoRestante, setTempoRestante] = useState<number>(90);
+
+  // Referências aos 6 inputs
+  const inputRefs = useRef<Array<TextInput | null>>([]);
+
+  // Inicializa o foco e o contador de reenvio
+  useEffect(() => {
+    const timerFocus = setTimeout(() => {
+      inputRefs.current[0]?.focus();
+    }, 250);
+
+    const intervalo = setInterval(() => {
+      setTempoRestante((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => {
+      clearTimeout(timerFocus);
+      clearInterval(intervalo);
+    };
+  }, []);
+
+  // Formatação do tempo MM:SS (ex: 01:30)
+  const formatarTempo = (totalSegundos: number) => {
+    const min = Math.floor(totalSegundos / 60);
+    const seg = totalSegundos % 60;
+    return `${String(min).padStart(2, "0")}:${String(seg).padStart(2, "0")}`;
+  };
+
+  // Código completo e validação de preenchimento
+  const codigoCompleto = digitos.join("");
+  const codigoEstaCompleto = codigoCompleto.length === 6;
+
+  // Manipulação de texto em cada caixa OTP
+  const handleMudarTexto = (texto: string, index: number) => {
+    setFeedback(null);
+
+    // Permite colar código com múltiplos dígitos (ex: "123456")
+    const numerosLimpos = texto.replace(/[^0-9]/g, "");
+    if (numerosLimpos.length > 1) {
+      const novosDigitos = [...digitos];
+      for (let i = 0; i < 6; i++) {
+        novosDigitos[i] = numerosLimpos[i] || "";
+      }
+      setDigitos(novosDigitos);
+      const proximoIndice = Math.min(numerosLimpos.length - 1, 5);
+      inputRefs.current[proximoIndice]?.focus();
+      return;
+    }
+
+    // Apenas um dígito numérico por caixa
+    const digitoUnico = numerosLimpos.slice(-1);
+    const novosDigitos = [...digitos];
+    novosDigitos[index] = digitoUnico;
+    setDigitos(novosDigitos);
+
+    // Avança para o próximo campo automaticamente
+    if (digitoUnico && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  // Manipulação da tecla Backspace para retorno ao campo anterior
+  const handleKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === "Backspace") {
+      setFeedback(null);
+      if (!digitos[index] && index > 0) {
+        const novosDigitos = [...digitos];
+        novosDigitos[index - 1] = "";
+        setDigitos(novosDigitos);
+        inputRefs.current[index - 1]?.focus();
+      }
+    }
+  };
+
+  // Navegação resiliente para tela de login
   const irParaLogin = () => {
     try {
       router.replace("/login" as any);
@@ -50,91 +146,30 @@ export default function VerificarEmailScreen() {
     }
   };
 
-  const irParaHome = () => {
+  // Retorno ao fluxo de cadastro caso o usuário queira corrigir o e-mail
+  const voltarParaCadastro = () => {
     try {
-      router.replace("/(tabs)" as any);
+      router.back();
     } catch {
-      try {
-        router.replace("/" as any);
-      } catch {
-        if (typeof window !== "undefined" && window.location) {
-          window.location.href = "/";
-        }
-      }
+      router.replace("/cadastro" as any);
     }
   };
 
-  // Timer regressivo iniciando em 90 segundos (01:30) conforme a tela enviada
-  const [tempoRestante, setTempoRestante] = useState<number>(90);
-
-  // Referências para navegação automática entre as 6 caixas de texto
-  const inputRefs = useRef<Array<TextInput | null>>([]);
-
-  useEffect(() => {
-    // Foca na primeira caixa ao montar a tela
-    inputRefs.current[0]?.focus();
-
-    // Contador regressivo a cada 1 segundo
-    const intervalo = setInterval(() => {
-      setTempoRestante((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-
-    return () => clearInterval(intervalo);
-  }, []);
-
-  // Formatação do tempo no padrão "MM:SS" (ex: 01:30)
-  const formatarTempo = (totalSegundos: number) => {
-    const min = Math.floor(totalSegundos / 60);
-    const seg = totalSegundos % 60;
-    return `${String(min).padStart(2, "0")}:${String(seg).padStart(2, "0")}`;
-  };
-
-  // Manipulação da digitação em cada caixa OTP
-  const handleMudarTexto = (texto: string, index: number) => {
-    // Trata colagem de código completo de 6 dígitos
-    const numerosLimpos = texto.replace(/[^0-9]/g, "");
-    if (numerosLimpos.length > 1) {
-      const novosDigitos = [...digitos];
-      for (let i = 0; i < 6; i++) {
-        novosDigitos[i] = numerosLimpos[i] || "";
-      }
-      setDigitos(novosDigitos);
-      const proximo = Math.min(numerosLimpos.length, 5);
-      inputRefs.current[proximo]?.focus();
-      return;
-    }
-
-    const valor = numerosLimpos.slice(-1);
-    const novosDigitos = [...digitos];
-    novosDigitos[index] = valor;
-    setDigitos(novosDigitos);
-
-    if (valor && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  // Manipulação do botão backspace para retorno automático
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === "Backspace" && !digitos[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  // Chamada de verificação com a API Spring Boot (POST /api/v1/auth/verificar-email)
+  // Chamada de verificação oficial no backend Spring Boot: POST /api/v1/auth/verificar-email
   const executarVerificacao = async () => {
-    const codigoCompleto = digitos.join("");
-    if (codigoCompleto.length !== 6) {
-      Alert.alert(
-        "Código incompleto",
-        "Por favor, digite todos os 6 números enviados para o seu e-mail."
-      );
+    if (!codigoEstaCompleto) {
+      const msg = "Por favor, digite todos os 6 números do código de verificação.";
+      setFeedback({ tipo: "erro", texto: msg });
+      Alert.alert("Código incompleto", msg);
       return;
     }
 
     setCarregando(true);
+    setFeedback(null);
+
+    const emailNormalizado = (email || "").trim().toLowerCase();
+
     try {
-      const emailNormalizado = email.trim().toLowerCase();
       const resposta = await fetch(`${API_URL}/api/v1/auth/verificar-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,25 +202,25 @@ export default function VerificarEmailScreen() {
         setContaVerificada(true);
         setFeedback({
           tipo: "sucesso",
-          texto: "E-mail ativado com sucesso! Redirecionando para o login...",
+          texto: "E-mail verificado com sucesso! Redirecionando para o login...",
         });
 
-        // Redirecionamento automático com fallback garantido
+        // Redirecionamento automático após confirmação
         setTimeout(() => {
           irParaLogin();
-        }, 1200);
+        }, 1500);
       } else {
         const msgErro =
           corpo.mensagem ||
           corpo.message ||
           corpo.error ||
-          "Código de verificação incorreto ou expirado.";
+          "Código de verificação incorreto ou expirado. Tente novamente ou solicite um novo código.";
         setFeedback({ tipo: "erro", texto: msgErro });
         Alert.alert("Erro na verificação", msgErro);
       }
-    } catch (err: any) {
-      console.error("[VerificarEmail] Erro na requisição:", err);
-      const erroRede = `Não foi possível conectar ao servidor Spring Boot em ${API_URL || "localhost:8080"}.`;
+    } catch {
+      const urlAlvo = API_URL || "http://localhost:8080";
+      const erroRede = `Não foi possível conectar ao servidor Spring Boot em ${urlAlvo}. Verifique sua conexão.`;
       setFeedback({ tipo: "erro", texto: erroRede });
       Alert.alert("Erro de Conexão", erroRede);
     } finally {
@@ -193,19 +228,21 @@ export default function VerificarEmailScreen() {
     }
   };
 
-  // Chamada de reenvio com a API Spring Boot (POST /api/v1/auth/reenviar-codigo)
+  // Reenvio de código no backend Spring Boot: POST /api/v1/auth/reenviar-codigo
   const executarReenvio = async () => {
     if (tempoRestante > 0) {
       Alert.alert(
-        "Aguarde o tempo restante",
+        "Aguarde o temporizador",
         `Você poderá solicitar um novo código em ${formatarTempo(tempoRestante)}.`
       );
       return;
     }
 
     setReenviando(true);
+    setFeedback(null);
+    const emailNormalizado = (email || "").trim().toLowerCase();
+
     try {
-      const emailNormalizado = email.trim().toLowerCase();
       const resposta = await fetch(`${API_URL}/api/v1/auth/reenviar-codigo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,40 +252,47 @@ export default function VerificarEmailScreen() {
       const corpo = await resposta.json().catch(() => ({}));
 
       if (resposta.ok) {
-        setTempoRestante(90); // Reinicia o timer em 01:30
+        setTempoRestante(90); // Reinicia o temporizador em 01:30
         setDigitos(["", "", "", "", "", ""]);
         inputRefs.current[0]?.focus();
-        Alert.alert(
-          "Código reenviado",
-          corpo.mensagem || `Um novo código de 6 dígitos foi enviado para ${emailNormalizado}.`
-        );
+        const msgSucesso =
+          corpo.mensagem || `Novo código de 6 dígitos enviado para ${emailNormalizado}.`;
+        setFeedback({ tipo: "sucesso", texto: msgSucesso });
+        Alert.alert("Código reenviado", msgSucesso);
       } else {
-        Alert.alert(
-          "Falha no reenvio",
-          corpo.mensagem || corpo.message || "Não foi possível reenviar o código."
-        );
+        const msgErro =
+          corpo.mensagem ||
+          corpo.message ||
+          "Não foi possível reenviar o código neste momento. Tente novamente em instantes.";
+        setFeedback({ tipo: "erro", texto: msgErro });
+        Alert.alert("Falha no reenvio", msgErro);
       }
     } catch {
-      Alert.alert("Erro de Conexão", "Não foi possível contatar o servidor Spring Boot.");
+      const erroRede = "Não foi possível conectar ao servidor Spring Boot para reenviar o código.";
+      setFeedback({ tipo: "erro", texto: erroRede });
+      Alert.alert("Erro de Conexão", erroRede);
     } finally {
       setReenviando(false);
     }
   };
 
+  // Dica explicativa sobre entrega de e-mail e spam
   const alertarSpam = () => {
     Alert.alert(
-      "Dica de Recebimento",
-      "O e-mail com o código de 6 dígitos pode levar até 1 minuto para ser entregue. Verifique a pasta 'Spam', 'Lixo Eletrônico' ou a aba 'Promoções' do seu provedor.",
+      "Dica sobre o e-mail",
+      `O e-mail com o código de 6 dígitos foi encaminhado para:\n\n${email}\n\nEle costuma chegar em menos de 1 minuto. Verifique as pastas "Spam", "Lixo Eletrônico" ou a aba "Promoções" do seu aplicativo de e-mail.`,
       [{ text: "Entendido", style: "default" }]
     );
   };
 
   return (
     <View style={estilos.containerGeral}>
-      {/* 1. Detalhes de curvas âmbar nos cantos (Identidade Visual Orienta) */}
-      <View style={estilos.curvaSuperiorEsquerda} />
-      <View style={estilos.curvaInferiorDireita} />
-      <View style={estilos.curvaInferiorEsquerda} />
+      {/* 1. Wallpaper oficial suave (Assets.backgrounds.verificacao - IMG-020) */}
+      <Image
+        source={Assets.backgrounds.verificacao}
+        style={estilos.fundoAbsoluto}
+        resizeMode="cover"
+      />
 
       <SafeAreaView style={estilos.safeArea} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
@@ -260,186 +304,236 @@ export default function VerificarEmailScreen() {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Top Bar: Botão Voltar (←) e Logotipo Orienta Centralizado */}
-            <View style={estilos.cabecalhoTopo}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={estilos.btnVoltar}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Feather name="arrow-left" size={24} color="#0F172A" />
-              </TouchableOpacity>
+            <View style={estilos.containerCentralizado}>
+              {/* Top Bar: Botão Voltar (←) e Logotipo Orienta Centralizado */}
+              <View style={estilos.cabecalhoTopo}>
+                <TouchableOpacity
+                  onPress={voltarParaCadastro}
+                  style={estilos.btnVoltar}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Voltar ao cadastro"
+                >
+                  <Feather name="arrow-left" size={24} color="#0F172A" />
+                </TouchableOpacity>
 
-              <View style={estilos.areaLogo}>
-                <Image
-                  source={require("../assets/images/logo.png")}
-                  style={estilos.logoImg}
-                  resizeMode="contain"
-                />
+                <View style={estilos.areaLogo}>
+                  <Image
+                    source={Assets.logo.transparent}
+                    style={estilos.logoImg}
+                    resizeMode="contain"
+                    accessibilityLabel="Logotipo Orienta"
+                  />
+                </View>
+
+                <View style={estilos.espacadorDireita} />
               </View>
 
-              <View style={estilos.espacadorDireita} />
-            </View>
+              {/* Ilustração Central: Envelope de E-mail com insígnia @ e raios solares (IMG-018) */}
+              <View style={estilos.areaIlustracao}>
+                {/* Halo circular de iluminação âmbar de fundo */}
+                <View style={estilos.haloIluminacaoFundo} />
 
-            {/* Ilustração Central: Envelope de E-mail com insígnia @ e raios solares */}
-            <View style={estilos.areaIlustracao}>
-              {/* Halo circular de iluminação âmbar suave de fundo */}
-              <View style={estilos.haloIluminacaoFundo} />
+                {/* Raios solares radiantes */}
+                <View style={estilos.raioSuperiorEsquerdo} />
+                <View style={estilos.raioSuperiorDireito1} />
+                <View style={estilos.raioSuperiorDireito2} />
+                <View style={estilos.raioMeioEsquerdo1} />
+                <View style={estilos.raioMeioEsquerdo2} />
 
-              {/* Raios solares radiantes */}
-              <View style={estilos.raioSuperiorEsquerdo} />
-              <View style={estilos.raioSuperiorDireito1} />
-              <View style={estilos.raioSuperiorDireito2} />
-              <View style={estilos.raioMeioEsquerdo1} />
-              <View style={estilos.raioMeioEsquerdo2} />
+                {/* Cartão dobrado com o símbolo @ */}
+                <View style={estilos.cartaoEnvelope}>
+                  <View style={estilos.circuloArroba}>
+                    <Text style={estilos.simboloArroba}>@</Text>
+                  </View>
+                </View>
 
-              {/* Carta dobrada com o símbolo @ */}
-              <View style={estilos.cartaoEnvelope}>
-                <View style={estilos.circuloArroba}>
-                  <Text style={estilos.simboloArroba}>@</Text>
+                {/* Corpo e dobras do envelope laranja */}
+                <View style={estilos.corpoEnvelope}>
+                  <View style={estilos.abaEsquerdaEnvelope} />
+                  <View style={estilos.abaDireitaEnvelope} />
                 </View>
               </View>
 
-              {/* Corpo e abas do envelope laranja */}
-              <View style={estilos.corpoEnvelope}>
-                {/* Dobras angulares do envelope */}
-                <View style={estilos.abaEsquerdaEnvelope} />
-                <View style={estilos.abaDireitaEnvelope} />
+              {/* Título e Subtítulo Principal com destaque do E-mail */}
+              <View style={estilos.areaTextos}>
+                <Text style={estilos.tituloPrincipal}>Verifique seu e-mail</Text>
+                <Text style={estilos.subtitulo}>
+                  Enviamos um código de 6 dígitos para o seu e-mail:
+                </Text>
+                <View style={estilos.badgeEmailDestino}>
+                  <Feather name="mail" size={14} color="#EA580C" style={{ marginRight: 6 }} />
+                  <Text style={estilos.textoEmailDestino} numberOfLines={1}>
+                    {email}
+                  </Text>
+                </View>
+                <Text style={estilos.subtituloInstrucao}>
+                  Digite o código abaixo para continuar com o seu cadastro.
+                </Text>
               </View>
-            </View>
 
-            {/* Título e Subtítulo Principal */}
-            <View style={estilos.areaTextos}>
-              <Text style={estilos.tituloPrincipal}>Verifique seu e-mail</Text>
-              <Text style={estilos.subtitulo}>
-                Enviamos um código de 6 dígitos para o seu e-mail. Digite o código abaixo para continuar com o seu cadastro.
-              </Text>
-            </View>
+              {/* As 6 Caixas de Dígitos OTP */}
+              <View style={estilos.containerOtp}>
+                {digitos.map((digito, idx) => {
+                  const estaFocado = indiceFocado === idx;
+                  const temValor = Boolean(digito);
 
-            {/* As 6 Caixas de Dígitos OTP */}
-            <View style={estilos.containerOtp}>
-              {digitos.map((digito, idx) => {
-                const estaFocado = indiceFocado === idx;
-                const temValor = Boolean(digito);
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        estilos.caixaOtp,
+                        estaFocado && estilos.caixaOtpFocada,
+                        temValor && estilos.caixaOtpPreenchida,
+                      ]}
+                    >
+                      <TextInput
+                        ref={(el) => {
+                          inputRefs.current[idx] = el;
+                        }}
+                        style={estilos.textoInputOtp}
+                        value={digito}
+                        onChangeText={(val) => handleMudarTexto(val, idx)}
+                        onKeyPress={(e) => handleKeyPress(e, idx)}
+                        onFocus={() => setIndiceFocado(idx)}
+                        keyboardType="number-pad"
+                        maxLength={1}
+                        selectTextOnFocus
+                        cursorColor="#FF6A00"
+                        accessibilityLabel={`Dígito ${idx + 1} de 6 do código de verificação`}
+                      />
+                      {estaFocado && !temValor && (
+                        <View style={estilos.cursorCaret} />
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
 
-                return (
-                  <View
-                    key={idx}
+              {/* Temporizador Regressivo e Reenvio de Código */}
+              <View style={estilos.areaTimer}>
+                <Feather name="clock" size={16} color="#FF6A00" style={estilos.iconeRelogio} />
+                {tempoRestante > 0 ? (
+                  <Text style={estilos.textoTimer}>
+                    Reenviar código em{" "}
+                    <Text style={estilos.textoTempoDestaque}>{formatarTempo(tempoRestante)}</Text>
+                  </Text>
+                ) : (
+                  <TouchableOpacity
+                    onPress={executarReenvio}
+                    disabled={reenviando}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reenviar código agora"
+                  >
+                    <Text style={estilos.textoReenviarAtivo}>
+                      {reenviando ? "Reenviando código..." : "Reenviar código agora"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Orientações sobre Spam e Opção de Corrigir E-mail */}
+              <View style={estilos.areaSuporte}>
+                <View style={estilos.linhaSuporte}>
+                  <Text style={estilos.textoNaoRecebeu}>Não recebeu o e-mail?</Text>
+                  <TouchableOpacity onPress={alertarSpam} activeOpacity={0.7}>
+                    <Text style={estilos.linkSpam}>Verifique sua caixa de spam</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  onPress={voltarParaCadastro}
+                  activeOpacity={0.7}
+                  style={estilos.btnCorrigirEmail}
+                >
+                  <Feather name="edit-2" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                  <Text style={estilos.textoCorrigirEmail}>E-mail digitado errado? Corrigir</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Banner de Feedback Inline */}
+              {feedback && (
+                <View
+                  style={[
+                    estilos.bannerFeedback,
+                    feedback.tipo === "sucesso" ? estilos.bannerSucesso : estilos.bannerErro,
+                  ]}
+                >
+                  <Feather
+                    name={feedback.tipo === "sucesso" ? "check-circle" : "alert-circle"}
+                    size={18}
+                    color={feedback.tipo === "sucesso" ? "#16A34A" : "#DC2626"}
+                    style={estilos.iconeFeedback}
+                  />
+                  <Text
                     style={[
-                      estilos.caixaOtp,
-                      estaFocado && estilos.caixaOtpFocada,
-                      temValor && estilos.caixaOtpPreenchida,
+                      estilos.txtBannerFeedback,
+                      feedback.tipo === "sucesso" ? estilos.txtBannerSucesso : estilos.txtBannerErro,
                     ]}
                   >
-                    <TextInput
-                      ref={(el) => {  inputRefs.current[idx] = el;
-}}
-                      style={estilos.textoInputOtp}
-                      value={digito}
-                      onChangeText={(val) => handleMudarTexto(val, idx)}
-                      onKeyPress={(e) => handleKeyPress(e, idx)}
-                      onFocus={() => setIndiceFocado(idx)}
-                      keyboardType="numeric"
-                      maxLength={1}
-                      selectTextOnFocus
-                      cursorColor="#FF6A00"
-                    />
-                    {estaFocado && !temValor && (
-                      <View style={estilos.cursorCaret} />
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-
-            {/* Timer Regressivo e Reenvio de Código */}
-            <View style={estilos.areaTimer}>
-              <Feather name="clock" size={17} color="#FF6A00" style={estilos.iconeRelogio} />
-              {tempoRestante > 0 ? (
-                <Text style={estilos.textoTimer}>
-                  Reenviar código em{" "}
-                  <Text style={estilos.textoTempoDestaque}>{formatarTempo(tempoRestante)}</Text>
-                </Text>
-              ) : (
-                <TouchableOpacity onPress={executarReenvio} disabled={reenviando}>
-                  <Text style={estilos.textoReenviarAtivo}>
-                    {reenviando ? "Reenviando código..." : "Reenviar código agora"}
+                    {feedback.texto}
                   </Text>
+                </View>
+              )}
+
+              {/* Botão de Ação Primário ou Card de Sucesso */}
+              {contaVerificada ? (
+                <View style={estilos.cardSucessoVerificacao}>
+                  <View style={estilos.circuloCheckSucesso}>
+                    <Feather name="check" size={26} color="#FFFFFF" />
+                  </View>
+                  <Text style={estilos.tituloSucesso}>Conta ativada com sucesso!</Text>
+                  <Text style={estilos.subtituloSucesso}>
+                    Seu cadastro foi concluído no Orienta. Redirecionando para o login...
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    onPress={irParaLogin}
+                    style={estilos.btnIrLogin}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ir para a tela de login"
+                  >
+                    <Text style={estilos.txtIrLogin}>Ir para a tela de Login</Text>
+                    <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={executarVerificacao}
+                  disabled={carregando || !codigoEstaCompleto}
+                  style={[
+                    estilos.btnVerificarWrapper,
+                    !codigoEstaCompleto && estilos.btnVerificarDesabilitado,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Verificar e-mail"
+                >
+                  <LinearGradient
+                    colors={
+                      carregando
+                        ? ["#FDA4AF", "#FCA5A5"]
+                        : !codigoEstaCompleto
+                        ? ["#CBD5E1", "#94A3B8"]
+                        : ["#FF6A00", "#FF4500"]
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={estilos.btnVerificar}
+                  >
+                    {carregando ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <View style={estilos.btnConteudo}>
+                        <Text style={estilos.txtVerificarBtn}>Verificar e-mail</Text>
+                        <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
+                      </View>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>
-
-            {/* Texto de Ajuda: Não recebeu o e-mail? Verifique sua caixa de spam */}
-            <View style={estilos.areaSpam}>
-              <Text style={estilos.textoNaoRecebeu}>Não recebeu o e-mail?</Text>
-              <TouchableOpacity onPress={alertarSpam} activeOpacity={0.7}>
-                <Text style={estilos.linkSpam}>Verifique sua caixa de spam</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Banner de feedback inline */}
-            {feedback && (
-              <View
-                style={[
-                  estilos.bannerFeedback,
-                  feedback.tipo === "sucesso" ? estilos.bannerSucesso : estilos.bannerErro,
-                ]}
-              >
-                <Feather
-                  name={feedback.tipo === "sucesso" ? "check-circle" : "alert-circle"}
-                  size={18}
-                  color={feedback.tipo === "sucesso" ? "#16A34A" : "#DC2626"}
-                  style={{ marginRight: 8, marginTop: 1 }}
-                />
-                <Text
-                  style={[
-                    estilos.txtBannerFeedback,
-                    feedback.tipo === "sucesso" ? estilos.txtBannerSucesso : estilos.txtBannerErro,
-                  ]}
-                >
-                  {feedback.texto}
-                </Text>
-              </View>
-            )}
-
-            {/* Botão de Ação Primário ou Card de Sucesso */}
-            {contaVerificada ? (
-              <View style={estilos.cardSucessoVerificacao}>
-                <View style={estilos.circuloCheckSucesso}>
-                  <Feather name="check" size={26} color="#FFFFFF" />
-                </View>
-                <Text style={estilos.tituloSucesso}>Conta ativada com sucesso!</Text>
-                <Text style={estilos.subtituloSucesso}>
-                  Seu cadastro foi concluído no Orienta. Redirecionando para o login...
-                </Text>
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  onPress={irParaLogin}
-                  style={estilos.btnIrLogin}
-                >
-                  <Text style={estilos.txtIrLogin}>Ir para a tela de Login</Text>
-                  <Feather name="arrow-right" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.88}
-                onPress={executarVerificacao}
-                disabled={carregando}
-                style={estilos.btnVerificarWrapper}
-              >
-                <View style={estilos.btnVerificar}>
-                  {carregando ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <View style={estilos.btnConteudo}>
-                      <Text style={estilos.txtVerificarBtn}>Verificar e-mail</Text>
-                      <Feather name="arrow-right" size={19} color="#FFFFFF" style={{ marginLeft: 8 }} />
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -452,32 +546,12 @@ const estilos = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FDFBF9",
   },
-  curvaSuperiorEsquerda: {
+  fundoAbsoluto: {
     position: "absolute",
-    top: -60,
-    left: -70,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255, 122, 0, 0.18)",
-  },
-  curvaInferiorDireita: {
-    position: "absolute",
-    bottom: -80,
-    right: -80,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(255, 106, 0, 0.22)",
-  },
-  curvaInferiorEsquerda: {
-    position: "absolute",
-    bottom: -60,
-    left: -60,
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: "rgba(255, 160, 32, 0.14)",
+    top: 0,
+    left: 0,
+    width: LARGURA_TELA,
+    height: ALTURA_TELA,
   },
   safeArea: {
     flex: 1,
@@ -490,15 +564,18 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 36,
+  },
+  containerCentralizado: {
     width: "100%",
-    maxWidth: 480,
+    maxWidth: 440,
     alignSelf: "center",
   },
   cabecalhoTopo: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 16,
+    paddingTop: Platform.OS === "android" ? 10 : 4,
   },
   btnVoltar: {
     width: 40,
@@ -511,7 +588,7 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
   },
   logoImg: {
-    width: 140,
+    width: 120,
     height: 44,
   },
   espacadorDireita: {
@@ -520,20 +597,20 @@ const estilos = StyleSheet.create({
   areaIlustracao: {
     alignItems: "center",
     justifyContent: "center",
-    height: 190,
-    marginVertical: 10,
+    height: 180,
+    marginVertical: 8,
     position: "relative",
   },
   haloIluminacaoFundo: {
     position: "absolute",
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: "rgba(255, 226, 194, 0.55)",
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "rgba(255, 237, 213, 0.6)",
   },
   raioSuperiorEsquerdo: {
     position: "absolute",
-    top: 26,
+    top: 24,
     left: "22%",
     width: 16,
     height: 4,
@@ -543,7 +620,7 @@ const estilos = StyleSheet.create({
   },
   raioSuperiorDireito1: {
     position: "absolute",
-    top: 24,
+    top: 22,
     right: "34%",
     width: 14,
     height: 4,
@@ -553,7 +630,7 @@ const estilos = StyleSheet.create({
   },
   raioSuperiorDireito2: {
     position: "absolute",
-    top: 38,
+    top: 36,
     right: "26%",
     width: 16,
     height: 4,
@@ -563,7 +640,7 @@ const estilos = StyleSheet.create({
   },
   raioMeioEsquerdo1: {
     position: "absolute",
-    top: 76,
+    top: 72,
     left: "14%",
     width: 18,
     height: 4,
@@ -573,7 +650,7 @@ const estilos = StyleSheet.create({
   },
   raioMeioEsquerdo2: {
     position: "absolute",
-    top: 98,
+    top: 94,
     left: "17%",
     width: 15,
     height: 4,
@@ -582,8 +659,8 @@ const estilos = StyleSheet.create({
     transform: [{ rotate: "24deg" }],
   },
   cartaoEnvelope: {
-    width: 142,
-    height: 108,
+    width: 136,
+    height: 100,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     alignItems: "center",
@@ -593,13 +670,13 @@ const estilos = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 3,
-    marginBottom: -42,
+    marginBottom: -38,
     zIndex: 1,
   },
   circuloArroba: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "rgba(255, 106, 0, 0.12)",
     alignItems: "center",
     justifyContent: "center",
@@ -607,14 +684,14 @@ const estilos = StyleSheet.create({
     borderColor: "#FF6A00",
   },
   simboloArroba: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
     color: "#FF6A00",
     marginTop: -2,
   },
   corpoEnvelope: {
-    width: 172,
-    height: 84,
+    width: 168,
+    height: 80,
     backgroundColor: "#FF7700",
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 18,
@@ -633,8 +710,8 @@ const estilos = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     left: 0,
-    width: 90,
-    height: 84,
+    width: 88,
+    height: 80,
     backgroundColor: "#FF6200",
     transform: [{ skewX: "32deg" }],
     borderTopRightRadius: 16,
@@ -643,19 +720,19 @@ const estilos = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: 90,
-    height: 84,
+    width: 88,
+    height: 80,
     backgroundColor: "#FF8C1A",
     transform: [{ skewX: "-32deg" }],
     borderTopLeftRadius: 16,
   },
   areaTextos: {
     alignItems: "center",
-    marginTop: 18,
-    marginBottom: 24,
+    marginTop: 16,
+    marginBottom: 20,
   },
   tituloPrincipal: {
-    fontSize: 25,
+    fontSize: 24,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.4,
@@ -664,17 +741,40 @@ const estilos = StyleSheet.create({
   subtitulo: {
     fontSize: 14,
     color: "#64748B",
-    marginTop: 8,
-    lineHeight: 21,
+    marginTop: 6,
+    lineHeight: 20,
     textAlign: "center",
     paddingHorizontal: 8,
+  },
+  badgeEmailDestino: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginTop: 8,
+    maxWidth: "90%",
+  },
+  textoEmailDestino: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#EA580C",
+  },
+  subtituloInstrucao: {
+    fontSize: 13,
+    color: "#94A3B8",
+    marginTop: 6,
+    textAlign: "center",
   },
   containerOtp: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    marginVertical: 18,
+    marginVertical: 14,
     width: "100%",
     maxWidth: 360,
     alignSelf: "center",
@@ -689,9 +789,9 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
     elevation: 2,
     position: "relative",
   },
@@ -700,7 +800,7 @@ const estilos = StyleSheet.create({
     borderWidth: 2,
     shadowColor: "#FF6A00",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 6,
     elevation: 3,
   },
@@ -728,8 +828,8 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 14,
-    marginBottom: 18,
+    marginTop: 10,
+    marginBottom: 16,
   },
   iconeRelogio: {
     marginRight: 6,
@@ -750,10 +850,15 @@ const estilos = StyleSheet.create({
     fontWeight: "700",
     textDecorationLine: "underline",
   },
-  areaSpam: {
+  areaSuporte: {
     alignItems: "center",
-    marginBottom: 26,
-    gap: 3,
+    marginBottom: 20,
+    gap: 8,
+  },
+  linhaSuporte: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   textoNaoRecebeu: {
     fontSize: 12,
@@ -765,22 +870,35 @@ const estilos = StyleSheet.create({
     fontWeight: "600",
     textDecorationLine: "underline",
   },
+  btnCorrigirEmail: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  textoCorrigirEmail: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "500",
+  },
   btnVerificarWrapper: {
     borderRadius: 26,
     overflow: "hidden",
-    backgroundColor: "#FF6A00",
     shadowColor: "#FF6A00",
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowRadius: 10,
+    elevation: 5,
     marginTop: 4,
+  },
+  btnVerificarDesabilitado: {
+    shadowOpacity: 0.05,
+    elevation: 1,
   },
   btnVerificar: {
     height: 52,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FF6A00",
     borderRadius: 26,
   },
   btnConteudo: {
@@ -799,7 +917,7 @@ const estilos = StyleSheet.create({
     alignItems: "flex-start",
     padding: 12,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
   },
   bannerSucesso: {
@@ -809,6 +927,10 @@ const estilos = StyleSheet.create({
   bannerErro: {
     backgroundColor: "#FEF2F2",
     borderColor: "#FECACA",
+  },
+  iconeFeedback: {
+    marginRight: 8,
+    marginTop: 1,
   },
   txtBannerFeedback: {
     flex: 1,
@@ -864,7 +986,7 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FF6A00",
-    borderRadius: 24,
+    borderRadius: 26,
     height: 50,
     paddingHorizontal: 24,
     width: "100%",
