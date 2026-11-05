@@ -17,6 +17,53 @@ export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
 // URL base da API v1 para uso em clientes REST dedicados
 export const API_V1_URL = `${API_URL}/api/v1`;
 
+export type DataSourceMode = 'mock' | 'real';
+
+/**
+ * Obtém o modo de fonte de dados ativo (persistido no localStorage/AsyncStorage ou query param).
+ */
+export function getActiveDataSource(): DataSourceMode {
+  if (typeof window !== 'undefined') {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const q = urlParams.get('dataSource') || urlParams.get('data_source');
+      if (q === 'real' || q === 'mock') return q;
+      const saved = window.localStorage.getItem('orienta_data_source');
+      if (saved === 'real' || saved === 'mock') return saved;
+    } catch {
+      // ignore
+    }
+  }
+  return 'mock';
+}
+
+/**
+ * Emite log HTTP para a bancada pai caso esteja rodando em iframe.
+ */
+export function emitHttpLogToParent(log: {
+  method: string;
+  url: string;
+  status: number;
+  durationMs: number;
+  source: 'mock' | 'real';
+  error?: string;
+}) {
+  if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({
+        type: 'ORIENTA_HTTP_LOG',
+        log: {
+          ...log,
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: new Date().toLocaleTimeString('pt-BR', { hour12: false })
+        }
+      }, '*');
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export const api = axios.create({
   baseURL: API_V1_URL,
   timeout: 12000,
@@ -25,9 +72,10 @@ export const api = axios.create({
   },
 });
 
-// Interceptor de Requisição: Injeta automaticamente o Bearer Token salvo
+// Interceptor de Requisição: Injeta automaticamente o Bearer Token salvo e timestamp
 api.interceptors.request.use(
-  async (config) => {
+  async (config: any) => {
+    config.metadata = { startTime: Date.now() };
     try {
       const token = await AsyncStorage.getItem("@orienta_token");
       if (token && config.headers) {
@@ -41,10 +89,31 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Interceptor de Resposta: Trata códigos HTTP semânticos (401, 403, 409, 422)
+// Interceptor de Resposta: Trata códigos HTTP semânticos (401, 403, 409, 422) e notifica bancada
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const startTime = (response.config as any)?.metadata?.startTime;
+    const duration = startTime ? Date.now() - startTime : 15;
+    emitHttpLogToParent({
+      method: (response.config.method || 'GET').toUpperCase(),
+      url: response.config.url || '',
+      status: response.status,
+      durationMs: duration,
+      source: getActiveDataSource(),
+    });
+    return response;
+  },
   async (error: AxiosError<{ message?: string; error?: string; fieldErrors?: Array<{ field: string; message: string }> }>) => {
+    const startTime = (error.config as any)?.metadata?.startTime;
+    const duration = startTime ? Date.now() - startTime : 15;
+    emitHttpLogToParent({
+      method: (error.config?.method || 'GET').toUpperCase(),
+      url: error.config?.url || '',
+      status: error.response?.status || 0,
+      durationMs: duration,
+      source: getActiveDataSource(),
+      error: error.message,
+    });
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
