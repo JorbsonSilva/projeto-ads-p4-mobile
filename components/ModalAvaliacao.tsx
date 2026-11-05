@@ -9,7 +9,7 @@ import {
   TextInput,
   Platform,
 } from 'react-native';
-import { FontAwesome5, Feather, CheckCircle } from '@expo/vector-icons';
+import { FontAwesome5, Feather } from '@expo/vector-icons';
 
 export interface ModalAvaliacaoProps {
   visible: boolean;
@@ -128,7 +128,7 @@ export const ModalAvaliacao: React.FC<ModalAvaliacaoProps> = ({
           {enviadoComSucesso ? (
             <View style={styles.sucessoContainer}>
               <View style={styles.sucessoIconWrap}>
-                <CheckCircle size={44} color="#059669" />
+                <Feather name="check-circle" size={44} color="#059669" />
               </View>
               <Text style={styles.sucessoTitulo}>Avaliação Registrada!</Text>
               <Text style={styles.sucessoTexto}>

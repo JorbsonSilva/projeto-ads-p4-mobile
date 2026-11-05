@@ -339,7 +339,6 @@ class Nodo {
             style={styles.headerActionButton}
             onPress={() => setModalAvaliacaoVisivel(true)}
             accessibilityLabel="Avaliar Mentoria"
-            title="Avaliar Mentoria"
           >
             <Star size={17} color="#D97706" />
           </TouchableOpacity>
