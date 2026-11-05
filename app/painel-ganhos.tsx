@@ -1,475 +1,1363 @@
 /**
  * @file painel-ganhos.tsx
- * @description Central Financeira da Dashboard do Professor.
- * Consome os agendamentos e as aptidões do professor para calcular o faturamento histórico total,
- * receita consolidada do mês corrente e previsões baseadas em aulas agendadas pendentes ou futuras.
- * Implementada validação cronológica para impedir que aulas confirmadas em datas futuras
- * entrem como receita realizada, desviando-as corretamente para a projeção/previsão.
+ * @description Dashboard Analítico de Desempenho e Painel Financeiro do Professor [ORI-020 / IMG-013].
+ * Alinhado estritamente à referência visual oficial (DashBoard.png) com:
+ * 1. Card Azul Marinho Superior ("Seus resultados") com gráfico de linha luminosa e métricas 2x2.
+ * 2. Gráfico Donut de distribuição das aulas (66,7% Pagas, 25% Gratuitas, 8,3% Pendentes).
+ * 3. Barras de volume proporcional por disciplina lecionada.
+ * 4. Extrato financeiro recente com filtros por status e badges semânticos.
+ * 5. CTAs integrados para Solicitação de Saque (/saque) e Gestão de Aulas (/solicitacoes).
+ * 6. Barra de navegação inferior oficial de 5 abas (Professor) com a aba Ganhos ativa.
+ * 7. Serviço híbrido resiliente com fallback offline e badge semântico.
  */
 
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Dimensions,
+  Image,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../config/api";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Defs, G, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
 import { useAuth } from "../context/AuthContext";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
+import {
+  DadosDesempenho,
+  DADOS_DESEMPENHO_MOCK,
+  ItemVolumeDisciplina,
+  obterDadosDesempenho,
+  SegmentoDistribuicao,
+  TransacaoExtrato,
+} from "../services/painelGanhosService";
 
-// ==========================================
-// 1. CONTRATOS DE TIPAGEM (INTERFACES TS)
-// ==========================================
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-interface Saber {
-  id: number;
-  nome: string;
-}
+export default function PainelGanhosScreen() {
+  const insets = useSafeAreaInsets();
+  const { usuarioId } = useAuth() as any;
 
-interface Aptidao {
-  id: number;
-  precoHora: number;
-  saber: Saber;
-}
-
-interface UsuarioProfessor {
-  id: number;
-  nome: string;
-  aptidoes?: Aptidao[];
-}
-
-interface AlunoVinculado {
-  id: number;
-  nome: string;
-}
-
-interface Agendamento {
-  id: number;
-  data: string; // Formato do banco: YYYY-MM-DD
-  hora: string;
-  status: string; // PENDENTE, CONFIRMADO, CANCELADO
-  aluno?: AlunoVinculado;
-}
-
-interface TransacaoFinanceira {
-  id: number;
-  alunoNome: string;
-  data: string;
-  valor: number;
-  status: string;
-  ehFutura: boolean;
-}
-
-// ==========================================
-// 2. COMPONENTE PRINCIPAL
-// ==========================================
-export default function PainelGanhos() {
-  const { usuarioId, carregandoAuth } = useAuth() as any;
-
-  // Estados de métricas financeiras
-  const [totalHistorico, setTotalHistorico] = useState(0);
-  const [totalMesAtual, setTotalMesAtual] = useState(0);
-  const [previsaoFutura, setPrevisaoFutura] = useState(0);
-
-  const [extrato, setExtrato] = useState<TransacaoFinanceira[]>([]);
+  // Estados de dados e carregamento
+  const [dados, setDados] = useState<DadosDesempenho>(DADOS_DESEMPENHO_MOCK);
   const [carregando, setCarregando] = useState(true);
+  const [atualizando, setAtualizando] = useState(false);
+  const [ocultarValores, setOcultarValores] = useState(false);
+  const [semanaSelecionada, setSemanaSelecionada] = useState<number | null>(3); // Default última semana
+  const [filtroExtrato, setFiltroExtrato] = useState<"TODAS" | "PAGAS" | "GRATUITAS" | "PENDENTES">("TODAS");
 
   /**
-   * Consome os dados e realiza o faturamento dinâmico cruzando status e cronologia.
-   * @async
+   * Carrega os dados analíticos via serviço resiliente
    */
-  const calcularMetricasFinanceiras = useCallback(async () => {
-    if (!usuarioId) return;
-    setCarregando(true);
+  const carregarPainel = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setAtualizando(true);
+    } else {
+      setCarregando(true);
+    }
 
     try {
-      // 1. Busca o valor da hora/aula do professor
-      let precoHoraPadrao = 50.0;
-      const resProf = await fetch(`${API_URL}/api/usuarios/${usuarioId}`);
-      if (resProf.ok) {
-        const payloadProf: unknown = await resProf.json();
-        const dadosProf = extrairDadosObjeto<UsuarioProfessor>(payloadProf);
-        if (dadosProf.aptidoes && dadosProf.aptidoes.length > 0) {
-          precoHoraPadrao = dadosProf.aptidoes[0].precoHora;
-        }
-      }
-
-      // 2. Busca todos os agendamentos para rodar o motor de cálculo
-      const resAgendamentos = await fetch(
-        `${API_URL}/agendamentos/professor/${usuarioId}`,
-      );
-      if (resAgendamentos.ok) {
-        const payloadAgendamentos: unknown = await resAgendamentos.json();
-        const agendamentos = extrairDadosLista<Agendamento>(payloadAgendamentos);
-
-        let acumuladorTotal = 0;
-        let acumuladorMes = 0;
-        let acumuladorPrevisao = 0;
-
-        const hoje = new Date();
-        const anoAtualStr = String(hoje.getFullYear());
-        const mesAtualStr = String(hoje.getMonth() + 1).padStart(2, "0");
-        const diaAtualStr = String(hoje.getDate()).padStart(2, "0");
-        const hojeStr = `${anoAtualStr}-${mesAtualStr}-${diaAtualStr}`;
-
-        const listaTransacoes: TransacaoFinanceira[] = [];
-
-        agendamentos.forEach((aula) => {
-          const valorAula = precoHoraPadrao;
-
-          const partesData = aula.data.split("-");
-          const anoAula = partesData[0];
-          const mesAula = partesData[1];
-
-          const ehFutura = aula.data > hojeStr;
-
-          if (aula.status === "CONFIRMADO") {
-            if (ehFutura) {
-              acumuladorPrevisao += valorAula;
-            } else {
-              // Se já aconteceu ou é hoje, computa como caixa realizado
-              acumuladorTotal += valorAula;
-              if (anoAula === anoAtualStr && mesAula === mesAtualStr) {
-                acumuladorMes += valorAula;
-              }
-            }
-          } else if (aula.status === "PENDENTE") {
-            // Solicitações pendentes sempre entram como previsão
-            acumuladorPrevisao += valorAula;
-          }
-
-          // Adiciona ao histórico do extrato informando o estado cronológico
-          if (aula.status !== "CANCELADO") {
-            listaTransacoes.push({
-              id: aula.id,
-              alunoNome: aula.aluno?.nome || "Estudante",
-              data: aula.data,
-              valor: valorAula,
-              status: aula.status,
-              ehFutura: ehFutura, // Passa a flag para estilização do extrato
-            });
-          }
-        });
-
-        // Despejo atômico nos estados do React
-        setTotalHistorico(acumuladorTotal);
-        setTotalMesAtual(acumuladorMes);
-        setPrevisaoFutura(acumuladorPrevisao);
-        setExtrato(
-          listaTransacoes.sort((a, b) => b.data.localeCompare(a.data)),
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Falha no reprocessamento do motor financeiro cronológico:",
-        error,
-      );
+      const res = await obterDadosDesempenho(usuarioId ? Number(usuarioId) : undefined);
+      setDados(res);
+    } catch {
+      setDados(DADOS_DESEMPENHO_MOCK);
     } finally {
       setCarregando(false);
+      setAtualizando(false);
     }
   }, [usuarioId]);
 
   useEffect(() => {
-    if (!carregandoAuth) {
-      calcularMetricasFinanceiras();
-    }
-  }, [carregandoAuth, calcularMetricasFinanceiras]);
+    carregarPainel();
+  }, [carregarPainel]);
 
+  // Formatação monetária segura
   const formatarMoeda = (valor: number) => {
-    return `R$ ${valor.toFixed(2).replace(".", ",")}`;
+    if (ocultarValores) return "R$ ••••••";
+    return `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const formatarDataBR = (dataEstrangeira: string) => {
-    const partes = dataEstrangeira.split("-");
-    if (partes.length !== 3) return dataEstrangeira;
-    return `${partes[2]}/${partes[1]}/${partes[0]}`;
-  };
+  // Filtragem do extrato recente
+  const extratoFiltrado = dados.extratoRecente.filter((item) => {
+    if (filtroExtrato === "TODAS") return true;
+    if (filtroExtrato === "PAGAS") return item.tipo === "PAGA" && item.status === "RECEBIDA";
+    if (filtroExtrato === "GRATUITAS") return item.tipo === "GRATUITA";
+    if (filtroExtrato === "PENDENTES") return item.status === "EM_ANALISE" || item.status === "PROCESSANDO";
+    return true;
+  });
+
+  // Dimensões do Gráfico de Linha Superior
+  const CHART_WIDTH = Math.min(SCREEN_WIDTH - 64, 340);
+  const CHART_HEIGHT = 110;
+  const paddingX = 28;
+  const paddingY = 16;
+  const graphWidth = CHART_WIDTH - paddingX * 2;
+  const graphHeight = CHART_HEIGHT - paddingY * 2;
+
+  // Cálculo das coordenadas dos 4 pontos do gráfico de linha
+  const pontos = dados.graficoEvolucao.map((p, index) => {
+    const x = paddingX + (index / (dados.graficoEvolucao.length - 1)) * graphWidth;
+    // Escala normalizada entre R$ 300 e R$ 900
+    const minVal = 300;
+    const maxVal = 900;
+    const normalizedY = (p.valor - minVal) / (maxVal - minVal);
+    const y = CHART_HEIGHT - paddingY - normalizedY * graphHeight;
+    return { ...p, x, y };
+  });
+
+  // Caminho da linha curva SVG e da área de preenchimento
+  const linePath = pontos.reduce((acc, p, i, arr) => {
+    if (i === 0) return `M ${p.x} ${p.y}`;
+    const prev = arr[i - 1];
+    const cp1x = prev.x + (p.x - prev.x) / 2;
+    const cp1y = prev.y;
+    const cp2x = prev.x + (p.x - prev.x) / 2;
+    const cp2y = p.y;
+    return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p.x} ${p.y}`;
+  }, "");
+
+  const areaPath = `${linePath} L ${pontos[pontos.length - 1].x} ${CHART_HEIGHT} L ${pontos[0].x} ${CHART_HEIGHT} Z`;
+
+  // Cálculos do Donut Chart (Raio = 42, Centro = 55, 55)
+  const donutRadius = 38;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+  const strokeWidth = 14;
+
+  const pagasRatio = (dados.distribuicaoAulas[0]?.percentual || 66.7) / 100;
+  const gratisRatio = (dados.distribuicaoAulas[1]?.percentual || 25.0) / 100;
+  const pendentesRatio = (dados.distribuicaoAulas[2]?.percentual || 8.3) / 100;
+
+  const pagasDash = pagasRatio * donutCircumference;
+  const gratisDash = gratisRatio * donutCircumference;
+  const pendentesDash = pendentesRatio * donutCircumference;
+
+  const pagasOffset = 0;
+  const gratisOffset = -pagasDash;
+  const pendentesOffset = -(pagasDash + gratisDash);
 
   return (
-    <SafeAreaView style={estilos.containerGeral} edges={["top", "bottom"]}>
-      {/* Header Fixo */}
+    <SafeAreaView style={estilos.container} edges={["top"]}>
+      {/* ============================================================== */}
+      {/* 1. HEADER FIXO SUPERIOR DA TELA COM CONTEXTO E VOLTAR          */}
+      {/* ============================================================== */}
       <View style={estilos.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={26} color="#111" />
+        <TouchableOpacity
+          onPress={() => router.push("/home-professor" as any)}
+          style={estilos.botaoVoltar}
+          activeOpacity={0.7}
+          accessibilityLabel="Voltar para a Home do Professor"
+        >
+          <Ionicons name="arrow-back" size={24} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={estilos.tituloHeader}>Painel Financeiro</Text>
-        <TouchableOpacity onPress={calcularMetricasFinanceiras}>
-          <Feather name="refresh-cw" size={20} color="#555" />
+
+        <View style={estilos.headerInfo}>
+          <Text style={estilos.headerTitulo}>Painel de Ganhos</Text>
+          <Text style={estilos.headerSubtitulo}>{dados.periodoReferencia} • Visão Analítica</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => carregarPainel(true)}
+          style={estilos.botaoRefresh}
+          activeOpacity={0.7}
+          disabled={atualizando}
+          accessibilityLabel="Atualizar métricas de faturamento"
+        >
+          {atualizando ? (
+            <ActivityIndicator size="small" color="#FF5A1F" />
+          ) : (
+            <Feather name="refresh-cw" size={19} color="#475569" />
+          )}
         </TouchableOpacity>
       </View>
 
-      {carregando ? (
-        <View style={estilos.containerCentro}>
-          <ActivityIndicator size="large" color="#FF6B1A" />
-          <Text style={estilos.textoCarregando}>
-            Sincronizando livro-caixa...
-          </Text>
-        </View>
-      ) : (
-        <View style={{ flex: 1 }}>
-          {/* BLOCO DE CARDS MÉTRICOS */}
-          <View style={estilos.sectionCards}>
-            {/* Card 1: Ganhos Totais (Realizados) */}
-            <View
-              style={[
-                estilos.cardMetrico,
-                { backgroundColor: "#EFFBF4", borderColor: "#A3E4D7" },
-              ]}
-            >
-              <View style={estilos.rowCardHeader}>
-                <Text style={[estilos.tituloCard, { color: "#196F3D" }]}>
-                  Ganhos Totais
-                </Text>
-                <Feather name="trending-up" size={18} color="#196F3D" />
-              </View>
-              <Text style={[estilos.valorCard, { color: "#111" }]}>
-                {formatarMoeda(totalHistorico)}
-              </Text>
-              <Text style={estilos.subtextoCard}>
-                Saldo total líquido realizado
-              </Text>
-            </View>
+      {/* ============================================================== */}
+      {/* 2. BADGE DE RESILIÊNCIA / MODO SIMULAÇÃO                       */}
+      {/* ============================================================== */}
+      <View style={estilos.faixaModoSimulacao}>
+        <Ionicons
+          name={dados.isSimulado ? "information-circle-outline" : "checkmark-circle-outline"}
+          size={14}
+          color={dados.isSimulado ? "#D97706" : "#059669"}
+          style={{ marginRight: 6 }}
+        />
+        <Text style={[estilos.textoModoSimulacao, { color: dados.isSimulado ? "#92400E" : "#065F46" }]}>
+          {dados.isSimulado
+            ? "⚠️ Modo Simulação: Dados offline em exibição (IMG-013)"
+            : "✅ Dados sincronizados em tempo real com a API"}
+        </Text>
+      </View>
 
-            {/* Grid Duplo */}
-            <View style={estilos.gridDuplo}>
-              {/* Card 2: Faturamento Confirmado Realizado no Mês */}
-              <View
-                style={[
-                  estilos.cardMetricoMetade,
-                  { backgroundColor: "#EEF5FF", borderColor: "#B2D1FF" },
-                ]}
-              >
-                <Text style={[estilos.tituloCardMini, { color: "#0057B8" }]}>
-                  Este Mês
-                </Text>
-                <Text style={estilos.valorCardMini}>
-                  {formatarMoeda(totalMesAtual)}
-                </Text>
-                <Text style={estilos.subtextoCard}>Receita em caixa</Text>
-              </View>
-
-              {/* Card 3: Previsão Total (Pendentes + Confirmadas Futuras) */}
-              <View
-                style={[
-                  estilos.cardMetricoMetade,
-                  { backgroundColor: "#FFF0E7", borderColor: "#FFD3B6" },
-                ]}
-              >
-                <Text style={[estilos.tituloCardMini, { color: "#D35400" }]}>
-                  Previsão
-                </Text>
-                <Text style={[estilos.valorCardMini, { color: "#D35400" }]}>
-                  {formatarMoeda(previsaoFutura)}
-                </Text>
-                <Text style={estilos.subtextoCard}>A receber/futuras</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* LISTAGEM: EXTRATO DE MENTORIAS */}
-          <Text style={estilos.labelExtrato}>Extrato de Mentorias</Text>
-
-          <FlatList
-            data={extrato}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={estilos.listaContent}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={() => (
-              <View style={estilos.containerVazio}>
-                <Feather name="dollar-sign" size={40} color="#CCC" />
-                <Text style={estilos.textoVazio}>
-                  Nenhum lançamento financeiro registrado.
-                </Text>
-              </View>
-            )}
-            renderItem={({ item }) => {
-              const IsPrevisao = item.status === "PENDENTE" || item.ehFutura;
-              return (
-                <View style={estilos.itemExtrato}>
-                  <View style={estilos.iconeMoedaArea}>
-                    <Feather
-                      name={IsPrevisao ? "clock" : "check-circle"}
-                      size={18}
-                      color={IsPrevisao ? "#D35400" : "#27AE60"}
-                    />
-                  </View>
-
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={estilos.nomeEstudante} numberOfLines={1}>
-                      {item.alunoNome}
-                    </Text>
-                    <Text style={estilos.dataExtrato}>
-                      {formatarDataBR(item.data)}
-                    </Text>
-                  </View>
-
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text
-                      style={[
-                        estilos.valorExtrato,
-                        { color: IsPrevisao ? "#D35400" : "#27AE60" },
-                      ]}
-                    >
-                      {formatarMoeda(item.valor)}
-                    </Text>
-                    <Text style={estilos.statusExtrato}>
-                      {item.ehFutura && item.status === "CONFIRMADO"
-                        ? "futura"
-                        : item.status.toLowerCase()}
-                    </Text>
-                  </View>
-                </View>
-              );
-            }}
+      {/* ============================================================== */}
+      {/* 3. CONTEÚDO PRINCIPAL COM SCROLL                               */}
+      {/* ============================================================== */}
+      <ScrollView
+        style={estilos.scrollArea}
+        contentContainerStyle={[
+          estilos.scrollContent,
+          { paddingBottom: insets.bottom + 85 }, // Espaço para a Tab Bar fixa
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={atualizando}
+            onRefresh={() => carregarPainel(true)}
+            colors={["#FF5A1F"]}
+            tintColor="#FF5A1F"
           />
-        </View>
-      )}
+        }
+      >
+        {carregando ? (
+          <View style={estilos.loadingContainer}>
+            <ActivityIndicator size="large" color="#FF5A1F" />
+            <Text style={estilos.loadingText}>Processando inteligência analítica...</Text>
+          </View>
+        ) : (
+          <>
+            {/* ============================================================== */}
+            {/* CARD 1: AZUL MARINHO PROFUNDO ("SEUS RESULTADOS" / EVOLUÇÃO)   */}
+            {/* ============================================================== */}
+            <View style={estilos.cardResultadosNavy}>
+              {/* Cabeçalho do Card */}
+              <View style={estilos.cardNavyHeader}>
+                <View>
+                  <View style={estilos.linhaTagCard}>
+                    <Text style={estilos.tituloSeusResultados}>Seus resultados</Text>
+                    <View style={estilos.badgeCrescimento}>
+                      <Ionicons name="trending-up" size={13} color="#10B981" style={{ marginRight: 3 }} />
+                      <Text style={estilos.textoBadgeCrescimento}>+18,5%</Text>
+                    </View>
+                  </View>
+                  <Text style={estilos.subtituloSeusResultados}>
+                    Desempenho acumulado no mês de {dados.periodoReferencia.split("/")[0].trim()}
+                  </Text>
+                </View>
+
+                {/* Alternador de Visibilidade do Saldo */}
+                <TouchableOpacity
+                  onPress={() => setOcultarValores(!ocultarValores)}
+                  style={estilos.botaoOlho}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Ocultar ou exibir valores"
+                >
+                  <Ionicons
+                    name={ocultarValores ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#94A3B8"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* GRÁFICO DE LINHA LUMINOSA SVG */}
+              <View style={estilos.graficoContainer}>
+                <Svg width={CHART_WIDTH} height={CHART_HEIGHT} style={estilos.svgLinha}>
+                  <Defs>
+                    {/* Gradiente da Linha */}
+                    <LinearGradient id="linhaGrad" x1="0" y1="0" x2="1" y2="0">
+                      <Stop offset="0%" stopColor="#FF7A3D" stopOpacity="1" />
+                      <Stop offset="50%" stopColor="#FF5A1F" stopOpacity="1" />
+                      <Stop offset="100%" stopColor="#FFA629" stopOpacity="1" />
+                    </LinearGradient>
+                    {/* Gradiente da Área Subjacente */}
+                    <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0%" stopColor="#FF5A1F" stopOpacity="0.35" />
+                      <Stop offset="100%" stopColor="#FF5A1F" stopOpacity="0.0" />
+                    </LinearGradient>
+                  </Defs>
+
+                  {/* Linhas de grade sutis horizontais */}
+                  <Path
+                    d={`M ${paddingX} ${CHART_HEIGHT / 3} L ${CHART_WIDTH - paddingX} ${CHART_HEIGHT / 3}`}
+                    stroke="#1E293B"
+                    strokeWidth="1"
+                    strokeDasharray="4,4"
+                  />
+                  <Path
+                    d={`M ${paddingX} ${(CHART_HEIGHT / 3) * 2} L ${CHART_WIDTH - paddingX} ${(CHART_HEIGHT / 3) * 2}`}
+                    stroke="#1E293B"
+                    strokeWidth="1"
+                    strokeDasharray="4,4"
+                  />
+
+                  {/* Área preenchida */}
+                  <Path d={areaPath} fill="url(#areaGrad)" />
+
+                  {/* Linha de dados */}
+                  <Path
+                    d={linePath}
+                    fill="none"
+                    stroke="url(#linhaGrad)"
+                    strokeWidth="3.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Pontos Luminosos */}
+                  {pontos.map((p, idx) => {
+                    const isSelected = semanaSelecionada === idx;
+                    return (
+                      <G key={`point-${idx}`}>
+                        {/* Glow externo */}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={isSelected ? 9 : 6}
+                          fill="#FF5A1F"
+                          opacity={isSelected ? 0.35 : 0.15}
+                        />
+                        {/* Ponto sólido */}
+                        <Circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={isSelected ? 5 : 3.8}
+                          fill="#FFFFFF"
+                          stroke="#FF5A1F"
+                          strokeWidth="2.5"
+                        />
+                      </G>
+                    );
+                  })}
+                </Svg>
+
+                {/* Etiquetas Semanais Abaixo do Gráfico */}
+                <View style={estilos.linhaSemanas}>
+                  {dados.graficoEvolucao.map((p, idx) => {
+                    const isSelected = semanaSelecionada === idx;
+                    return (
+                      <TouchableOpacity
+                        key={`label-${idx}`}
+                        style={[estilos.itemSemanaChip, isSelected && estilos.itemSemanaChipAtivo]}
+                        onPress={() => setSemanaSelecionada(idx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[estilos.textoSemanaLabel, isSelected && estilos.textoSemanaLabelAtivo]}>
+                          {p.label}
+                        </Text>
+                        <Text style={[estilos.textoSemanaValor, isSelected && estilos.textoSemanaValorAtivo]}>
+                          {ocultarValores ? "•••" : `R$ ${p.valor}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Banner de detalhe da semana selecionada */}
+                {semanaSelecionada !== null && (
+                  <View style={estilos.bannerSemanaDetalhe}>
+                    <Ionicons name="sparkles" size={13} color="#FFA629" style={{ marginRight: 6 }} />
+                    <Text style={estilos.textoBannerSemana}>
+                      <Text style={{ fontWeight: "700", color: "#FFFFFF" }}>
+                        {dados.graficoEvolucao[semanaSelecionada].label}:{" "}
+                      </Text>
+                      {dados.graficoEvolucao[semanaSelecionada].aulas} aulas ministradas •{" "}
+                      {formatarMoeda(dados.graficoEvolucao[semanaSelecionada].valor)} gerados
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* GRADE DE 4 MÉTRICAS 2x2 COM ÍCONES E VARIAÇÃO */}
+              <View style={estilos.gridMetricasNavy}>
+                {/* 1. Aulas */}
+                <View style={estilos.cardMetricaNavy}>
+                  <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(255, 90, 31, 0.15)" }]}>
+                    <FontAwesome5 name="chalkboard-teacher" size={15} color="#FF7A3D" />
+                  </View>
+                  <Text style={estilos.labelMetricaNavy}>Aulas</Text>
+                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasMinistradas}</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoAulas}</Text>
+                </View>
+
+                {/* 2. Horas */}
+                <View style={estilos.cardMetricaNavy}>
+                  <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(37, 99, 235, 0.15)" }]}>
+                    <Feather name="clock" size={15} color="#60A5FA" />
+                  </View>
+                  <Text style={estilos.labelMetricaNavy}>Horas</Text>
+                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.horasDedicadas}h</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoHoras}</Text>
+                </View>
+
+                {/* 3. Alunos */}
+                <View style={estilos.cardMetricaNavy}>
+                  <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+                    <Feather name="users" size={15} color="#34D399" />
+                  </View>
+                  <Text style={estilos.labelMetricaNavy}>Alunos</Text>
+                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.alunosAtendidos}</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoAlunos}</Text>
+                </View>
+
+                {/* 4. Ganhos */}
+                <View style={estilos.cardMetricaNavy}>
+                  <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
+                    <MaterialCommunityIcons name="currency-usd" size={17} color="#FBBF24" />
+                  </View>
+                  <Text style={estilos.labelMetricaNavy}>Ganhos</Text>
+                  <Text style={[estilos.valorMetricaNavy, { color: "#34D399" }]}>
+                    {formatarMoeda(dados.metricas.ganhosMes)}
+                  </Text>
+                  <Text style={[estilos.variacaoMetricaNavy, { color: "#34D399" }]}>
+                    {dados.metricas.variacaoGanhos}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ============================================================== */}
+            {/* ATALHO PRIORITÁRIO: SAQUE RÁPIDO & CARTEIRA ORIENTA (ORI-014)   */}
+            {/* ============================================================== */}
+            <View style={estilos.cardAtalhoSaque}>
+              <View style={estilos.conteudoAtalhoSaque}>
+                <View style={estilos.iconeSaqueCircle}>
+                  <Ionicons name="wallet-outline" size={22} color="#FF5A1F" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={estilos.tituloAtalhoSaque}>Saldo disponível para saque</Text>
+                  <Text style={estilos.valorAtalhoSaque}>
+                    {formatarMoeda(dados.metricas.saldoDisponivelSaque)}
+                  </Text>
+                  <Text style={estilos.pendenteAtalhoSaque}>
+                    + {formatarMoeda(dados.metricas.saldoPendente)} em análise de compensação
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={estilos.botaoSacarAgora}
+                onPress={() => router.push("/saque" as any)}
+                activeOpacity={0.85}
+                accessibilityLabel="Ir para tela de solicitação de saque"
+              >
+                <Text style={estilos.textoBotaoSacarAgora}>Solicitar Saque</Text>
+                <Feather name="arrow-right" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
+            </View>
+
+            {/* ============================================================== */}
+            {/* CARD 2: GRÁFICO DONUT DE DISTRIBUIÇÃO DAS AULAS (IMG-013)      */}
+            {/* ============================================================== */}
+            <View style={estilos.cardSecao}>
+              <View style={estilos.headerSecao}>
+                <View>
+                  <Text style={estilos.tituloSecao}>Distribuição das Aulas</Text>
+                  <Text style={estilos.subtituloSecao}>Total de {dados.metricas.aulasMinistradas} aulas registradas</Text>
+                </View>
+                <View style={estilos.chipTotalAulas}>
+                  <FontAwesome5 name="chart-pie" size={12} color="#FF5A1F" style={{ marginRight: 5 }} />
+                  <Text style={estilos.textoChipTotalAulas}>Mês Atual</Text>
+                </View>
+              </View>
+
+              <View style={estilos.rowDonutChart}>
+                {/* SVG DONUT CHART */}
+                <View style={estilos.donutWrapper}>
+                  <Svg width={110} height={110} viewBox="0 0 110 110">
+                    <G rotation="-90" origin="55, 55">
+                      {/* Segmento 1: Aulas Pagas (Laranja) */}
+                      <Circle
+                        cx="55"
+                        cy="55"
+                        r={donutRadius}
+                        stroke="#FF5A1F"
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={`${pagasDash} ${donutCircumference}`}
+                        strokeDashoffset={pagasOffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                      {/* Segmento 2: Aulas Gratuitas (Azul) */}
+                      <Circle
+                        cx="55"
+                        cy="55"
+                        r={donutRadius}
+                        stroke="#2563EB"
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={`${gratisDash} ${donutCircumference}`}
+                        strokeDashoffset={gratisOffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                      {/* Segmento 3: Pendentes (Cinza) */}
+                      <Circle
+                        cx="55"
+                        cy="55"
+                        r={donutRadius}
+                        stroke="#CBD5E1"
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={`${pendentesDash} ${donutCircumference}`}
+                        strokeDashoffset={pendentesOffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                    </G>
+                    {/* Contador Central */}
+                    <SvgText
+                      x="55"
+                      y="52"
+                      textAnchor="middle"
+                      fontSize="17"
+                      fontWeight="bold"
+                      fill="#0F172A"
+                    >
+                      {dados.metricas.aulasMinistradas}
+                    </SvgText>
+                    <SvgText
+                      x="55"
+                      y="67"
+                      textAnchor="middle"
+                      fontSize="10"
+                      fill="#64748B"
+                      fontWeight="500"
+                    >
+                      aulas
+                    </SvgText>
+                  </Svg>
+                </View>
+
+                {/* Legendas e Percentuais ao Lado */}
+                <View style={estilos.legendasDonut}>
+                  {dados.distribuicaoAulas.map((seg) => (
+                    <View key={seg.id} style={estilos.itemLegendaDonut}>
+                      <View style={[estilos.bulletLegenda, { backgroundColor: seg.cor }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={estilos.labelLegenda}>{seg.label}</Text>
+                        <Text style={estilos.subLegenda}>{seg.quantidade} mentorias</Text>
+                      </View>
+                      <View style={[estilos.badgePercentualDonut, { backgroundColor: `${seg.cor}15` }]}>
+                        <Text style={[estilos.textoPercentualDonut, { color: seg.cor }]}>
+                          {seg.percentual.toFixed(1)}%
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* ============================================================== */}
+            {/* CARD 3: VOLUME POR DISCIPLINA (PROGRESS BARS HORIZONTAIS)      */}
+            {/* ============================================================== */}
+            <View style={estilos.cardSecao}>
+              <View style={estilos.headerSecao}>
+                <View>
+                  <Text style={estilos.tituloSecao}>Volume por Disciplina</Text>
+                  <Text style={estilos.subtituloSecao}>Rentabilidade e demanda de ensino</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => router.push("/solicitacoes" as any)}
+                  activeOpacity={0.7}
+                  style={estilos.linkVerSolicitacoes}
+                >
+                  <Text style={estilos.textoLinkVerSolicitacoes}>Solicitações &gt;</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={estilos.listaBarrasDisciplina}>
+                {dados.volumePorDisciplina.map((disc) => (
+                  <View key={disc.id} style={estilos.itemBarraDisciplina}>
+                    <View style={estilos.topoBarraDisciplina}>
+                      <Text style={estilos.nomeDisciplina}>{disc.disciplina}</Text>
+                      <View style={estilos.valoresDisciplina}>
+                        <Text style={estilos.faturamentoDisciplina}>
+                          {formatarMoeda(disc.faturamento)}
+                        </Text>
+                        <Text style={estilos.percentualDisciplina}>({disc.percentual}%)</Text>
+                      </View>
+                    </View>
+
+                    {/* Barra de Progresso com Trilho */}
+                    <View style={estilos.trilhoBarra}>
+                      <View
+                        style={[
+                          estilos.preenchimentoBarra,
+                          {
+                            width: `${disc.percentual}%`,
+                            backgroundColor: disc.cor,
+                          },
+                        ]}
+                      />
+                    </View>
+
+                    <Text style={estilos.rodapeBarraDisciplina}>
+                      {disc.aulas} aulas ministradas no período
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* ============================================================== */}
+            {/* CARD 4: EXTRATO E ATIVIDADE RECENTE COM FILTROS DE STATUS      */}
+            {/* ============================================================== */}
+            <View style={estilos.cardSecao}>
+              <View style={estilos.headerSecao}>
+                <View>
+                  <Text style={estilos.tituloSecao}>Extrato &amp; Atividade Recente</Text>
+                  <Text style={estilos.subtituloSecao}>Lançamentos e créditos recentes</Text>
+                </View>
+              </View>
+
+              {/* CHIPS DE FILTRO DO EXTRATO */}
+              <View style={estilos.rowFiltrosExtrato}>
+                {(
+                  [
+                    { id: "TODAS", label: "Todas" },
+                    { id: "PAGAS", label: "Recebidas" },
+                    { id: "GRATUITAS", label: "Gratuitas" },
+                    { id: "PENDENTES", label: "Em análise" },
+                  ] as const
+                ).map((filtro) => {
+                  const isActive = filtroExtrato === filtro.id;
+                  return (
+                    <TouchableOpacity
+                      key={filtro.id}
+                      style={[estilos.chipFiltroExtrato, isActive && estilos.chipFiltroExtratoAtivo]}
+                      onPress={() => setFiltroExtrato(filtro.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          estilos.textoChipFiltroExtrato,
+                          isActive && estilos.textoChipFiltroExtratoAtivo,
+                        ]}
+                      >
+                        {filtro.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* LISTAGEM DE TRANSAÇÕES */}
+              <View style={estilos.listaTransacoes}>
+                {extratoFiltrado.length === 0 ? (
+                  <View style={estilos.emptyTransacoes}>
+                    <Feather name="inbox" size={32} color="#CBD5E1" />
+                    <Text style={estilos.emptyTransacoesTexto}>
+                      Nenhum lançamento encontrado para este filtro.
+                    </Text>
+                  </View>
+                ) : (
+                  extratoFiltrado.map((item) => (
+                    <View key={item.id} style={estilos.itemTransacao}>
+                      <Image source={{ uri: item.alunoFoto }} style={estilos.avatarTransacao} />
+
+                      <View style={{ flex: 1 }}>
+                        <View style={estilos.topoItemTransacao}>
+                          <Text style={estilos.nomeAlunoTransacao}>{item.alunoNome}</Text>
+                          <Text
+                            style={[
+                              estilos.valorTransacao,
+                              item.valor > 0 ? estilos.valorPositivo : estilos.valorNeutro,
+                            ]}
+                          >
+                            {item.valor > 0 ? `+ ${formatarMoeda(item.valor)}` : "Gratuita"}
+                          </Text>
+                        </View>
+
+                        <Text style={estilos.materiaTransacao}>{item.materia}</Text>
+                        <Text style={estilos.descricaoTransacao}>{item.descricao}</Text>
+
+                        <View style={estilos.rodapeItemTransacao}>
+                          <View style={estilos.chipDataTransacao}>
+                            <Feather name="clock" size={10} color="#64748B" style={{ marginRight: 3 }} />
+                            <Text style={estilos.textoDataTransacao}>
+                              {item.data}, {item.horario}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              estilos.badgeStatusTransacao,
+                              item.status === "RECEBIDA"
+                                ? estilos.badgeRecebida
+                                : item.status === "CONFIRMADA"
+                                ? estilos.badgeConfirmada
+                                : estilos.badgeAnalise,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                estilos.textoStatusTransacao,
+                                item.status === "RECEBIDA"
+                                  ? estilos.textoRecebida
+                                  : item.status === "CONFIRMADA"
+                                  ? estilos.textoConfirmada
+                                  : estilos.textoAnalise,
+                              ]}
+                            >
+                              {item.status === "RECEBIDA"
+                                ? "✔ Recebida"
+                                : item.status === "CONFIRMADA"
+                                ? "Confirmada"
+                                : "Em análise"}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+
+            {/* AÇÕES DE RODAPÉ AUXILIARES */}
+            <View style={estilos.blocoBotoesAuxiliares}>
+              <TouchableOpacity
+                style={estilos.botaoSecundarioAulas}
+                onPress={() => router.push("/solicitacoes" as any)}
+                activeOpacity={0.8}
+              >
+                <Feather name="calendar" size={16} color="#FF5A1F" style={{ marginRight: 8 }} />
+                <Text style={estilos.textoBotaoSecundarioAulas}>Gerenciar Solicitações de Aula</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {/* ============================================================== */}
+      {/* 5. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS PROFESSOR - RN) */}
+      {/* ============================================================== */}
+      <TabBarRN001 abaAtiva="ganhos" perfilForcado="Professor" />
     </SafeAreaView>
   );
 }
 
-// ==========================================
-// 3. ESTILOS LOCAIS (STYLESHEET)
-// ==========================================
+// ==============================================================
+// ESTILOS E TOKENS DE DESIGN (DESIGN SYSTEM ORIENTA 2.0)
+// ==============================================================
 const estilos = StyleSheet.create({
-  containerGeral: {
+  container: {
     flex: 1,
-    backgroundColor: "#FFF",
+    backgroundColor: "#F8FAFC",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#E2E8F0",
   },
-  tituloHeader: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111",
+  botaoVoltar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  containerCentro: {
+  headerInfo: {
     flex: 1,
     alignItems: "center",
+  },
+  headerTitulo: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  headerSubtitulo: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  botaoRefresh: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
     justifyContent: "center",
-    gap: 12,
+    alignItems: "center",
   },
-  textoCarregando: {
-    fontSize: 15,
-    color: "#666",
+  faixaModoSimulacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FEF3C7",
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#FDE68A",
   },
-  sectionCards: {
-    padding: 20,
-    gap: 12,
+  textoModoSimulacao: {
+    fontSize: 11.5,
+    fontWeight: "600",
   },
-  cardMetrico: {
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    gap: 16,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: "#64748B",
+  },
+
+  // CARD AZUL MARINHO "SEUS RESULTADOS"
+  cardResultadosNavy: {
+    backgroundColor: "#0B1728",
+    borderRadius: 20,
     padding: 18,
-    borderRadius: 18,
     borderWidth: 1,
+    borderColor: "#1E293B",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  rowCardHeader: {
+  cardNavyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  linhaTagCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  tituloSeusResultados: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  badgeCrescimento: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.4)",
+  },
+  textoBadgeCrescimento: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#10B981",
+  },
+  subtituloSeusResultados: {
+    fontSize: 11.5,
+    color: "#94A3B8",
+    marginTop: 3,
+  },
+  botaoOlho: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // GRÁFICO
+  graficoContainer: {
+    alignItems: "center",
+    marginVertical: 4,
+  },
+  svgLinha: {
+    overflow: "visible",
+  },
+  linhaSemanas: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  itemSemanaChip: {
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  itemSemanaChipAtivo: {
+    backgroundColor: "rgba(255, 90, 31, 0.25)",
+    borderWidth: 1,
+    borderColor: "#FF5A1F",
+  },
+  textoSemanaLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#94A3B8",
+  },
+  textoSemanaLabelAtivo: {
+    color: "#FF7A3D",
+    fontWeight: "700",
+  },
+  textoSemanaValor: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E2E8F0",
+    marginTop: 2,
+  },
+  textoSemanaValorAtivo: {
+    color: "#FFFFFF",
+  },
+  bannerSemanaDetalhe: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginTop: 10,
+    width: "100%",
+  },
+  textoBannerSemana: {
+    fontSize: 11,
+    color: "#CBD5E1",
+  },
+
+  // GRID 2x2 NAVY
+  gridMetricasNavy: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14,
+  },
+  cardMetricaNavy: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  iconeMetricaWrapper: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: "center",
     alignItems: "center",
     marginBottom: 6,
   },
-  tituloCard: {
-    fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  valorCard: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  subtextoCard: {
+  labelMetricaNavy: {
     fontSize: 11,
-    color: "#777",
+    color: "#94A3B8",
+    fontWeight: "500",
   },
-  gridDuplo: {
-    flexDirection: "row",
+  valorMetricaNavy: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginTop: 2,
+  },
+  variacaoMetricaNavy: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 3,
+    fontWeight: "500",
+  },
+
+  // CARD ATALHO SAQUE
+  cardAtalhoSaque: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
     gap: 12,
   },
-  cardMetricoMetade: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-  },
-  tituloCardMini: {
-    fontSize: 13,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  valorCardMini: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 4,
-    color: "#111",
-  },
-  labelExtrato: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#111",
-    marginLeft: 20,
-    marginTop: 10,
-    marginBottom: 12,
-  },
-  listaContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-  },
-  containerVazio: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-    gap: 10,
-  },
-  textoVazio: {
-    fontSize: 14,
-    color: "#999",
-    textAlign: "center",
-  },
-  itemExtrato: {
+  conteudoAtalhoSaque: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F8F9FA",
+    gap: 12,
   },
-  iconeMoedaArea: {
-    padding: 10,
-    backgroundColor: "#F4F6F7",
-    borderRadius: 12,
+  iconeSaqueCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  nomeEstudante: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#222",
-  },
-  dataExtrato: {
+  tituloAtalhoSaque: {
     fontSize: 12,
-    color: "#888",
+    color: "#64748B",
+    fontWeight: "500",
+  },
+  valorAtalhoSaque: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 1,
+  },
+  pendenteAtalhoSaque: {
+    fontSize: 10.5,
+    color: "#94A3B8",
     marginTop: 2,
   },
-  valorExtrato: {
+  botaoSacarAgora: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF5A1F",
+    paddingVertical: 11,
+    borderRadius: 12,
+    shadowColor: "#FF5A1F",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  textoBotaoSacarAgora: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // CARDS DE SEÇÃO COMUNS
+  cardSecao: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  headerSecao: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 14,
+  },
+  tituloSecao: {
     fontSize: 15,
-    fontWeight: "bold",
+    fontWeight: "700",
+    color: "#0F172A",
   },
-  statusExtrato: {
-    fontSize: 10,
-    color: "#999",
-    textTransform: "uppercase",
+  subtituloSecao: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  chipTotalAulas: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+  },
+  textoChipTotalAulas: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#FF5A1F",
+  },
+
+  // DONUT ROW
+  rowDonutChart: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  donutWrapper: {
+    width: 110,
+    height: 110,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  legendasDonut: {
+    flex: 1,
+    gap: 10,
+  },
+  itemLegendaDonut: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bulletLegenda: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  labelLegenda: {
+    fontSize: 12,
     fontWeight: "600",
+    color: "#1E293B",
+  },
+  subLegenda: {
+    fontSize: 10,
+    color: "#64748B",
+  },
+  badgePercentualDonut: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  textoPercentualDonut: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  // VOLUME POR DISCIPLINA
+  linkVerSolicitacoes: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  textoLinkVerSolicitacoes: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FF5A1F",
+  },
+  listaBarrasDisciplina: {
+    gap: 14,
+  },
+  itemBarraDisciplina: {
+    gap: 5,
+  },
+  topoBarraDisciplina: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  nomeDisciplina: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+  valoresDisciplina: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  faturamentoDisciplina: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  percentualDisciplina: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  trilhoBarra: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#F1F5F9",
+    overflow: "hidden",
+  },
+  preenchimentoBarra: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  rodapeBarraDisciplina: {
+    fontSize: 10,
+    color: "#94A3B8",
+  },
+
+  // EXTRATO
+  rowFiltrosExtrato: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 14,
+  },
+  chipFiltroExtrato: {
+    paddingVertical: 5,
+    paddingHorizontal: 11,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  chipFiltroExtratoAtivo: {
+    backgroundColor: "#FF5A1F",
+    borderColor: "#FF5A1F",
+  },
+  textoChipFiltroExtrato: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  textoChipFiltroExtratoAtivo: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  listaTransacoes: {
+    gap: 12,
+  },
+  emptyTransacoes: {
+    alignItems: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  emptyTransacoesTexto: {
+    fontSize: 12,
+    color: "#94A3B8",
+    textAlign: "center",
+  },
+  itemTransacao: {
+    flexDirection: "row",
+    gap: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  avatarTransacao: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E2E8F0",
+  },
+  topoItemTransacao: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  nomeAlunoTransacao: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  valorTransacao: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  valorPositivo: {
+    color: "#059669",
+  },
+  valorNeutro: {
+    color: "#64748B",
+  },
+  materiaTransacao: {
+    fontSize: 11.5,
+    fontWeight: "600",
+    color: "#FF5A1F",
+    marginTop: 1,
+  },
+  descricaoTransacao: {
+    fontSize: 11,
+    color: "#64748B",
     marginTop: 2,
+  },
+  rodapeItemTransacao: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+  },
+  chipDataTransacao: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  textoDataTransacao: {
+    fontSize: 10.5,
+    color: "#64748B",
+  },
+  badgeStatusTransacao: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  badgeRecebida: {
+    backgroundColor: "#ECFDF5",
+  },
+  badgeConfirmada: {
+    backgroundColor: "#EFF6FF",
+  },
+  badgeAnalise: {
+    backgroundColor: "#FEF3C7",
+  },
+  textoStatusTransacao: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  textoRecebida: {
+    color: "#047857",
+  },
+  textoConfirmada: {
+    color: "#1D4ED8",
+  },
+  textoAnalise: {
+    color: "#B45309",
+  },
+
+  // BOTÕES AUXILIARES
+  blocoBotoesAuxiliares: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  botaoSecundarioAulas: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#FFD3B6",
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  textoBotaoSecundarioAulas: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF5A1F",
+  },
+
+  // TAB BAR DOCKADA
+  tabBarContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingTop: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 2,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#64748B",
+    marginTop: 3,
+  },
+  tabLabelAtiva: {
+    color: "#FF5A1F",
+    fontWeight: "700",
   },
 });
