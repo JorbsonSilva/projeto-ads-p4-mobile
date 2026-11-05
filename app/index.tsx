@@ -1,4 +1,5 @@
 import { Colors } from '@/constants/colors';
+import { Assets } from '@/constants/assets';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -55,9 +56,9 @@ export default function SplashScreen() {
           alignItems: 'center',
         }}
       >
-        {/* Logo PNG */}
+        {/* Logo Oficial Orienta */}
         <Animated.Image
-          source={require('@/src/assets/images/logo.png')}
+          source={Assets.logo.transparent}
           style={style.logo}
           resizeMode="contain"
         />
