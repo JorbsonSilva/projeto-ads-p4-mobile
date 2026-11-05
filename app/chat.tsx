@@ -36,6 +36,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   enviarMensagemChat,
   MensagemChat,
@@ -49,6 +50,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const agendamentoId = Number(params.id || params.agendamentoId || 101);
+  const esconderBarra = params.esconderBarra === "true";
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
@@ -202,8 +204,9 @@ export default function ChatScreen() {
       <View style={estilos.header}>
         <TouchableOpacity
           style={estilos.botaoVoltar}
-          onPress={() => router.push("/agenda" as any)}
+          onPress={() => router.push("/(tabs)" as any)}
           activeOpacity={0.7}
+          accessibilityLabel="Voltar para a Home do Aluno"
         >
           <Ionicons name="arrow-back" size={22} color="#1E293B" />
         </TouchableOpacity>
@@ -428,7 +431,14 @@ export default function ChatScreen() {
       {/* ============================================================== */}
       {/* 6. BARRA DE ENTRADA DE MENSAGEM (INPUT BAR)                    */}
       {/* ============================================================== */}
-      <View style={[estilos.inputBarContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <View
+        style={[
+          estilos.inputBarContainer,
+          esconderBarra
+            ? { paddingBottom: Math.max(insets.bottom, 12) }
+            : { paddingBottom: 8 },
+        ]}
+      >
         <TouchableOpacity
           style={estilos.botaoAnexoMais}
           onPress={() => handleAcaoRapida("arquivo")}
@@ -472,6 +482,13 @@ export default function ChatScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* ============================================================== */}
+      {/* 6.1 BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)     */}
+      {/* ============================================================== */}
+      {!esconderBarra && (
+        <TabBarRN001 abaAtiva="chat" perfilForcado="Aluno" />
+      )}
 
       {/* ============================================================== */}
       {/* 7. MODAL DE MENU DE OPÇÕES (KEBAB MENU)                        */}
@@ -806,7 +823,7 @@ const estilos = StyleSheet.create({
   // 4. Feed de Mensagens
   mensagensListContent: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
   divisorTemporalContainer: {
     flexDirection: "row",
