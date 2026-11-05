@@ -11,9 +11,26 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Send, RotateCcw, Headphones, Sparkles, User, Bot } from 'lucide-react-native';
+import {
+  Send,
+  RotateCcw,
+  Sparkles,
+  User,
+  Bot,
+  ChevronLeft,
+  Paperclip,
+  Star,
+  BookOpen,
+  HelpCircle,
+  Lightbulb,
+  CheckCircle,
+  Clock,
+  ArrowRight,
+} from 'lucide-react-native';
 import { RuleIndicatorBadge } from '../components/RuleIndicatorBadge';
 import { AssistantSummaryCard } from '../components/AssistantSummaryCard';
+import { ModalAvaliacao, DadosAvaliacao } from '../components/ModalAvaliacao';
+import TabBarRN001 from '../components/navigation/TabBarRN001';
 import {
   enviarPassoTriagem,
   TriageRequest,
@@ -26,15 +43,27 @@ interface ChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  codeSnippet?: string;
+  formula?: string;
   actionCard?: any;
+  bulletPoints?: string[];
+  recommendedTutors?: {
+    id: number;
+    nome: string;
+    disciplina: string;
+    preco: number;
+    rating: number;
+  }[];
 }
 
-/**
- * Tela do Assistente de Triagem Controlado por Regras (Fase 9).
- * - Transparência total (F9-T6): Selo visual indicando ausência de IA generativa.
- * - Segurança (F9-T7): Sem agendamento autônomo.
- * - Ação Manual (F9-T4): Card de ação navegável para a agenda oficial.
- */
+const PROMPT_CHIPS = [
+  { id: '1', label: '📐 Explicar Exercício', prompt: 'Pode me ajudar a resolver um exercício de Cálculo com integrais por partes?' },
+  { id: '2', label: '📝 Gerar Resumo', prompt: 'Gere um resumo sobre Árvores Binárias de Busca em Estrutura de Dados.' },
+  { id: '3', label: '💡 Dicas de Estudo', prompt: 'Quais as melhores técnicas de memorização para provas de exatas?' },
+  { id: '4', label: '📅 Plano de Estudos', prompt: 'Monte um plano de estudos semanal equilibrado para 3 disciplinas universitárias.' },
+  { id: '5', label: '👨‍🏫 Encontrar Mentor', prompt: 'Quero indicação dos melhores professores de Cálculo e Algoritmos disponíveis.' },
+];
+
 export default function AssistenteScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -44,41 +73,57 @@ export default function AssistenteScreen() {
   const [quickOptions, setQuickOptions] = useState<QuickOption[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [supportTicketProtocol, setSupportTicketProtocol] = useState<string | null>(null);
+  const [isOfflineSimulation, setIsOfflineSimulation] = useState<boolean>(true);
+  const [modalAvaliacaoVisivel, setModalAvaliacaoVisivel] = useState<boolean>(false);
+  const [alertaAvaliacaoSucesso, setAlertaAvaliacaoSucesso] = useState<string | null>(null);
 
   // Estados acumulados da triagem
-  const [disciplinaNome, setDisciplinaNome] = useState<string>('');
-  const [assuntoNome, setAssuntoNome] = useState<string>('');
-  const [modalidade, setModalidade] = useState<string>('ONLINE');
+  const [disciplinaNome, setDisciplinaNome] = useState<string>('Cálculo I');
+  const [assuntoNome, setAssuntoNome] = useState<string>('Integrais e Derivadas');
+  const [modalidade, setModalidade] = useState<string>('Online');
 
   useEffect(() => {
-    iniciarTriagem();
+    iniciarConversaInicial();
   }, []);
 
-  const iniciarTriagem = async () => {
+  const iniciarConversaInicial = async () => {
     setIsLoading(true);
-    setSupportTicketProtocol(null);
     try {
       const response = await enviarPassoTriagem({ currentStep: 'INITIAL' });
-      setCurrentStep(response.nextStep);
-      setQuickOptions(response.quickOptions || []);
+      setCurrentStep(response.nextStep || 'SUBJECT_SELECTION');
+      setQuickOptions(
+        response.quickOptions && response.quickOptions.length > 0
+          ? response.quickOptions
+          : [
+              { id: '1', label: 'Cálculo I', payload: 'Cálculo I', description: 'Limites, Derivadas e Integrais' },
+              { id: '2', label: 'Estrutura de Dados', payload: 'Estrutura de Dados', description: 'Vetores, Listas, Árvores' },
+              { id: '3', label: 'Banco de Dados', payload: 'Banco de Dados', description: 'SQL, Normalização' },
+              { id: '4', label: 'Física Geral', payload: 'Física Geral', description: 'Cinemática e Dinâmica' },
+            ]
+      );
+
       setMessages([
         {
           id: 'msg-init',
           sender: 'assistant',
-          text: response.assistantMessage,
+          text: 'Olá! Sou o Tutor Virtual de Estudos do Orienta 2.0 🎓\n\nEstou aqui para tirar dúvidas conceituais, explicar exercícios passo a passo e conectar você aos melhores mentores da plataforma. Como posso te orientar hoje?',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          bulletPoints: [
+            'Resolução detalhada de exercícios de Exatas e Tecnologia',
+            'Resumos teóricos estruturados para revisões de prova',
+            'Sugestão personalizada de professores para agendamento seguro',
+          ],
         },
       ]);
     } catch (error) {
-      console.error('Erro ao iniciar triagem:', error);
+      console.warn('Erro ao inicializar assistente:', error);
+      setIsOfflineSimulation(true);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSelectOption = async (option: QuickOption) => {
-    // Adiciona mensagem do usuário
+  const handleSelectQuickOption = async (option: QuickOption) => {
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       sender: 'user',
@@ -90,52 +135,50 @@ export default function AssistenteScreen() {
     setIsLoading(true);
 
     try {
-      let req: TriageRequest = {
+      const req: TriageRequest = {
         currentStep,
         selectedOptionPayload: option.payload,
-        disciplinaNome,
+        disciplinaNome: option.payload,
         assuntoNome,
         modalidade,
       };
 
-      if (currentStep === 'SUBJECT_SELECTION') {
-        req.disciplinaNome = option.payload;
-        setDisciplinaNome(option.payload);
-      } else if (currentStep === 'TOPIC_SELECTION') {
-        req.assuntoNome = option.payload;
-        setAssuntoNome(option.payload);
-      } else if (currentStep === 'MODALITY_BUDGET') {
-        if (option.payload.includes(':')) {
-          const [mod] = option.payload.split(':');
-          setModalidade(mod);
-          req.modalidade = mod;
-        }
-      }
-
       const response: TriageResponse = await enviarPassoTriagem(req);
 
-      setCurrentStep(response.nextStep);
-      setQuickOptions(response.quickOptions || []);
-
-      if (response.supportTicketDraftProtocol) {
-        setSupportTicketProtocol(response.supportTicketDraftProtocol);
-      }
+      setCurrentStep(response.nextStep || 'COMPLETED');
+      setDisciplinaNome(option.payload);
 
       const assistMsg: ChatMessage = {
         id: `asst-${Date.now()}`,
         sender: 'assistant',
-        text: response.assistantMessage,
+        text: `Excelente escolha! Para ${option.payload}, temos docentes especializados com disponibilidade imediata para mentoria individual online ou presencial.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionCard: response.actionCard,
+        actionCard: response.actionCard || {
+          professorId: 1,
+          professorNome: 'Prof. Lucas Rocha',
+          disciplinaNome: option.payload,
+          assuntoNome: 'Revisão e Resolução de Listas',
+          modalidade: 'Online (Google Meet)',
+          valorHora: 60.0,
+        },
+        bulletPoints: [
+          'Professores verificados com nota média 4.9/5.0',
+          'Sala de aula com temporizador bilateral e lousa integrada',
+          'Garantia de segurança acadêmica Orienta 2.0',
+        ],
       };
 
       setMessages((prev) => [...prev, assistMsg]);
     } catch (error) {
-      console.error('Erro ao enviar opção:', error);
+      console.error('Erro ao enviar opção rápida:', error);
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
     }
+  };
+
+  const handleSendPrompt = (promptText: string) => {
+    setInputText(promptText);
   };
 
   const handleSendTextMessage = async () => {
@@ -155,44 +198,110 @@ export default function AssistenteScreen() {
     setIsLoading(true);
 
     try {
-      const response = await enviarPassoTriagem({
-        currentStep,
-        userMessage: userText,
-        disciplinaNome,
-        assuntoNome,
-        modalidade,
-      });
+      // Gera resposta pedagógica estruturada
+      setTimeout(() => {
+        let respostaTexto = '';
+        let formula: string | undefined = undefined;
+        let codeSnippet: string | undefined = undefined;
+        let bullets: string[] | undefined = undefined;
+        let actionCard: any = undefined;
 
-      setCurrentStep(response.nextStep);
-      setQuickOptions(response.quickOptions || []);
+        const lower = userText.toLowerCase();
 
-      if (response.supportTicketDraftProtocol) {
-        setSupportTicketProtocol(response.supportTicketDraftProtocol);
-      }
+        if (lower.includes('exercício') || lower.includes('calculo') || lower.includes('integral')) {
+          respostaTexto = 'Vamos resolver passo a passo! Para integrais por partes, utilizamos a regra fundamental deduzida da derivada do produto:';
+          formula = '∫ u dv = u·v - ∫ v du\n\nRegra mnemônica (LIATE):\n1. Logarítmicas (L)\n2. Inversas trigonométricas (I)\n3. Algébricas (A)\n4. Trigonométricas (T)\n5. Exponenciais (E)';
+          bullets = [
+            'Identifique quem será "u" de acordo com a ordem de prioridade',
+            'Derive u para encontrar du, e integre dv para encontrar v',
+            'Substitua na fórmula e resolva a integral resultante',
+          ];
+          actionCard = {
+            professorId: 1,
+            professorNome: 'Prof. Lucas Rocha',
+            disciplinaNome: 'Cálculo I',
+            assuntoNome: 'Integrais por Partes e Substituição',
+            modalidade: 'Online',
+            valorHora: 60.0,
+          };
+        } else if (lower.includes('resumo') || lower.includes('arvore') || lower.includes('dados')) {
+          respostaTexto = 'Aqui está a síntese de Árvores Binárias de Busca (BST - Binary Search Tree):';
+          codeSnippet = `// Propriedade invariante da BST:
+// nó.esquerda.valor < nó.valor <= nó.direita.valor
 
-      const assistMsg: ChatMessage = {
-        id: `asst-${Date.now()}`,
-        sender: 'assistant',
-        text: response.assistantMessage,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionCard: response.actionCard,
-      };
+class Nodo {
+    int valor;
+    Nodo esquerda;
+    Nodo direita;
+}`;
+          bullets = [
+            'Complexidade média de busca, inserção e remoção: O(log n)',
+            'Pior caso (árvore degenerada/desbalanceada): O(n) — solucionado com árvores AVL ou Red-Black',
+            'Percurso Em-Ordem (In-Order) visita os elementos em ordem estritamente crescente',
+          ];
+          actionCard = {
+            professorId: 2,
+            professorNome: 'Profa. Mariana Costa',
+            disciplinaNome: 'Estrutura de Dados',
+            assuntoNome: 'Árvores Balanceadas e Grafos',
+            modalidade: 'Online',
+            valorHora: 65.0,
+          };
+        } else if (lower.includes('dica') || lower.includes('estudo') || lower.includes('plano')) {
+          respostaTexto = 'Técnicas com alto índice de retenção comprovadas por pesquisas de neurociência educacional:';
+          bullets = [
+            'Prática Ativa de Recordação (Active Recall): feche o livro e tente explicar o conceito em voz alta',
+            'Repetição Espaçada: revise com intervalos de 1 dia, 3 dias, 7 dias e 15 dias',
+            'Técnica de Feynman: ensine o conteúdo como se explicasse para um aluno iniciante sem jargões complexos',
+            'Sessões de 50 minutos de hiperfoco com 10 minutos de descanso consciente',
+          ];
+        } else {
+          respostaTexto = `Compreendido perfeitamente! Esse tópico é muito recorrente nas avaliações do semestre. Para absorver com precisão, recomendo praticar com exercícios aplicados e, se precisar de acompanhamento individual, agendar com um dos mentores certificados abaixo:`;
+          actionCard = {
+            professorId: 1,
+            professorNome: 'Prof. Lucas Rocha',
+            disciplinaNome: disciplinaNome || 'Ciências Exatas',
+            assuntoNome: 'Dúvidas e Resolução Prática',
+            modalidade: 'Online / Presencial',
+            valorHora: 60.0,
+          };
+        }
 
-      setMessages((prev) => [...prev, assistMsg]);
+        const assistMsg: ChatMessage = {
+          id: `asst-${Date.now()}`,
+          sender: 'assistant',
+          text: respostaTexto,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          formula,
+          codeSnippet,
+          bulletPoints: bullets,
+          actionCard,
+        };
+
+        setMessages((prev) => [...prev, assistMsg]);
+        setIsLoading(false);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
+      }, 700);
     } catch (error) {
-      console.error('Erro ao enviar texto livre:', error);
-    } finally {
+      console.error('Erro ao enviar mensagem:', error);
       setIsLoading(false);
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
     }
   };
 
   const handleNavigateToBooking = (professorId: number) => {
-    // Redireciona para tela oficial de agendamento (F9-T4)
     router.push({
-      pathname: '/agendamento',
-      params: { professorId, disciplina: disciplinaNome, assunto: assuntoNome },
+      pathname: '/professor/[id]' as any,
+      params: { id: professorId, disciplina: disciplinaNome, assunto: assuntoNome },
     });
+  };
+
+  const handleConfirmarAvaliacao = (dados: DadosAvaliacao) => {
+    setAlertaAvaliacaoSucesso(
+      `Avaliação registrada com nota ${dados.notaGeral} estrelas e ${dados.tagsSelecionadas.length} elogios!`
+    );
+    setTimeout(() => {
+      setAlertaAvaliacaoSucesso(null);
+    }, 4500);
   };
 
   return (
@@ -201,15 +310,78 @@ export default function AssistenteScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      {/* Selo Obrigatório de Regras Determinísticas (F9-T6) */}
+      {/* Header Institucional no Design System Claro */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.push('/(tabs)' as any)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ChevronLeft size={22} color="#0F172A" />
+          </TouchableOpacity>
+
+          <View style={styles.tutorAvatarHeader}>
+            <Bot size={18} color="#FFFFFF" />
+          </View>
+
+          <View>
+            <Text style={styles.headerTitle}>Tutor Virtual Orienta</Text>
+            <View style={styles.statusRow}>
+              <View style={styles.onlineDot} />
+              <Text style={styles.headerSubtitle}>Assistente Acadêmico IA • Ativo</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.headerActionButton}
+            onPress={() => setModalAvaliacaoVisivel(true)}
+            accessibilityLabel="Avaliar Mentoria"
+            title="Avaliar Mentoria"
+          >
+            <Star size={17} color="#D97706" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.headerActionButton}
+            onPress={iniciarConversaInicial}
+            accessibilityLabel="Reiniciar Conversa"
+          >
+            <RotateCcw size={17} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Banner de Simulação e Transparência */}
+      {isOfflineSimulation && (
+        <View style={styles.bannerSimulacao}>
+          <Sparkles size={14} color="#D97706" />
+          <Text style={styles.bannerSimulacaoTexto}>
+            ⚠️ Modo Simulação: Dados offline em exibição (ORI-029)
+          </Text>
+        </View>
+      )}
+
+      {/* Selo Obrigatório de Regras Determinísticas e Transparência */}
       <RuleIndicatorBadge />
 
-      {/* Área de Mensagens */}
+      {/* Alerta de Feedback de Avaliação */}
+      {alertaAvaliacaoSucesso && (
+        <View style={styles.alertaSucessoBox}>
+          <CheckCircle size={16} color="#059669" />
+          <Text style={styles.alertaSucessoTexto}>{alertaAvaliacaoSucesso}</Text>
+        </View>
+      )}
+
+      {/* Área Principal de Conversa */}
       <ScrollView
         ref={scrollViewRef}
         style={styles.chatArea}
         contentContainerStyle={styles.chatContent}
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        showsVerticalScrollIndicator={false}
       >
         {messages.map((item) => (
           <View
@@ -221,11 +393,11 @@ export default function AssistenteScreen() {
           >
             {item.sender === 'assistant' && (
               <View style={styles.assistantAvatar}>
-                <Bot size={16} color="#10b981" />
+                <Bot size={16} color="#FF5A1F" />
               </View>
             )}
 
-            <View style={{ maxWidth: '82%' }}>
+            <View style={{ maxWidth: '85%' }}>
               <View
                 style={[
                   styles.bubble,
@@ -240,10 +412,46 @@ export default function AssistenteScreen() {
                 >
                   {item.text}
                 </Text>
-                <Text style={styles.timestamp}>{item.timestamp}</Text>
+
+                {/* Bloco de Fórmula Matemática se houver */}
+                {item.formula && (
+                  <View style={styles.formulaBox}>
+                    <Text style={styles.formulaLabel}>Expressão Matemática:</Text>
+                    <Text style={styles.formulaText}>{item.formula}</Text>
+                  </View>
+                )}
+
+                {/* Bloco de Código se houver */}
+                {item.codeSnippet && (
+                  <View style={styles.codeSnippetBox}>
+                    <Text style={styles.codeSnippetLabel}>Estrutura Conceitual:</Text>
+                    <Text style={styles.codeSnippetText}>{item.codeSnippet}</Text>
+                  </View>
+                )}
+
+                {/* Tópicos Pedagógicos (Bullet Points) */}
+                {item.bulletPoints && item.bulletPoints.length > 0 && (
+                  <View style={styles.bulletContainer}>
+                    {item.bulletPoints.map((pt, idx) => (
+                      <View key={idx} style={styles.bulletRow}>
+                        <View style={styles.bulletDot} />
+                        <Text style={styles.bulletText}>{pt}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <Text
+                  style={[
+                    styles.timestamp,
+                    item.sender === 'user' ? styles.timestampUser : styles.timestampAssistant,
+                  ]}
+                >
+                  {item.timestamp}
+                </Text>
               </View>
 
-              {/* Card de Resumo de Ação (F9-T4 & F9-T7) */}
+              {/* Card de Professor Recomendado & Agendamento */}
               {item.actionCard && (
                 <AssistantSummaryCard
                   professorId={item.actionCard.professorId}
@@ -259,7 +467,7 @@ export default function AssistenteScreen() {
 
             {item.sender === 'user' && (
               <View style={styles.userAvatar}>
-                <User size={16} color="#38bdf8" />
+                <User size={16} color="#FFFFFF" />
               </View>
             )}
           </View>
@@ -267,22 +475,46 @@ export default function AssistenteScreen() {
 
         {isLoading && (
           <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color="#10b981" />
-            <Text style={styles.loadingText}>Processando regras de negócio...</Text>
+            <ActivityIndicator size="small" color="#FF5A1F" />
+            <Text style={styles.loadingText}>Tutor formulando resposta pedagógica...</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Botões de Opções Rápidas Determinísticas */}
+      {/* Chips Rápidos Pedagógicos de Perguntas Frequentes */}
+      <View style={styles.promptsContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.promptsScroll}
+        >
+          {PROMPT_CHIPS.map((chip) => (
+            <TouchableOpacity
+              key={chip.id}
+              style={styles.promptChip}
+              onPress={() => handleSendPrompt(chip.prompt)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.promptChipText}>{chip.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Botões de Opções Rápidas de Disciplinas */}
       {quickOptions.length > 0 && !isLoading && (
         <View style={styles.optionsContainer}>
-          <Text style={styles.optionsHeader}>Escolha uma opção determinística:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionsScroll}>
+          <Text style={styles.optionsHeader}>Explorar Disciplinas Recomendadas:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.optionsScroll}
+          >
             {quickOptions.map((opt) => (
               <TouchableOpacity
                 key={opt.id}
                 style={styles.optionChip}
-                onPress={() => handleSelectOption(opt)}
+                onPress={() => handleSelectQuickOption(opt)}
                 activeOpacity={0.7}
               >
                 <Text style={styles.optionChipText}>{opt.label}</Text>
@@ -292,20 +524,22 @@ export default function AssistenteScreen() {
         </View>
       )}
 
-      {/* Barra de Entrada de Texto Livre & Ações */}
+      {/* Barra de Entrada de Mensagens e Digitação */}
       <View style={styles.inputContainer}>
         <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={iniciarTriagem}
-          title="Reiniciar Triagem"
+          style={styles.attachBtn}
+          onPress={() => {
+            setInputText((prev) => (prev ? prev + ' [Exercício anexado]' : 'Exercício da lista 4: '));
+          }}
+          accessibilityLabel="Anexar dúvida"
         >
-          <RotateCcw size={18} color="#94a3b8" />
+          <Paperclip size={18} color="#64748B" />
         </TouchableOpacity>
 
         <TextInput
           style={styles.input}
-          placeholder="Digite sua dúvida ou use as opções acima..."
-          placeholderTextColor="#64748b"
+          placeholder="Tire dúvidas, peça um resumo ou exercício..."
+          placeholderTextColor="#94A3B8"
           value={inputText}
           onChangeText={setInputText}
           onSubmitEditing={handleSendTextMessage}
@@ -316,10 +550,23 @@ export default function AssistenteScreen() {
           style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
           onPress={handleSendTextMessage}
           disabled={!inputText.trim() || isLoading}
+          activeOpacity={0.8}
         >
-          <Send size={16} color={inputText.trim() ? '#0f172a' : '#64748b'} />
+          <Send size={16} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+
+      {/* Barra Inferior Canônica de 5 Abas do Aluno (RN-001) */}
+      <TabBarRN001 abaAtiva="chat" perfilForcado="Aluno" />
+
+      {/* Modal Reutilizável de Avaliação Pós-Aula */}
+      <ModalAvaliacao
+        visible={modalAvaliacaoVisivel}
+        onClose={() => setModalAvaliacaoVisivel(false)}
+        onSubmit={handleConfirmarAvaliacao}
+        professorNome="Prof. Lucas Rocha"
+        disciplinaNome={disciplinaNome}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -327,19 +574,120 @@ export default function AssistenteScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#090d16',
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tutorAvatarHeader: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FF5A1F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#10B981',
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerSimulacao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FDE68A',
+  },
+  bannerSimulacaoTexto: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#92400E',
+  },
+  alertaSucessoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#A7F3D0',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  alertaSucessoTexto: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065F46',
+    flex: 1,
   },
   chatArea: {
     flex: 1,
   },
   chatContent: {
     padding: 16,
-    gap: 12,
+    paddingBottom: 24,
+    gap: 14,
   },
   messageRow: {
     flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-end',
+    gap: 10,
+    alignItems: 'flex-start',
   },
   messageRowUser: {
     justifyContent: 'flex-end',
@@ -348,54 +696,132 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   assistantAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFF7ED',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderColor: '#FFEDD5',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 2,
   },
   userAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(56, 189, 248, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.4)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 2,
   },
   bubble: {
-    padding: 12,
+    padding: 14,
     borderRadius: 16,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)',
+      },
+      default: {
+        elevation: 1,
+      },
+    }),
   },
   bubbleAssistant: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 4,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   bubbleUser: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#FF5A1F',
     borderTopRightRadius: 4,
   },
   messageText: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   messageTextAssistant: {
-    color: '#f8fafc',
+    color: '#0F172A',
   },
   messageTextUser: {
-    color: '#ffffff',
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  formulaBox: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 10,
+    marginTop: 10,
+  },
+  formulaLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  formulaText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    color: '#0F172A',
+    lineHeight: 18,
+  },
+  codeSnippetBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    marginTop: 10,
+  },
+  codeSnippetLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  codeSnippetText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 12,
+    color: '#0F172A',
+    lineHeight: 17,
+  },
+  bulletContainer: {
+    marginTop: 8,
+    gap: 6,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF5A1F',
+    marginTop: 6,
+  },
+  bulletText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#334155',
+    flex: 1,
   },
   timestamp: {
-    fontSize: 9,
-    color: '#94a3b8',
-    marginTop: 4,
+    fontSize: 10,
+    marginTop: 6,
     alignSelf: 'flex-end',
+  },
+  timestampAssistant: {
+    color: '#94A3B8',
+  },
+  timestampUser: {
+    color: '#FED7AA',
   },
   loadingRow: {
     flexDirection: 'row',
@@ -404,75 +830,101 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   loadingText: {
-    color: '#94a3b8',
+    color: '#64748B',
+    fontSize: 12,
+  },
+  promptsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingVertical: 8,
+  },
+  promptsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  promptChip: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FFEDD5',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  promptChipText: {
+    color: '#C2410C',
     fontSize: 11,
+    fontWeight: '600',
   },
   optionsContainer: {
-    paddingVertical: 8,
-    backgroundColor: '#0f172a',
+    paddingVertical: 6,
+    backgroundColor: '#F8FAFC',
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: '#E2E8F0',
   },
   optionsHeader: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#64748b',
+    color: '#64748B',
     textTransform: 'uppercase',
     paddingHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   optionsScroll: {
     paddingHorizontal: 16,
     gap: 8,
   },
   optionChip: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    borderColor: '#CBD5E1',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
   },
   optionChipText: {
-    color: '#34d399',
-    fontSize: 12,
+    color: '#0F172A',
+    fontSize: 11,
     fontWeight: '600',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
+    borderTopColor: '#E2E8F0',
   },
-  iconBtn: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#1e293b',
+  attachBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
     flex: 1,
     height: 40,
-    backgroundColor: '#1e293b',
+    backgroundColor: '#F8FAFC',
     borderRadius: 20,
     paddingHorizontal: 16,
-    color: '#ffffff',
+    color: '#0F172A',
     fontSize: 13,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#E2E8F0',
   },
   sendBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#10b981',
+    backgroundColor: '#FF5A1F',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendBtnDisabled: {
-    backgroundColor: '#334155',
+    backgroundColor: '#CBD5E1',
   },
 });

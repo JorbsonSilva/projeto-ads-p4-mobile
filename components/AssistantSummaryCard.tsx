@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Calendar, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react-native';
 
 export interface ActionCardProps {
@@ -14,8 +14,8 @@ export interface ActionCardProps {
 
 /**
  * Card de Ação do Assistente (F9-T4 & F9-T7):
- * Apresenta o resumo do professor recomendado e exige clique manual do aluno
- * para navegar à tela oficial de agendamento. O assistente é impedido de realizar agendamento direto.
+ * Apresenta o resumo do professor recomendado no Design System Claro Oficial
+ * e direciona o aluno para a tela oficial de agendamento.
  */
 export const AssistantSummaryCard: React.FC<ActionCardProps> = ({
   professorId,
@@ -30,10 +30,10 @@ export const AssistantSummaryCard: React.FC<ActionCardProps> = ({
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.iconContainer}>
-          <CheckCircle2 size={18} color="#10b981" />
+          <CheckCircle2 size={18} color="#059669" />
         </View>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Professor Selecionado</Text>
+          <Text style={styles.title}>Professor Recomendado</Text>
           <Text style={styles.subtitle}>Resumo para Agendamento</Text>
         </View>
       </View>
@@ -63,16 +63,15 @@ export const AssistantSummaryCard: React.FC<ActionCardProps> = ({
 
         <View style={styles.priceRow}>
           <Text style={styles.priceLabel}>Valor hora/aula:</Text>
-          <Text style={styles.priceValue}>R$ {valorHora.toFixed(2)}/h</Text>
+          <Text style={styles.priceValue}>R$ {valorHora.toFixed(2).replace('.', ',')}/h</Text>
         </View>
       </View>
 
-      {/* Trava de Segurança LGPD & F9-T7 */}
+      {/* Trava de Segurança e Ação Manual */}
       <View style={styles.securityBox}>
-        <AlertCircle size={14} color="#f59e0b" />
+        <AlertCircle size={14} color="#D97706" />
         <Text style={styles.securityText}>
-          Ação Manual Obrigatória: O assistente não grava no banco nem agenda automaticamente.
-          Clique abaixo para escolher o horário oficial.
+          Agendamento Manual Seguro: O assistente não realiza débitos ou reservas sem a sua conferência.
         </Text>
       </View>
 
@@ -81,9 +80,9 @@ export const AssistantSummaryCard: React.FC<ActionCardProps> = ({
         onPress={() => onNavigateToBooking(professorId)}
         activeOpacity={0.8}
       >
-        <Calendar size={16} color="#0f172a" />
+        <Calendar size={16} color="#FFFFFF" />
         <Text style={styles.actionButtonText}>Escolher Horário e Agendar</Text>
-        <ArrowRight size={16} color="#0f172a" />
+        <ArrowRight size={16} color="#FFFFFF" />
       </TouchableOpacity>
     </View>
   );
@@ -91,24 +90,27 @@ export const AssistantSummaryCard: React.FC<ActionCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     marginVertical: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
+    borderColor: '#E2E8F0',
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
+      },
+      default: {
+        elevation: 2,
+      },
+    }),
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: '#F1F5F9',
     paddingBottom: 10,
     marginBottom: 12,
   },
@@ -116,7 +118,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -124,12 +126,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: '#ffffff',
+    color: '#0F172A',
     fontSize: 14,
     fontWeight: '700',
   },
   subtitle: {
-    color: '#94a3b8',
+    color: '#64748B',
     fontSize: 11,
   },
   body: {
@@ -141,29 +143,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    color: '#94a3b8',
+    color: '#64748B',
     fontSize: 12,
   },
   value: {
-    color: '#f1f5f9',
+    color: '#1E293B',
     fontSize: 12,
     fontWeight: '500',
   },
   valueHighlight: {
-    color: '#38bdf8',
+    color: '#FF5A1F',
     fontSize: 13,
     fontWeight: '700',
   },
   modalityBadge: {
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    backgroundColor: '#EFF6FF',
     paddingVertical: 2,
     paddingHorizontal: 8,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(56, 189, 248, 0.3)',
+    borderColor: '#BFDBFE',
   },
   modalityText: {
-    color: '#38bdf8',
+    color: '#2563EB',
     fontSize: 11,
     fontWeight: '600',
   },
@@ -174,15 +176,15 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: '#F1F5F9',
   },
   priceLabel: {
-    color: '#cbd5e1',
+    color: '#475569',
     fontSize: 12,
     fontWeight: '600',
   },
   priceValue: {
-    color: '#10b981',
+    color: '#059669',
     fontSize: 16,
     fontWeight: '800',
   },
@@ -190,15 +192,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    backgroundColor: '#FEF3C7',
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
+    borderColor: '#FDE68A',
     borderRadius: 8,
     padding: 10,
     marginVertical: 12,
   },
   securityText: {
-    color: '#fde68a',
+    color: '#92400E',
     fontSize: 11,
     flex: 1,
     lineHeight: 15,
@@ -208,17 +210,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#10b981',
+    backgroundColor: '#FF5A1F',
     paddingVertical: 12,
     borderRadius: 10,
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 2,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 10px rgba(255, 90, 31, 0.25)',
+      },
+      default: {
+        elevation: 2,
+      },
+    }),
   },
   actionButtonText: {
-    color: '#0f172a',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
