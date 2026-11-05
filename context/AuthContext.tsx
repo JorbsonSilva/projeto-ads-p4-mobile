@@ -17,6 +17,9 @@ interface AuthContextData {
   refreshToken: string | null;
   carregandoAuth: boolean;
   isAuthenticated: boolean;
+  isDemoMode: boolean;
+  apiDisponivel: boolean;
+  ativarModoDemo: () => void;
   alternarPerfilGlobal: (novoPerfil: string) => Promise<void>;
   loginGlobal: (
     id: string,
@@ -40,13 +43,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [carregandoAuth, setCarregandoAuth] = useState<boolean>(true);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [apiDisponivel, setApiDisponivel] = useState<boolean>(true);
+
+  const ativarModoDemo = () => {
+    setIsDemoMode(true);
+    setUsuarioId("demo-aluno-1");
+    setNomeUsuario("Usuário Demonstração");
+    setPerfilAtivo("Aluno");
+  };
 
   /**
    * Efeito colateral inicializador que roda automaticamente ao abrir o aplicativo.
-   * Verifica se há resíduos de sessão persistidos no armazenamento do celular.
+   * Verifica se há resíduos de sessão persistidos no armazenamento do celular
+   * ou se a tela foi solicitada em modo de demonstração/visualização.
    */
   useEffect(() => {
     const carregarSessaoPersistida = async () => {
+      // 1. Detecção não-bloqueante de modo de visualização (URL param ?demo=true ou preview no AI Studio)
+      const urlSolicitaDemo =
+        typeof window !== "undefined" &&
+        (window.location.search.includes("demo=true") ||
+          window.location.search.includes("preview=true") ||
+          window.location.protocol === "https:");
+
+      // 1.1 Detecção de persona via URL (?persona=professor ou ?perfil=professor)
+      const urlParamLower = typeof window !== "undefined" ? window.location.search.toLowerCase() : "";
+      const solicitaProfessorUrl =
+        urlParamLower.includes("persona=professor") ||
+        urlParamLower.includes("perfil=professor");
+      const solicitaAlunoUrl =
+        urlParamLower.includes("persona=aluno") ||
+        urlParamLower.includes("perfil=aluno");
+
+      // 2. Sondagem de integridade da API backend em background não-bloqueante (nunca trava a tela)
+      if (typeof window !== "undefined" && window.location.protocol !== "https:") {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 1200);
+          fetch(`${API_URL}/api/v1/health`, { method: "GET", signal: controller.signal })
+            .then((res) => {
+              clearTimeout(timeoutId);
+              setApiDisponivel(res.ok);
+            })
+            .catch(() => setApiDisponivel(false));
+        } catch {
+          setApiDisponivel(false);
+        }
+      } else {
+        setApiDisponivel(false);
+      }
+
       try {
         const [idSalvo, perfilSalvo, nomeSalvo, tokenSalvo, refreshSalvo] =
           await Promise.all([
@@ -57,22 +104,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             AsyncStorage.getItem("@orienta_refresh_token"),
           ]);
 
-        if (idSalvo) setUsuarioId(idSalvo);
-        if (perfilSalvo) setPerfilAtivo(perfilSalvo);
-        if (nomeSalvo) setNomeUsuario(nomeSalvo);
+        if (idSalvo) {
+          setUsuarioId(idSalvo);
+        } else if (urlSolicitaDemo) {
+          // Ativa sessão de demonstração imediata para navegação fluida
+          setIsDemoMode(true);
+          setUsuarioId("demo-aluno-1");
+        }
+
+        // Precedência de perfil: URL explícita > Storage persistido > Padrão Aluno
+        if (solicitaProfessorUrl) {
+          setPerfilAtivo("Professor");
+          setNomeUsuario(nomeSalvo || "Prof. Lucas Rocha");
+          await AsyncStorage.setItem("@orienta_perfil", "Professor");
+        } else if (solicitaAlunoUrl) {
+          setPerfilAtivo("Aluno");
+          setNomeUsuario(nomeSalvo || "Jorbson");
+          await AsyncStorage.setItem("@orienta_perfil", "Aluno");
+        } else if (perfilSalvo) {
+          setPerfilAtivo(perfilSalvo);
+          if (nomeSalvo) setNomeUsuario(nomeSalvo);
+        } else {
+          setPerfilAtivo("Aluno");
+          setNomeUsuario(nomeSalvo || "Jorbson");
+        }
+
         if (tokenSalvo) setToken(tokenSalvo);
         if (refreshSalvo) setRefreshToken(refreshSalvo);
       } catch (error) {
-        console.error(
-          "Erro ao ler dados do AsyncStorage no bootstrap do app:",
-          error
-        );
+        console.error("Erro ao ler dados do AsyncStorage no bootstrap:", error);
       } finally {
         setCarregandoAuth(false);
       }
     };
 
     carregarSessaoPersistida();
+
+    // Listener para troca em tempo real de perfil via postMessage vindo da bancada do preview
+    const handleMensagemBancada = (event: MessageEvent) => {
+      if (event.data && event.data.type === "ORIENTA_SET_PERFIL" && typeof event.data.perfil === "string") {
+        const novoPerfilNormalizado = event.data.perfil.toLowerCase() === "professor" ? "Professor" : "Aluno";
+        setPerfilAtivo(novoPerfilNormalizado);
+        setNomeUsuario(novoPerfilNormalizado === "Professor" ? "Prof. Lucas Rocha" : "Jorbson");
+        AsyncStorage.setItem("@orienta_perfil", novoPerfilNormalizado).catch(() => {});
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("message", handleMensagemBancada);
+      return () => window.removeEventListener("message", handleMensagemBancada);
+    }
   }, []);
 
   /**
@@ -80,8 +161,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
    * @param {string} novoPerfil - O nome do novo perfil ("Aluno" ou "Professor")
    */
   const _alternarPerfilGlobal = async (novoPerfil: string) => {
-    setPerfilAtivo(novoPerfil);
-    await AsyncStorage.setItem("@orienta_perfil", novoPerfil);
+    const normalizado = novoPerfil.toLowerCase() === "professor" ? "Professor" : "Aluno";
+    setPerfilAtivo(normalizado);
+    setNomeUsuario(normalizado === "Professor" ? "Prof. Lucas Rocha" : "Jorbson");
+    await AsyncStorage.setItem("@orienta_perfil", normalizado);
   };
 
   /**
@@ -161,6 +244,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         refreshToken,
         carregandoAuth,
         isAuthenticated: !!token || !!usuarioId,
+        isDemoMode,
+        apiDisponivel,
+        ativarModoDemo,
         alternarPerfilGlobal: _alternarPerfilGlobal,
         loginGlobal: _loginGlobal,
         logoutGlobal: _logoutGlobal,
