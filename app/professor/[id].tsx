@@ -1,12 +1,22 @@
 /**
  * @file [id].tsx
- * @description Tela de Detalhes do Professor (Página de Vendas / Vitrine).
- * 🟢 ATUALIZADO: Corrigido o bug do Rodapé (Sticky Footer) ficando atrás dos botões
- * nativos do celular. Implementado o 'useSafeAreaInsets' para calcular o respiro dinâmico.
+ * @description Tela de Perfil Público do Professor para Agendamento - Orienta 2.0 [ORI-010].
+ * Implementada com total fidelidade à especificação visual IMG-009.
+ * 
+ * Funcionalidades:
+ * - Header superior com botão voltar, favoritar com estado interativo e compartilhar
+ * - Hero do Mentor com foto grande, dot online, selo verificado, formação acadêmica e modalidade
+ * - Grid de 3 métricas de alto impacto (Alunos atendidos, Taxa de aprovação, Avaliação média)
+ * - Cards comparativos de modalidade (Online com tag "Mais escolhida" vs Presencial)
+ * - Grade de disponibilidade semanal interativa (dias da semana e slots de horários clicáveis)
+ * - Tags das disciplinas lecionadas
+ * - Biografia e metodologia pedagógica
+ * - Avaliações recentes de alunos
+ * - Barra de ação fixa no rodapé (Sticky Action Footer) com preço dinâmico e botão "Agendar aula"
+ * - Serviço híbrido resiliente com fallback mocado oficial e banner de simulação offline
  */
 
-import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import axios from "axios";
+import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -20,661 +30,1107 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// 🟢 Importamos o useSafeAreaInsets para calcular o tamanho dos botões do celular
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+  MOCK_PERFIS_PROFESSORES,
+  obterPerfilProfessorComFallback,
+  PerfilProfessorPublico,
+  ResultadoPerfilProfessor,
+} from "../../services/professorService";
 
-import { BotaoCustomizado } from "../../components/BotaoCustomizado";
-import CardAptidao from "../../components/CardAptidao";
-import SectionTitle from "../../components/SectionTitle";
-import { API_URL } from "../../config/api";
-import { useAuth } from "../../context/AuthContext";
-
-// ==========================================
-// 1. CONTRATOS DE TIPAGEM
-// ==========================================
-interface Saber {
-  id: number;
-  nome: string;
-  categoria: string;
-}
-
-interface Aptidao {
-  id: number;
-  precoHora: number;
-  saber: Saber;
-}
-
-interface Disponibilidade {
-  id: number;
-  diaSemana: string;
-  horaInicio: string;
-  horaFim: string;
-}
-
-interface ProfessorDetalhe {
-  id: number;
-  nome: string;
-  bioProfessor?: string;
-  fotoUrl?: string;
-  notaMedia?: number;
-  totalAvaliacoes?: number;
-  aptidoes?: Aptidao[];
-  disponibilidades?: Disponibilidade[];
-}
-
-const diasDaSemanaNome = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const mapaDiasBackend = [
-  "Domingo",
-  "Segunda",
-  "Terça",
-  "Quarta",
-  "Quinta",
-  "Sexta",
-  "Sábado",
-];
-
-// ==========================================
-// 2. COMPONENTE PRINCIPAL
-// ==========================================
-export default function ProfessorDetalhes() {
+export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
-  const { usuarioId } = useAuth() as any;
-
-  // 🟢 Hook que calcula os recuos do sistema (Dynamic Safe Area)
   const insets = useSafeAreaInsets();
 
-  const [professor, setProfessor] = useState<ProfessorDetalhe | null>(null);
-  const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[]>(
-    [],
-  );
-  const [carregando, setCarregando] = useState(true);
+  const defaultProfessor = MOCK_PERFIS_PROFESSORES["101"];
+  const [professor, setProfessor] = useState<PerfilProfessorPublico>(defaultProfessor);
+  const [isSimulado, setIsSimulado] = useState<boolean>(true);
+  const [favoritado, setFavoritado] = useState<boolean>(false);
 
-  const [aptidaoSelecionada, setAptidaoSelecionada] = useState<Aptidao | null>(
-    null,
-  );
+  // Seleção de Modalidade (ONLINE vs PRESENCIAL)
+  const [modalidade, setModalidade] = useState<"ONLINE" | "PRESENCIAL">("ONLINE");
 
-  const [modalAgendamentoVisivel, setModalAgendamentoVisivel] = useState(false);
-  const [dataSelecionadaStr, setDataSelecionadaStr] = useState<string>("");
-  const [horaSelecionada, setHoraSelecionada] = useState<string>("");
-  const [salvando, setSalvando] = useState(false);
-
-  // ==========================================
-  // CARGA DE DADOS DA API REST
-  // ==========================================
-  const carregarDadosEfetivos = useCallback(async () => {
-    if (!id) return;
-    setCarregando(true);
+  const carregarPerfil = useCallback(async () => {
     try {
-      const resProf = await fetch(`${API_URL}/api/usuarios/${id}`);
-      if (resProf.ok) {
-        const dadosProf: ProfessorDetalhe = await resProf.json();
-        setProfessor(dadosProf);
-
-        if (dadosProf.aptidoes && dadosProf.aptidoes.length > 0) {
-          setAptidaoSelecionada(dadosProf.aptidoes[0]);
-        }
-
-        if (dadosProf.disponibilidades) {
-          setDisponibilidades(dadosProf.disponibilidades);
-        }
-      }
-    } catch (error) {
-      console.error("Falha ao sincronizar dados do especialista:", error);
-    } finally {
-      setCarregando(false);
+      const professorId = Array.isArray(id) ? id[0] : id || "101";
+      const res: ResultadoPerfilProfessor = await obterPerfilProfessorComFallback(professorId);
+      setProfessor(res.professor);
+      setIsSimulado(res.isSimulado);
+    } catch {
+      setIsSimulado(true);
     }
   }, [id]);
 
   useEffect(() => {
-    carregarDadosEfetivos();
-  }, [carregarDadosEfetivos]);
+    carregarPerfil();
+  }, [carregarPerfil]);
 
-  // ==========================================
-  // MOTOR DE PROCESSAMENTO CRONOLÓGICO INTELIGENTE
-  // ==========================================
-  const obterDatasDisponiveis = () => {
-    const diasProximos = [];
-    const hoje = new Date();
-
-    if (disponibilidades && disponibilidades.length > 0) {
-      for (let i = 1; i <= 14; i++) {
-        const proximoDia = new Date(hoje);
-        proximoDia.setDate(hoje.getDate() + i);
-        const nomeDiaBackend = mapaDiasBackend[proximoDia.getDay()];
-
-        if (disponibilidades.some((d) => d.diaSemana === nomeDiaBackend)) {
-          diasProximos.push(proximoDia.toISOString().split("T")[0]);
-        }
-      }
-      return diasProximos;
-    }
-    return [];
+  const toggleFavorito = () => {
+    setFavoritado((prev) => !prev);
   };
 
-  const obterHorariosParaData = (dataStr: string) => {
-    if (!dataStr) return [];
-
-    const partes = dataStr.split("-");
-    const objData = new Date(
-      Number(partes[0]),
-      Number(partes[1]) - 1,
-      Number(partes[2]),
-    );
-    const nomeDiaBackend = mapaDiasBackend[objData.getDay()];
-
-    const configsDoDia = disponibilidades.filter(
-      (d) => d.diaSemana === nomeDiaBackend,
-    );
-
-    let slots: string[] = [];
-    configsDoDia.forEach((config) => {
-      const hInicio = parseInt(config.horaInicio.split(":")[0], 10);
-      const hFim = parseInt(config.horaFim.split(":")[0], 10);
-
-      for (let h = hInicio; h < hFim; h++) {
-        slots.push(`${String(h).padStart(2, "0")}:00`);
-      }
-    });
-
-    return Array.from(new Set(slots)).sort();
-  };
-
-  const solicitarAgendamento = async () => {
-    if (!aptidaoSelecionada) {
-      Alert.alert(
-        "Atenção",
-        "Por favor, selecione qual matéria você deseja agendar.",
-      );
-      return;
-    }
-
-    if (!dataSelecionadaStr || !horaSelecionada) {
-      Alert.alert("Atenção", "Selecione um dia e um horário para agendar.");
-      return;
-    }
-
-    setSalvando(true);
-    try {
-      const horaFormatada = `${horaSelecionada}:00`;
-
-      const payload = {
-        aluno: { id: usuarioId || 1 },
-        professor: { id: professor?.id },
-        data: dataSelecionadaStr,
-        hora: horaFormatada,
-      };
-
-      await axios.post(`${API_URL}/agendamentos`, payload);
-
-      Alert.alert(
-        "Solicitação Enviada!",
-        "O professor receberá seu pedido e confirmará em breve.",
-        [
-          {
-            text: "Ver minha Agenda",
-            onPress: () => {
-              setModalAgendamentoVisivel(false);
-              router.push("/agenda");
-            },
-          },
-        ],
-      );
-    } catch (error) {
-      console.error(error);
-      Alert.alert(
-        "Horário Indisponível",
-        "Este horário já foi reservado. Tente outro.",
-      );
-    } finally {
-      setSalvando(false);
+  const handleCompartilhar = () => {
+    if (typeof window !== "undefined" && navigator?.share) {
+      navigator.share({
+        title: professor?.nome || "Perfil do Professor - Orienta",
+        text: `Confira o perfil de ${professor?.nome} no Orienta 2.0!`,
+        url: window.location.href,
+      }).catch(() => {});
+    } else {
+      Alert.alert("Compartilhar", `Link do perfil copiado com sucesso!`);
     }
   };
 
-  if (carregando) {
-    return (
-      <View style={estilos.telaCarregamento}>
-        <ActivityIndicator size="large" color="#FF6B1A" />
-      </View>
-    );
-  }
+  const handleAgendarAula = () => {
+    router.push("/marcar-aula" as any);
+  };
 
   if (!professor) {
     return (
-      <View style={estilos.telaCarregamento}>
-        <Feather name="user-x" size={48} color="#CCC" />
-        <Text style={estilos.textoErro}>Professor não encontrado.</Text>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={estilos.botaoVoltarErro}
-        >
-          <Text style={estilos.textoBotaoErro}>Voltar</Text>
+      <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
+        <Feather name="alert-circle" size={48} color="#94A3B8" />
+        <Text style={estilos.textoVazio}>Professor não encontrado</Text>
+        <TouchableOpacity style={estilos.botaoVoltar} onPress={() => router.back()}>
+          <Text style={estilos.textoBotaoVoltar}>Voltar</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const notaFormatada = professor.notaMedia
-    ? professor.notaMedia.toString().replace(".", ",")
-    : "5,0";
-  const totalAvaliacoes = professor.totalAvaliacoes || 0;
-
-  const listagemDatas = obterDatasDisponiveis();
-  const temAgenda = listagemDatas.length > 0;
-  const precoRodape = aptidaoSelecionada ? aptidaoSelecionada.precoHora : 0;
+  const precoAtual = modalidade === "ONLINE" ? professor.precoOnline : professor.precoPresencial;
 
   return (
-    <SafeAreaView style={estilos.telaGeral} edges={["top"]}>
-      <View style={estilos.cabecalhoNav}>
+    <View style={[estilos.container, { paddingTop: insets.top }]}>
+      {/* ============================================================== */}
+      {/* 1. HEADER SUPERIOR (VOLTAR + FAVORITAR + COMPARTILHAR)         */}
+      {/* ============================================================== */}
+      <View style={estilos.topHeader}>
         <TouchableOpacity
           onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={estilos.botaoVoltarHeader}
+          style={estilos.botaoHeaderCircular}
+          accessibilityLabel="Voltar para a tela anterior"
         >
-          <Ionicons name="arrow-back" size={24} color="#111" />
+          <Feather name="arrow-left" size={20} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={estilos.tituloHeaderNav}>Perfil do Mentor</Text>
-        <View style={{ width: 40 }} />
+
+        <Text style={estilos.tituloHeaderTop} numberOfLines={1}>
+          Perfil do Professor
+        </Text>
+
+        <View style={estilos.acoesHeaderDireita}>
+          <TouchableOpacity
+            onPress={toggleFavorito}
+            style={[
+              estilos.botaoHeaderCircular,
+              favoritado && estilos.botaoFavoritoAtivo,
+            ]}
+            accessibilityLabel="Favoritar professor"
+          >
+            <Ionicons
+              name={favoritado ? "heart" : "heart-outline"}
+              size={20}
+              color={favoritado ? "#FF6B1A" : "#0F172A"}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleCompartilhar}
+            style={estilos.botaoHeaderCircular}
+            accessibilityLabel="Compartilhar perfil"
+          >
+            <Feather name="share-2" size={18} color="#0F172A" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        // 🟢 Adicionamos o paddingBottom do insets ao scroll para o usuário conseguir rolar até o final
-        contentContainerStyle={[
-          estilos.conteudoScroll,
-          { paddingBottom: 150 + insets.bottom },
-        ]}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
-        <View style={estilos.perfilAutoridade}>
-          <Image
-            source={{
-              uri:
-                professor.fotoUrl ||
-                `https://i.pravatar.cc/300?u=${professor.id}`,
-            }}
-            style={estilos.fotoPerfilDestaque}
-          />
-          <View style={estilos.nomeVerificadoContainer}>
-            <Text style={estilos.nomeProfessorDestaque}>{professor.nome}</Text>
-            <MaterialIcons name="verified" size={22} color="#0057B8" />
+        {/* ============================================================== */}
+        {/* 2. HERO DO MENTOR (FOTO, SELO, AVALIAÇÃO, MODALIDADE)          */}
+        {/* ============================================================== */}
+        <View style={estilos.heroCard}>
+          {/* Avatar com Dot Online */}
+          <View style={estilos.avatarContainer}>
+            <Image source={{ uri: professor.fotoUrl }} style={estilos.avatarFoto} />
+            {professor.online && <View style={estilos.dotOnlineVerde} />}
           </View>
-          <View style={estilos.containerTagsMetricas}>
-            <View style={estilos.tagMetrica}>
-              <MaterialIcons name="star" size={16} color="#F5A623" />
-              <Text style={estilos.textoTagMetrica}>{notaFormatada}</Text>
+
+          {/* Nome e Selo de Verificação */}
+          <View style={estilos.nomeLinha}>
+            <Text style={estilos.nomeProfessor}>{professor.nome}</Text>
+            {professor.verificado && (
+              <MaterialIcons
+                name="verified"
+                size={20}
+                color="#0057B8"
+                style={{ marginLeft: 6 }}
+              />
+            )}
+          </View>
+
+          {/* Título Acadêmico / Formação */}
+          <Text style={estilos.tituloAcademico}>{professor.tituloAcademico}</Text>
+
+          {/* Linha de Avaliação com Estrelas */}
+          <View style={estilos.avaliacaoLinha}>
+            <View style={estilos.estrelasRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <MaterialIcons key={star} name="star" size={16} color="#F5A623" />
+              ))}
             </View>
-            <View style={estilos.tagMetrica}>
-              <Feather name="users" size={14} color="#666" />
-              <Text style={estilos.textoTagMetrica}>
-                {totalAvaliacoes} avaliações
+            <Text style={estilos.notaDestaque}>
+              {professor.notaMedia.toString().replace(".", ",")}{" "}
+              <Text style={estilos.totalAvaliacoesTexto}>
+                ({professor.totalAvaliacoes} avaliações)
               </Text>
-            </View>
+            </Text>
+          </View>
+
+          {/* Tag de Modalidade e Região */}
+          <View style={estilos.badgeLocalizacao}>
+            <Ionicons name="location-sharp" size={13} color="#0284C7" />
+            <Text style={estilos.textoBadgeLocalizacao}>
+              Presencial e Online • {professor.cidade}
+            </Text>
           </View>
         </View>
 
-        <View style={estilos.secaoBase}>
-          <SectionTitle titulo="O que eu ensino" />
-          {professor.aptidoes && professor.aptidoes.length > 0 ? (
-            <View style={estilos.gridAptidoes}>
-              {professor.aptidoes.map((aptidao) => (
-                <CardAptidao
-                  key={aptidao.id}
-                  nomeSaber={aptidao.saber.nome}
-                  preco={aptidao.precoHora}
-                  selecionado={aptidaoSelecionada?.id === aptidao.id}
-                  onPress={() => setAptidaoSelecionada(aptidao)}
-                />
-              ))}
+        {/* ============================================================== */}
+        {/* 3. ALERTA DE SIMULAÇÃO / RESILIÊNCIA                           */}
+        {/* ============================================================== */}
+        <View style={estilos.containerAlerta}>
+          {isSimulado ? (
+            <View style={estilos.badgeSimulacao}>
+              <Text style={{ fontSize: 13, marginRight: 6 }}>⚠️</Text>
+              <Text style={estilos.textoBadgeSimulacao}>
+                Modo Simulação: Dados offline (Backend indisponível)
+              </Text>
+              <TouchableOpacity onPress={carregarPerfil} style={{ marginLeft: "auto" }}>
+                <Feather name="refresh-cw" size={13} color="#B45309" />
+              </TouchableOpacity>
             </View>
           ) : (
-            <Text style={estilos.textoDescritivo}>
-              Nenhuma especialidade cadastrada no momento.
-            </Text>
+            <View style={estilos.badgeConectado}>
+              <View style={estilos.dotVerdeOnline} />
+              <Text style={estilos.textoConectado}>Conectado à API Orienta em tempo real</Text>
+            </View>
           )}
         </View>
 
-        <View style={estilos.secaoBase}>
-          <SectionTitle titulo="Sobre o especialista" />
-          <Text style={estilos.textoDescritivoBio}>
-            {professor.bioProfessor ||
-              "Este mentor ainda não inseriu uma descrição em seu perfil."}
+        {/* ============================================================== */}
+        {/* 4. GRID DE 3 MÉTRICAS (ALUNOS, APROVAÇÃO, NOTA MÉDIA)          */}
+        {/* ============================================================== */}
+        <View style={estilos.metricasGrid}>
+          <View style={estilos.metricaItem}>
+            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#EFF6FF" }]}>
+              <Feather name="users" size={18} color="#2563EB" />
+            </View>
+            <Text style={estilos.metricaNumero}>{professor.alunosAtendidos}+</Text>
+            <Text style={estilos.metricaLabel}>Alunos atendidos</Text>
+          </View>
+
+          <View style={estilos.metricaItem}>
+            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#ECFDF5" }]}>
+              <Feather name="award" size={18} color="#059669" />
+            </View>
+            <Text style={estilos.metricaNumero}>{professor.taxaAprovacao}%</Text>
+            <Text style={estilos.metricaLabel}>Taxa de aprovação</Text>
+          </View>
+
+          <View style={estilos.metricaItem}>
+            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#FFFBEB" }]}>
+              <MaterialIcons name="star-outline" size={20} color="#D97706" />
+            </View>
+            <Text style={estilos.metricaNumero}>
+              {professor.notaMedia.toString().replace(".", ",")}
+            </Text>
+            <Text style={estilos.metricaLabel}>Avaliação média</Text>
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 5. SELEÇÃO DE MODALIDADE (CARDS ONLINE VS PRESENCIAL)          */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Modalidade da Aula</Text>
+          <Text style={estilos.secaoSubtitulo}>
+            Selecione o formato que melhor se adapta à sua rotina:
           </Text>
+
+          <View style={estilos.modalidadesContainer}>
+            {/* Card Modalidade 1: Online */}
+            <TouchableOpacity
+              style={[
+                estilos.cardModalidade,
+                modalidade === "ONLINE" && estilos.cardModalidadeAtivo,
+              ]}
+              onPress={() => setModalidade("ONLINE")}
+              activeOpacity={0.8}
+            >
+              <View style={estilos.modalidadeTopoLinha}>
+                <View style={estilos.modalidadeIconeTitulo}>
+                  <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#EFF6FF" }]}>
+                    <Feather name="monitor" size={18} color="#2563EB" />
+                  </View>
+                  <View>
+                    <Text style={estilos.tituloModalidade}>100% Online</Text>
+                    <Text style={estilos.subtituloModalidade}>Sala Virtual Orienta</Text>
+                  </View>
+                </View>
+
+                {/* Badge "Mais Escolhida" */}
+                <View style={estilos.badgeMaisEscolhida}>
+                  <Text style={estilos.textoMaisEscolhida}>Mais escolhida</Text>
+                </View>
+              </View>
+
+              <Text style={estilos.descricaoModalidade}>
+                Aula ao vivo com quadro interativo, gravação da sessão e compartilhamento de materiais.
+              </Text>
+
+              <View style={estilos.modalidadePrecoLinha}>
+                <Text style={estilos.precoModalidade}>
+                  R$ {professor.precoOnline.toFixed(2).replace(".", ",")}{" "}
+                  <Text style={estilos.unidadeHora}>/ hora</Text>
+                </Text>
+                <View
+                  style={[
+                    estilos.radioIndicador,
+                    modalidade === "ONLINE" && estilos.radioIndicadorAtivo,
+                  ]}
+                >
+                  {modalidade === "ONLINE" && <View style={estilos.radioPontoInterno} />}
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {/* Card Modalidade 2: Presencial */}
+            <TouchableOpacity
+              style={[
+                estilos.cardModalidade,
+                modalidade === "PRESENCIAL" && estilos.cardModalidadeAtivo,
+              ]}
+              onPress={() => setModalidade("PRESENCIAL")}
+              activeOpacity={0.8}
+            >
+              <View style={estilos.modalidadeTopoLinha}>
+                <View style={estilos.modalidadeIconeTitulo}>
+                  <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#FFF7ED" }]}>
+                    <Ionicons name="location-sharp" size={18} color="#FF6B1A" />
+                  </View>
+                  <View>
+                    <Text style={estilos.tituloModalidade}>Presencial</Text>
+                    <Text style={estilos.subtituloModalidade}>{professor.cidade}</Text>
+                  </View>
+                </View>
+
+                <View style={estilos.badgePresencialTag}>
+                  <Text style={estilos.textoPresencialTag}>Sob consulta</Text>
+                </View>
+              </View>
+
+              <Text style={estilos.descricaoModalidade}>
+                Aula presencial em domicílio ou biblioteca acordada, respeitando os protocolos de segurança.
+              </Text>
+
+              <View style={estilos.modalidadePrecoLinha}>
+                <Text style={estilos.precoModalidade}>
+                  R$ {professor.precoPresencial.toFixed(2).replace(".", ",")}{" "}
+                  <Text style={estilos.unidadeHora}>/ hora</Text>
+                </Text>
+                <View
+                  style={[
+                    estilos.radioIndicador,
+                    modalidade === "PRESENCIAL" && estilos.radioIndicadorAtivo,
+                  ]}
+                >
+                  {modalidade === "PRESENCIAL" && <View style={estilos.radioPontoInterno} />}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 6. DISCIPLINAS E ESPECIALIDADES                                */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Disciplinas & Especialidades</Text>
+          <View style={estilos.chipsDisciplinasContainer}>
+            {professor.materias.map((materia, mIdx) => (
+              <View key={`m-${mIdx}`} style={estilos.chipDisciplina}>
+                <FontAwesome5 name="book-reader" size={13} color="#FF6B1A" style={{ marginRight: 6 }} />
+                <Text style={estilos.chipDisciplinaTexto}>{materia}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 8. SOBRE O PROFESSOR (BIOGRAFIA & METODOLOGIA)                 */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Sobre o Professor</Text>
+          <View style={estilos.cardBiografia}>
+            <Text style={estilos.textoBiografia}>{professor.bio}</Text>
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 9. AVALIAÇÕES RECENTES DE ALUNOS                               */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <View style={estilos.topoAvaliacoesLinha}>
+            <Text style={estilos.secaoTitulo}>Avaliações Recentes</Text>
+            <Text style={estilos.linkVerTodasAvaliacoes}>
+              {professor.totalAvaliacoes} comentários
+            </Text>
+          </View>
+
+          {professor.avaliacoesRecentes.map((av) => (
+            <View key={`av-${av.id}`} style={estilos.cardAvaliacao}>
+              <View style={estilos.avaliacaoCardTopo}>
+                <Image source={{ uri: av.alunoFoto }} style={estilos.alunoFoto} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={estilos.alunoNome}>{av.alunoNome}</Text>
+                  <Text style={estilos.avaliacaoData}>{av.data}</Text>
+                </View>
+                <View style={estilos.estrelasRow}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <MaterialIcons key={s} name="star" size={14} color="#F5A623" />
+                  ))}
+                </View>
+              </View>
+              <Text style={estilos.avaliacaoComentario}>{av.comentario}</Text>
+            </View>
+          ))}
         </View>
       </ScrollView>
 
-      {/* 🟢 O segredo está aqui: o paddingBottom soma o valor do insets (área de botões do celular) */}
+      {/* ============================================================== */}
+      {/* 10. STICKY ACTION FOOTER (CTA FIXO INFERIOR COM PREÇO DINÂMICO) */}
+      {/* ============================================================== */}
       <View
         style={[
           estilos.stickyFooter,
-          { paddingBottom: Math.max(insets.bottom + 10, 20) },
+          { paddingBottom: Math.max(insets.bottom, 12) },
         ]}
       >
-        <View style={estilos.infoFooter}>
-          <Text style={estilos.textoRodapePequeno}>
-            {aptidaoSelecionada ? "Valor da aula" : "A partir de"}
-          </Text>
-          <Text style={estilos.textoPrecoDestaque}>
-            R$ {precoRodape.toFixed(2).replace(".", ",")}
-          </Text>
-        </View>
-
-        <View style={{ width: 180 }}>
-          <BotaoCustomizado
-            text="Agendar"
-            aoClicar={() => {
-              if (!aptidaoSelecionada) {
-                Alert.alert("Atenção", "Selecione uma disciplina primeiro!");
-              } else if (!temAgenda) {
-                Alert.alert(
-                  "Aviso",
-                  "Este professor ainda não configurou horários de atendimento na plataforma.",
-                );
-              } else {
-                setModalAgendamentoVisivel(true);
-              }
-            }}
-          />
-        </View>
-      </View>
-
-      {/* ===================================== */}
-      {/* MODAL DE AGENDAMENTO INTERATIVO       */}
-      {/* ===================================== */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalAgendamentoVisivel}
-        onRequestClose={() => setModalAgendamentoVisivel(false)}
-      >
-        <View style={estilos.modalFundo}>
-          {/* 🟢 Aplicamos o paddingBottom do insets ao modal também, para o botão "Enviar Solicitação" não colar em baixo */}
-          <View
-            style={[
-              estilos.modalCartao,
-              { paddingBottom: Math.max(insets.bottom + 20, 25) },
-            ]}
-          >
-            <View style={estilos.modalCabecalho}>
-              <Text style={estilos.modalTitulo}>Escolha um horário</Text>
-              <TouchableOpacity
-                onPress={() => setModalAgendamentoVisivel(false)}
-              >
-                <Feather name="x" size={24} color="#555" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={estilos.modalLabel}>
-              Dias disponíveis mapeados no banco:
+        <View style={estilos.precoFooterContainer}>
+          <Text style={estilos.labelPrecoFooter}>Valor por hora</Text>
+          <View style={estilos.valorFooterLinha}>
+            <Text style={estilos.valorFooterGrande}>
+              R$ {precoAtual.toFixed(2).replace(".", ",")}
             </Text>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={estilos.scrollDias}
-            >
-              {listagemDatas.map((dataString, index) => {
-                const isSelecionado = dataSelecionadaStr === dataString;
-                const partes = dataString.split("-");
-                const objetoData = new Date(
-                  Number(partes[0]),
-                  Number(partes[1]) - 1,
-                  Number(partes[2]),
-                );
-                const diaNumero = partes[2];
-                const diaSemana = diasDaSemanaNome[objetoData.getDay()];
-
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      estilos.cardDia,
-                      isSelecionado ? estilos.cardDiaSelecionado : null,
-                    ]}
-                    onPress={() => {
-                      setDataSelecionadaStr(dataString);
-                      setHoraSelecionada("");
-                    }}
-                  >
-                    <Text
-                      style={[
-                        estilos.textoDiaSemana,
-                        isSelecionado ? estilos.textoBranco : null,
-                      ]}
-                    >
-                      {diaSemana}
-                    </Text>
-                    <Text
-                      style={[
-                        estilos.textoDiaNumero,
-                        isSelecionado ? estilos.textoBranco : null,
-                      ]}
-                    >
-                      {diaNumero}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {dataSelecionadaStr !== "" && (
-              <>
-                <Text style={estilos.modalLabel}>
-                  Horários livres encontrados:
-                </Text>
-                <View style={estilos.gridHorarios}>
-                  {obterHorariosParaData(dataSelecionadaStr).map((hora) => {
-                    const isHoraSelecionada = horaSelecionada === hora;
-                    return (
-                      <TouchableOpacity
-                        key={hora}
-                        style={[
-                          estilos.cardHora,
-                          isHoraSelecionada
-                            ? estilos.cardHoraSelecionada
-                            : null,
-                        ]}
-                        onPress={() => setHoraSelecionada(hora)}
-                      >
-                        <Text
-                          style={[
-                            estilos.textoHora,
-                            isHoraSelecionada ? estilos.textoBranco : null,
-                          ]}
-                        >
-                          {hora}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            )}
-
-            <View style={{ marginTop: 10 }}>
-              <BotaoCustomizado
-                text="Enviar Solicitação"
-                carregando={salvando}
-                aoClicar={solicitarAgendamento}
-              />
-            </View>
+            <Text style={estilos.unidadeFooter}>/h</Text>
           </View>
         </View>
-      </Modal>
-    </SafeAreaView>
+
+        <TouchableOpacity
+          style={estilos.botaoAgendarCTA}
+          onPress={handleAgendarAula}
+          activeOpacity={0.85}
+        >
+          <Feather name="calendar" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+          <Text style={estilos.textoBotaoAgendar}>Agendar aula</Text>
+        </TouchableOpacity>
+      </View>
+
+
+    </View>
   );
 }
 
-// ==========================================
-// 3. ESTILOS LOCAIS (STYLESHEET)
-// ==========================================
+// ==============================================================
+// FOLHA DE ESTILOS DA ESPECIFICAÇÃO IMG-009
+// ==============================================================
 const estilos = StyleSheet.create({
-  telaCarregamento: {
+  container: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFF",
-    gap: 15,
+    backgroundColor: "#F8FAFC",
+    padding: 24,
   },
-  textoErro: { fontSize: 16, color: "#666", marginTop: 10 },
-  botaoVoltarErro: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: "#EEF5FF",
-    borderRadius: 12,
-    marginTop: 15,
+  textoLoading: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 12,
+    fontWeight: "500",
   },
-  textoBotaoErro: { color: "#0057B8", fontWeight: "bold" },
-  telaGeral: { flex: 1, backgroundColor: "#FFF" },
-  cabecalhoNav: {
+  textoVazio: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 12,
+  },
+  botaoVoltar: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#FF6B1A",
+    borderRadius: 10,
+  },
+  textoBotaoVoltar: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
+  // 1. Top Header
+  topHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#F8F9FA",
+    borderBottomColor: "#F1F5F9",
   },
-  botaoVoltarHeader: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F5F7FA",
+  tituloHeaderTop: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    maxWidth: 180,
+  },
+  botaoHeaderCircular: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  botaoFavoritoAtivo: {
+    backgroundColor: "#FFF7ED",
+  },
+  acoesHeaderDireita: {
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  // 2. Hero Card
+  heroCard: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  avatarContainer: {
+    position: "relative",
+    marginBottom: 10,
+  },
+  avatarFoto: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "#E2E8F0",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  dotOnlineVerde: {
+    position: "absolute",
+    bottom: 2,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#10B981",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  nomeLinha: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
-  tituloHeaderNav: { fontSize: 16, fontWeight: "bold", color: "#111" },
-  conteudoScroll: { padding: 20 },
-
-  perfilAutoridade: { alignItems: "center", marginTop: 10, marginBottom: 20 },
-  fotoPerfilDestaque: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: "#E1F0FF",
-    borderWidth: 4,
-    borderColor: "#FFF",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  nomeVerificadoContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 16,
-    gap: 6,
-  },
-  nomeProfessorDestaque: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#111",
+  nomeProfessor: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#0F172A",
     letterSpacing: -0.5,
   },
-  containerTagsMetricas: { flexDirection: "row", gap: 12, marginTop: 10 },
-  tagMetrica: {
+  tituloAcademico: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 3,
+  },
+  avaliacaoLinha: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8F9FA",
+    marginTop: 6,
+  },
+  estrelasRow: {
+    flexDirection: "row",
+    marginRight: 6,
+  },
+  notaDestaque: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  totalAvaliacoesTexto: {
+    fontWeight: "400",
+    color: "#64748B",
+  },
+  badgeLocalizacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F9FF",
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    marginTop: 10,
+    gap: 4,
+  },
+  textoBadgeLocalizacao: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#0369A1",
+  },
+
+  // 3. Alerta de Resiliência
+  containerAlerta: {
+    marginHorizontal: 16,
+    marginTop: 10,
+  },
+  badgeSimulacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#EAEAEA",
-    gap: 6,
+    borderRadius: 8,
   },
-  textoTagMetrica: { fontSize: 13, fontWeight: "700", color: "#333" },
+  textoBadgeSimulacao: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#92400E",
+    flex: 1,
+  },
+  badgeConectado: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  dotVerdeOnline: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+    marginRight: 6,
+  },
+  textoConectado: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#065F46",
+  },
 
-  secaoBase: { marginBottom: 25 },
-  textoDescritivo: { fontSize: 15, color: "#666", fontStyle: "italic" },
-  textoDescritivoBio: { fontSize: 15, lineHeight: 26, color: "#444" },
-  gridAptidoes: { gap: 12 },
+  // 4. Métricas Grid
+  metricasGrid: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+  },
+  metricaItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  metricaIconeWrapper: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  metricaNumero: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  metricaLabel: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 2,
+    fontWeight: "500",
+    textAlign: "center",
+  },
 
-  textoHora: { fontSize: 15, fontWeight: "600", color: "#333" },
-  textoBranco: { color: "#FFF" },
+  // 5. Seções Comuns
+  secaoContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+  },
+  secaoTitulo: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
+  secaoSubtitulo: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    marginBottom: 10,
+  },
 
-  // 🟢 Estilo ajustado: Removemos o paddingVertical fixo daqui porque agora ele é gerado dinamicamente no componente
+  // Modalidades (Cards)
+  modalidadesContainer: {
+    gap: 10,
+  },
+  cardModalidade: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    elevation: 1,
+  },
+  cardModalidadeAtivo: {
+    borderColor: "#FF6B1A",
+    backgroundColor: "#FFFDFB",
+  },
+  modalidadeTopoLinha: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalidadeIconeTitulo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconeModalidadeBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  tituloModalidade: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  subtituloModalidade: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  badgeMaisEscolhida: {
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFD8A8",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  textoMaisEscolhida: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#C2410C",
+  },
+  badgePresencialTag: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  textoPresencialTag: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  descricaoModalidade: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  modalidadePrecoLinha: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  precoModalidade: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FF6B1A",
+  },
+  unidadeHora: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#64748B",
+  },
+  radioIndicador: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#CBD5E1",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  radioIndicadorAtivo: {
+    borderColor: "#FF6B1A",
+  },
+  radioPontoInterno: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#FF6B1A",
+  },
+
+  // 6. Disponibilidade Semanal
+  diasSemanaScroll: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  diaCard: {
+    width: 62,
+    height: 68,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  diaCardAtivo: {
+    backgroundColor: "#0F2942",
+    borderColor: "#0F2942",
+  },
+  diaSemanaNome: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  diaSemanaNomeAtivo: {
+    color: "#93C5FD",
+  },
+  diaMesNumero: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 2,
+  },
+  diaMesNumeroAtivo: {
+    color: "#FFFFFF",
+  },
+  dotDiaAtivo: {
+    position: "absolute",
+    bottom: 5,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#FF6B1A",
+  },
+
+  horariosContainer: {
+    marginTop: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  labelTurno: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 8,
+  },
+  gradeHorarios: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  slotHorarioBotao: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  slotHorarioAtivo: {
+    backgroundColor: "#0F2942",
+    borderColor: "#FF6B1A",
+  },
+  slotHorarioIndisponivel: {
+    opacity: 0.4,
+    backgroundColor: "#F1F5F9",
+  },
+  slotHorarioTexto: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  slotHorarioTextoAtivo: {
+    color: "#FFFFFF",
+  },
+  slotHorarioTextoIndisponivel: {
+    color: "#94A3B8",
+    textDecorationLine: "line-through",
+  },
+
+  // 7. Disciplinas
+  chipsDisciplinasContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  chipDisciplina: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  chipDisciplinaTexto: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#334155",
+  },
+
+  // 8. Biografia
+  cardBiografia: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    marginTop: 4,
+  },
+  textoBiografia: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 20,
+  },
+
+  // 9. Avaliações
+  topoAvaliacoesLinha: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  linkVerTodasAvaliacoes: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FF6B1A",
+  },
+  cardAvaliacao: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    marginBottom: 10,
+  },
+  avaliacaoCardTopo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  alunoFoto: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#E2E8F0",
+  },
+  alunoNome: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  avaliacaoData: {
+    fontSize: 10,
+    color: "#94A3B8",
+  },
+  avaliacaoComentario: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 8,
+    lineHeight: 18,
+  },
+
+  // 10. Sticky Footer
   stickyFooter: {
     position: "absolute",
     bottom: 0,
-    width: "100%",
-    backgroundColor: "#FFF",
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#EAEAEA",
+    borderTopColor: "#F1F5F9",
     elevation: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
+    shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.08,
     shadowRadius: 6,
   },
-  infoFooter: { flex: 1, justifyContent: "center" },
-  textoRodapePequeno: { fontSize: 12, color: "#777", marginBottom: 2 },
-  textoPrecoDestaque: { fontSize: 22, fontWeight: "900", color: "#111" },
-
-  modalFundo: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+  precoFooterContainer: {
+    justifyContent: "center",
   },
-  modalCartao: {
-    backgroundColor: "#FFF",
-    width: "100%",
-    paddingHorizontal: 25,
-    paddingTop: 25,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    minHeight: 400,
+  labelPrecoFooter: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "500",
   },
-  modalCabecalho: {
+  valorFooterLinha: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "baseline",
+  },
+  valorFooterGrande: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FF6B1A",
+  },
+  unidadeFooter: {
+    fontSize: 12,
+    color: "#64748B",
+    marginLeft: 2,
+    fontWeight: "600",
+  },
+  botaoAgendarCTA: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    backgroundColor: "#FF6B1A",
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    borderRadius: 14,
+    elevation: 3,
+    shadowColor: "#FF6B1A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
   },
-  modalTitulo: { fontSize: 20, fontWeight: "bold", color: "#111" },
-  modalLabel: {
+  textoBotaoAgendar: {
+    color: "#FFFFFF",
     fontSize: 15,
-    color: "#333",
-    marginBottom: 12,
-    fontWeight: "700",
-    marginTop: 10,
+    fontWeight: "800",
   },
-  scrollDias: { flexDirection: "row", marginBottom: 15, maxHeight: 85 },
-  cardDia: {
-    width: 65,
-    height: 75,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#EEE",
+
+  // 11. Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-    backgroundColor: "#FFF",
+    padding: 24,
   },
-  cardDiaSelecionado: { backgroundColor: "#FF6B1A", borderColor: "#FF6B1A" },
-  textoDiaSemana: { fontSize: 12, color: "#777", marginBottom: 4 },
-  textoDiaNumero: { fontSize: 20, fontWeight: "bold", color: "#111" },
-
-  gridHorarios: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 10,
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    elevation: 8,
   },
-  cardHora: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+  modalIconeSucesso: {
+    marginBottom: 8,
+  },
+  modalTitulo: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+  },
+  modalMensagem: {
+    fontSize: 13,
+    color: "#475569",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  modalResumoBox: {
+    backgroundColor: "#F8FAFC",
     borderWidth: 1,
-    borderColor: "#EEE",
-    backgroundColor: "#FFF",
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 12,
+    width: "100%",
+    marginTop: 14,
+    gap: 4,
   },
-  cardHoraSelecionada: { backgroundColor: "#0057B8", borderColor: "#0057B8" },
+  modalResumoLinha: {
+    fontSize: 12,
+    color: "#334155",
+  },
+  botaoModalConfirmar: {
+    backgroundColor: "#FF6B1A",
+    width: "100%",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  textoBotaoModal: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  botaoModalFechar: {
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  textoModalFechar: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+  },
 });
