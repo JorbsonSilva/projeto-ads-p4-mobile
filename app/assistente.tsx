@@ -33,6 +33,7 @@ import { ModalAvaliacao, DadosAvaliacao } from '../components/ModalAvaliacao';
 import TabBarRN001 from '../components/navigation/TabBarRN001';
 import {
   enviarPassoTriagem,
+  perguntarAssistente,
   TriageRequest,
   TriageResponse,
   QuickOption,
@@ -198,93 +199,32 @@ export default function AssistenteScreen() {
     setIsLoading(true);
 
     try {
-      // Gera resposta pedagógica estruturada
-      setTimeout(() => {
-        let respostaTexto = '';
-        let formula: string | undefined = undefined;
-        let codeSnippet: string | undefined = undefined;
-        let bullets: string[] | undefined = undefined;
-        let actionCard: any = undefined;
+      const response = await perguntarAssistente({
+        pergunta: userText,
+        disciplina: disciplinaNome,
+        assunto: assuntoNome,
+      });
 
-        const lower = userText.toLowerCase();
+      const assistMsg: ChatMessage = {
+        id: `asst-${Date.now()}`,
+        sender: 'assistant',
+        text: response.assistantMessage,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        formula: response.formula,
+        codeSnippet: response.codeSnippet,
+        bulletPoints: response.bulletPoints,
+        actionCard: response.actionCard,
+      };
 
-        if (lower.includes('exercício') || lower.includes('calculo') || lower.includes('integral')) {
-          respostaTexto = 'Vamos resolver passo a passo! Para integrais por partes, utilizamos a regra fundamental deduzida da derivada do produto:';
-          formula = '∫ u dv = u·v - ∫ v du\n\nRegra mnemônica (LIATE):\n1. Logarítmicas (L)\n2. Inversas trigonométricas (I)\n3. Algébricas (A)\n4. Trigonométricas (T)\n5. Exponenciais (E)';
-          bullets = [
-            'Identifique quem será "u" de acordo com a ordem de prioridade',
-            'Derive u para encontrar du, e integre dv para encontrar v',
-            'Substitua na fórmula e resolva a integral resultante',
-          ];
-          actionCard = {
-            professorId: 1,
-            professorNome: 'Prof. Lucas Rocha',
-            disciplinaNome: 'Cálculo I',
-            assuntoNome: 'Integrais por Partes e Substituição',
-            modalidade: 'Online',
-            valorHora: 60.0,
-          };
-        } else if (lower.includes('resumo') || lower.includes('arvore') || lower.includes('dados')) {
-          respostaTexto = 'Aqui está a síntese de Árvores Binárias de Busca (BST - Binary Search Tree):';
-          codeSnippet = `// Propriedade invariante da BST:
-// nó.esquerda.valor < nó.valor <= nó.direita.valor
-
-class Nodo {
-    int valor;
-    Nodo esquerda;
-    Nodo direita;
-}`;
-          bullets = [
-            'Complexidade média de busca, inserção e remoção: O(log n)',
-            'Pior caso (árvore degenerada/desbalanceada): O(n) — solucionado com árvores AVL ou Red-Black',
-            'Percurso Em-Ordem (In-Order) visita os elementos em ordem estritamente crescente',
-          ];
-          actionCard = {
-            professorId: 2,
-            professorNome: 'Profa. Mariana Costa',
-            disciplinaNome: 'Estrutura de Dados',
-            assuntoNome: 'Árvores Balanceadas e Grafos',
-            modalidade: 'Online',
-            valorHora: 65.0,
-          };
-        } else if (lower.includes('dica') || lower.includes('estudo') || lower.includes('plano')) {
-          respostaTexto = 'Técnicas com alto índice de retenção comprovadas por pesquisas de neurociência educacional:';
-          bullets = [
-            'Prática Ativa de Recordação (Active Recall): feche o livro e tente explicar o conceito em voz alta',
-            'Repetição Espaçada: revise com intervalos de 1 dia, 3 dias, 7 dias e 15 dias',
-            'Técnica de Feynman: ensine o conteúdo como se explicasse para um aluno iniciante sem jargões complexos',
-            'Sessões de 50 minutos de hiperfoco com 10 minutos de descanso consciente',
-          ];
-        } else {
-          respostaTexto = `Compreendido perfeitamente! Esse tópico é muito recorrente nas avaliações do semestre. Para absorver com precisão, recomendo praticar com exercícios aplicados e, se precisar de acompanhamento individual, agendar com um dos mentores certificados abaixo:`;
-          actionCard = {
-            professorId: 1,
-            professorNome: 'Prof. Lucas Rocha',
-            disciplinaNome: disciplinaNome || 'Ciências Exatas',
-            assuntoNome: 'Dúvidas e Resolução Prática',
-            modalidade: 'Online / Presencial',
-            valorHora: 60.0,
-          };
-        }
-
-        const assistMsg: ChatMessage = {
-          id: `asst-${Date.now()}`,
-          sender: 'assistant',
-          text: respostaTexto,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          formula,
-          codeSnippet,
-          bulletPoints: bullets,
-          actionCard,
-        };
-
-        setMessages((prev) => [...prev, assistMsg]);
-        setIsLoading(false);
-        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
-      }, 700);
+      setMessages((prev) => [...prev, assistMsg]);
+      if (response.quickOptions && response.quickOptions.length > 0) {
+        setQuickOptions(response.quickOptions);
+      }
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
+    } finally {
       setIsLoading(false);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
     }
   };
 
