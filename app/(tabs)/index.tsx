@@ -34,7 +34,6 @@ import ResumoProfessor from "../../components/ResumoProfessor";
 import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../../config/api";
 import { Theme } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
-import { DEMO_PROFESSORES, DEMO_SABERES } from "../../data/demoData";
 import HomeProfessorScreen from "../home-professor";
 
 const { width: LARGURA_DISPOSITIVO } = Dimensions.get("window");

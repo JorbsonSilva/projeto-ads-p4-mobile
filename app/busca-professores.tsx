@@ -34,7 +34,6 @@ import { Card, Badge, Chip, Button } from "../components/ui";
 import { Theme } from "../constants/theme";
 import { API_URL } from "../config/api";
 import { useAuth } from "../context/AuthContext";
-import { DEMO_PROFESSORES } from "../data/demoData";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 
 // ==========================================

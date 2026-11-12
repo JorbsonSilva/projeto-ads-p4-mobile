@@ -1,7 +1,12 @@
 /**
  * @file agendaService.ts
- * @description Serviço Híbrido Resiliente para Agenda Unificada Aluno/Professor (ORI-012).
- * Baseado na referência oficial de alta fidelidade Agenda.jpeg (IMG-001).
+ * @description Serviço Oficial de Agenda Unificada conectado aos endpoints REST da API Orienta (ORI-012).
+ * 
+ * Endpoints consumidos:
+ * - GET /api/v1/agendamentos/aluno/{id}
+ * - GET /api/v1/agendamentos/professor/{id}
+ * - PUT /api/v1/agendamentos/{id}/aceitar
+ * - PUT /api/v1/agendamentos/{id}/recusar
  */
 
 import { API_URL } from "../config/api";
@@ -14,7 +19,7 @@ export interface SolicitacaoAula {
   alunoFoto: string;
   materia: string;
   modalidade: "Presencial" | "Online";
-  horario: string; // "Hoje, 14:00"
+  horario: string;
   status: "PENDENTE" | "ACEITA" | "RECUSADA";
   online: boolean;
 }
@@ -25,9 +30,9 @@ export interface CompromissoAgenda {
   foto: string;
   tituloProfissional?: string;
   materia: string;
-  horario: string; // "Hoje, 14:00 – 15:00"
+  horario: string;
   modalidade: "Online" | "Presencial";
-  localizacao?: string; // "Presencial • Caruaru – PE"
+  localizacao?: string;
   status: "Confirmada" | "Pendente" | "Cancelada";
   tipo: "AULA" | "MENTORIA";
   online: boolean;
@@ -42,115 +47,25 @@ export interface AgendaCompleta {
   isSimulado: boolean;
 }
 
-export const MOCK_AGENDA_INICIAL: AgendaCompleta = {
-  perfil: "PROFESSOR",
-  isSimulado: true,
-
-  // Visão Professor
-  solicitacoes: [
-    {
-      id: 201,
-      alunoNome: "Ana Clara",
-      alunoFoto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      materia: "Matemática",
-      modalidade: "Presencial",
-      horario: "Hoje, 14:00",
-      status: "PENDENTE",
-      online: true,
-    },
-    {
-      id: 202,
-      alunoNome: "Pedro Henrique",
-      alunoFoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      materia: "Programação",
-      modalidade: "Online",
-      horario: "Hoje, 16:00",
-      status: "PENDENTE",
-      online: true,
-    },
-  ],
-
-  aulasProfessor: [
-    {
-      id: 301,
-      nome: "Ana Clara",
-      foto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      materia: "Matemática",
-      modalidade: "Online",
-      horario: "Hoje 14:00 – 15:00",
-      status: "Confirmada",
-      tipo: "AULA",
-      online: true,
-    },
-    {
-      id: 302,
-      nome: "Pedro Henrique",
-      foto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      materia: "Programação",
-      modalidade: "Presencial",
-      horario: "Hoje 16:00 – 17:00",
-      status: "Confirmada",
-      tipo: "AULA",
-      online: true,
-    },
-  ],
-
-  // Visão Aluno
-  aulasAluno: [
-    {
-      id: 401,
-      nome: "Prof. Lucas Rocha",
-      foto: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-      materia: "Matemática",
-      horario: "Hoje, 14:00 – 15:00",
-      modalidade: "Presencial",
-      localizacao: "Presencial • Caruaru – PE",
-      status: "Confirmada",
-      tipo: "AULA",
-      online: true,
-    },
-  ],
-
-  mentoriasAluno: [
-    {
-      id: 402,
-      nome: "Profa. Juliana Santos",
-      foto: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
-      materia: "Física",
-      horario: "Hoje, 16:00 – 17:00",
-      modalidade: "Online",
-      localizacao: "Online",
-      status: "Confirmada",
-      tipo: "MENTORIA",
-      online: true,
-    },
-  ],
-};
-
 /**
- * Consulta a agenda completa com fallback resiliente
+ * Consulta a agenda diretamente da API REST do Spring Boot
  */
 export async function obterAgendaComFallback(
   perfil: PerfilAgenda,
-  usuarioId: number = 1
+  usuarioId: number = 1001
 ): Promise<AgendaCompleta> {
-  const isDemo =
-    typeof window !== "undefined" &&
-    (window.location.search.includes("demo=true") ||
-      window.location.search.includes("simulacao=true") ||
-      window.location.hostname !== "localhost");
-
-  if (isDemo) {
-    return {
-      ...MOCK_AGENDA_INICIAL,
-      perfil,
-      isSimulado: true,
-    };
-  }
+  const agenda: AgendaCompleta = {
+    perfil,
+    solicitacoes: [],
+    aulasProfessor: [],
+    aulasAluno: [],
+    mentoriasAluno: [],
+    isSimulado: false,
+  };
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     const rota =
       perfil === "PROFESSOR"
@@ -167,25 +82,83 @@ export async function obterAgendaComFallback(
 
     if (res.ok) {
       const json = await res.json();
-      const dados = json.data || json;
-      if (Array.isArray(dados) && dados.length > 0) {
-        // Converte dados reais
-        return {
-          ...MOCK_AGENDA_INICIAL,
-          perfil,
-          isSimulado: false,
-        };
+      const itens: any[] = json.data || (Array.isArray(json) ? json : []);
+
+      if (Array.isArray(itens)) {
+        itens.forEach((item) => {
+          const statusNormalizado = (item.status || "").toUpperCase();
+          const modalidadeFormatada =
+            item.modalidade === "PRESENCIAL" ? "Presencial" : "Online";
+          const horarioFormatado = `${item.data || ""} ${item.hora || ""}`.trim();
+
+          if (perfil === "PROFESSOR") {
+            if (statusNormalizado === "PENDENTE") {
+              agenda.solicitacoes.push({
+                id: item.id,
+                alunoNome: item.alunoNome || `Aluno #${item.alunoId}`,
+                alunoFoto: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+                materia: item.disciplinaNome || "Mentoria",
+                modalidade: modalidadeFormatada as any,
+                horario: horarioFormatado,
+                status: "PENDENTE",
+                online: item.modalidade === "ONLINE",
+              });
+            } else {
+              agenda.aulasProfessor.push({
+                id: item.id,
+                nome: item.alunoNome || `Aluno #${item.alunoId}`,
+                foto: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+                materia: item.disciplinaNome || "Mentoria",
+                modalidade: modalidadeFormatada as any,
+                horario: horarioFormatado,
+                status:
+                  statusNormalizado === "CONFIRMADO" || statusNormalizado === "REALIZADA"
+                    ? "Confirmada"
+                    : statusNormalizado === "CANCELADO"
+                    ? "Cancelada"
+                    : "Pendente",
+                tipo: "AULA",
+                online: item.modalidade === "ONLINE",
+              });
+            }
+          } else {
+            // Perfil ALUNO
+            const compromisso: CompromissoAgenda = {
+              id: item.id,
+              nome: item.professorNome || `Prof. #${item.professorId}`,
+              foto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+              tituloProfissional: "Docente Orienta",
+              materia: item.disciplinaNome || "Mentoria Acadêmica",
+              horario: horarioFormatado,
+              modalidade: modalidadeFormatada as any,
+              localizacao:
+                item.modalidade === "PRESENCIAL"
+                  ? item.regiaoOuLocalReferencia || "Presencial"
+                  : "Online via Plataforma",
+              status:
+                statusNormalizado === "CONFIRMADO" || statusNormalizado === "REALIZADA"
+                  ? "Confirmada"
+                  : statusNormalizado === "CANCELADO"
+                  ? "Cancelada"
+                  : "Pendente",
+              tipo: item.modalidade === "ONLINE" ? "MENTORIA" : "AULA",
+              online: item.modalidade === "ONLINE",
+            };
+
+            if (item.modalidade === "ONLINE") {
+              agenda.mentoriasAluno.push(compromisso);
+            } else {
+              agenda.aulasAluno.push(compromisso);
+            }
+          }
+        });
       }
     }
-  } catch {
-    // Falha silenciosa para fallback
+  } catch (err) {
+    console.warn("Falha ao obter agenda da API:", err);
   }
 
-  return {
-    ...MOCK_AGENDA_INICIAL,
-    perfil,
-    isSimulado: true,
-  };
+  return agenda;
 }
 
 /**
@@ -193,17 +166,14 @@ export async function obterAgendaComFallback(
  */
 export async function aceitarSolicitacaoComFallback(id: number): Promise<boolean> {
   try {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 1000);
-    await fetch(`${API_URL}/api/v1/agendamentos/${id}/aceitar`, {
+    const res = await fetch(`${API_URL}/api/v1/agendamentos/${id}/aceitar`, {
       method: "PUT",
       headers: { Accept: "application/json" },
-      signal: controller.signal,
     });
+    return res.ok;
   } catch {
-    // fallback
+    return false;
   }
-  return true;
 }
 
 /**
@@ -211,16 +181,13 @@ export async function aceitarSolicitacaoComFallback(id: number): Promise<boolean
  */
 export async function recusarSolicitacaoComFallback(id: number): Promise<boolean> {
   try {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 1000);
-    await fetch(`${API_URL}/api/v1/agendamentos/${id}/recusar`, {
+    const res = await fetch(`${API_URL}/api/v1/agendamentos/${id}/recusar`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ motivo: "Indisponibilidade de horário" }),
-      signal: controller.signal,
+      body: JSON.stringify({ motivo: "Indisponibilidade de horário na agenda" }),
     });
+    return res.ok;
   } catch {
-    // fallback
+    return false;
   }
-  return true;
 }

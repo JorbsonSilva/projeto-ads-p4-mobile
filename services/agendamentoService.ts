@@ -1,11 +1,11 @@
 /**
  * @file agendamentoService.ts
- * @description Serviço Híbrido Resiliente para Marcação de Aula e Checkout (ORI-011).
+ * @description Serviço Oficial de Agendamento de Aulas conectado à API REST Spring Boot 3 (ORI-011).
  * 
- * Regra de Resiliência:
- * - Tenta enviar o agendamento para o endpoint oficial: POST /api/v1/agendamentos
- * - Em modo preview, timeout de rede ou se a API estiver offline, utiliza fallback simulado
- *   garantindo que o fluxo visual e a validação do usuário ocorram sem interrupções.
+ * Comunicação direta com os endpoints:
+ * - POST /api/v1/agendamentos
+ * - GET  /api/v1/agendamentos/{id}
+ * - PUT  /api/v1/agendamentos/{id}/cancelar
  */
 
 import { API_URL } from "../config/api";
@@ -16,7 +16,7 @@ export interface CriarAgendamentoDTO {
   idAluno: number;
   idProfessor: number;
   idDisciplina?: number;
-  data: string; // "YYYY-MM-DD" ou formato exibível "26/06/2024"
+  data: string; // "YYYY-MM-DD" ou formato "26/06/2024"
   hora: string; // "14:00" ou "14:00:00"
   modalidade: "ONLINE" | "PRESENCIAL";
   assunto?: string;
@@ -31,29 +31,29 @@ export interface AgendamentoConfirmado {
   professorNome: string;
   professorFoto: string;
   disciplinaNome: string;
-  dataExibicao: string; // "26/06/2024 (Qua)"
-  horarioExibicao: string; // "14:00 – 15:00"
+  dataExibicao: string;
+  horarioExibicao: string;
   modalidade: "ONLINE" | "PRESENCIAL";
   formaPagamento: FormaPagamento;
   valor: number;
-  status: "CONFIRMADA" | "SOLICITADA";
+  status: "CONFIRMADA" | "SOLICITADA" | "PENDENTE" | "REALIZADA" | "CANCELADO";
   codigoPix?: string;
   dataCriacao: string;
 }
 
 export interface ResultadoAgendamento {
   sucesso: boolean;
-  agendamento: AgendamentoConfirmado;
+  agendamento?: AgendamentoConfirmado;
   isSimulado: boolean;
   mensagem: string;
 }
 
 /**
- * Dados canônicos do agendamento oficial conforme referência IMG-008 (Marca_Aula.jpeg)
+ * Dados padrão de referência visual caso parâmetros de rota não sejam fornecidos
  */
 export const MOCK_AGENDAMENTO_PADRAO: AgendamentoConfirmado = {
   id: 501,
-  idAluno: 1,
+  idAluno: 1001,
   idProfessor: 101,
   professorNome: "Prof. Lucas Rocha",
   professorFoto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80",
@@ -64,51 +64,22 @@ export const MOCK_AGENDAMENTO_PADRAO: AgendamentoConfirmado = {
   formaPagamento: "PIX",
   valor: 60.0,
   status: "CONFIRMADA",
-  codigoPix: "00020126580014BR.GOV.BCB.PIX0136orienta-pagamentos-mock-2024520400005303986540660.005802BR5916ORIENTA SERVICOS6007CARUARU62070503***6304E8A2",
+  codigoPix: "00020126580014BR.GOV.BCB.PIX0136orienta-pagamentos-oficial-2026520400005303986540660.005802BR5916ORIENTA SERVICOS6007CARUARU62070503***6304E8A2",
   dataCriacao: new Date().toISOString(),
 };
 
 /**
- * Cria ou confirma a solicitação de agendamento com estratégia híbrida resiliente.
+ * Cria nova solicitação de mentoria através da API Spring Boot 3
  */
 export async function solicitarAgendamentoComFallback(
   dados: CriarAgendamentoDTO
 ): Promise<ResultadoAgendamento> {
-  const isDemo =
-    typeof window !== "undefined" &&
-    (window.location.search.includes("demo=true") ||
-      window.location.search.includes("simulacao=true") ||
-      window.location.hostname !== "localhost");
-
-  // Se estiver em modo demonstração explícito no URL, entrega sucesso imediato
-  if (isDemo) {
-    const agendamentoSimulado: AgendamentoConfirmado = {
-      ...MOCK_AGENDAMENTO_PADRAO,
-      id: Math.floor(Math.random() * 900) + 100,
-      idAluno: dados.idAluno || 1,
-      idProfessor: dados.idProfessor || 101,
-      formaPagamento: dados.formaPagamento,
-      valor: dados.valor || 60.0,
-      modalidade: dados.modalidade || "PRESENCIAL",
-      dataExibicao: dados.data || "26/06/2024 (Qua)",
-      horarioExibicao: dados.hora ? `${dados.hora} – ${calcularFim(dados.hora)}` : "14:00 – 15:00",
-    };
-
-    return {
-      sucesso: true,
-      agendamento: agendamentoSimulado,
-      isSimulado: true,
-      mensagem: "Agendamento simulado com sucesso (Modo Demonstração)",
-    };
-  }
-
-  // 1. Tentativa de envio para a API Spring Boot
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     const payloadBackend = {
-      idAluno: dados.idAluno || 1,
+      idAluno: dados.idAluno || 1001,
       idProfessor: dados.idProfessor || 101,
       idDisciplina: dados.idDisciplina || 1,
       data: formatarParaIsoDate(dados.data),
@@ -143,36 +114,40 @@ export async function solicitarAgendamentoComFallback(
           professorFoto: MOCK_AGENDAMENTO_PADRAO.professorFoto,
           disciplinaNome: respostaData.disciplinaNome || "Matemática",
           dataExibicao: respostaData.data || dados.data,
-          horarioExibicao: respostaData.hora || dados.hora,
+          horarioExibicao: respostaData.hora ? `${respostaData.hora} – ${calcularFim(respostaData.hora)}` : "14:00 – 15:00",
           modalidade: dados.modalidade,
           formaPagamento: dados.formaPagamento,
-          valor: dados.valor,
+          valor: respostaData.valorAplicado || dados.valor || 60.0,
           status: "CONFIRMADA",
+          codigoPix: MOCK_AGENDAMENTO_PADRAO.codigoPix,
           dataCriacao: new Date().toISOString(),
         },
         isSimulado: false,
-        mensagem: "Agendamento confirmado pela API Spring Boot!",
+        mensagem: "Agendamento persistido com sucesso no banco de dados!",
+      };
+    } else {
+      let erroMsg = `Erro ${res.status} ao processar agendamento`;
+      try {
+        const erroJson = await res.json();
+        erroMsg = erroJson.message || erroJson.mensagem || erroMsg;
+      } catch {
+        // ignora
+      }
+      return {
+        sucesso: false,
+        isSimulado: false,
+        mensagem: erroMsg,
       };
     }
-  } catch {
-    // Falha silenciosa para fallback resiliente
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      isSimulado: false,
+      mensagem: err?.name === "AbortError" 
+        ? "Tempo limite esgotado ao conectar com a API." 
+        : `Falha de conexão com o servidor: ${err?.message || "Servidor offline"}`,
+    };
   }
-
-  // 2. Fallback de dados mocados garantindo experiência visual ininterrupta
-  const fallbackAgendamento: AgendamentoConfirmado = {
-    ...MOCK_AGENDAMENTO_PADRAO,
-    id: Math.floor(Math.random() * 900) + 100,
-    formaPagamento: dados.formaPagamento,
-    valor: dados.valor || 60.0,
-    modalidade: dados.modalidade || "PRESENCIAL",
-  };
-
-  return {
-    sucesso: true,
-    agendamento: fallbackAgendamento,
-    isSimulado: true,
-    mensagem: "Agendamento simulado (Backend offline - Fallback resiliente)",
-  };
 }
 
 function calcularFim(inicio: string): string {

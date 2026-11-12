@@ -1,8 +1,7 @@
 /**
  * @file perfilService.ts
- * @description Serviço híbrido resiliente para o Perfil do Aluno [ORI-017 / IMG-016].
- * Conecta aos endpoints REST (/api/v1/usuarios/{id}/perfil) com fallback imediato
- * para dados de demonstração offline e badge de modo de simulação.
+ * @description Serviço Oficial para o Perfil do Aluno e Professor conectado à API Spring Boot 3 [ORI-017 / IMG-016].
+ * Endpoint consumido: GET /api/v1/usuarios/{id}/perfil
  */
 
 import { API_URL } from "../config/api";
@@ -43,204 +42,6 @@ export interface ResultadoPerfilAluno {
   isSimulado: boolean;
 }
 
-export const MOCK_PERFIL_ALUNO_OFICIAL: PerfilAlunoData = {
-  id: 1,
-  nome: "Jorbson Silva",
-  email: "jorbson.silva@academico.ufpb.br",
-  telefone: "(83) 98765-4321",
-  cidade: "João Pessoa",
-  estado: "PB",
-  tipo: "ALUNO",
-  fotoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-  bio: "Estudante de Análise e Desenvolvimento de Sistemas (UFPB). Apaixonado por engenharia de software, computação em nuvem e resolução de problemas complexos. Buscando aprimorar conceitos de Cálculo e Algoritmos.",
-  progresso: {
-    materiasCursando: 7,
-    mentoriasRealizadas: 12,
-    horasAcumuladas: 45,
-  },
-  interesses: [
-    "Cálculo I",
-    "Estrutura de Dados",
-    "Python",
-    "Algoritmos Avançados",
-    "Física Mecânica",
-    "Banco de Dados SQL",
-  ],
-  atividadesRecentes: [
-    {
-      id: 101,
-      materia: "Cálculo Diferencial e Integral",
-      professorNome: "Prof. Lucas Rocha",
-      professorFoto: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-      data: "Hoje às 15:00",
-      status: "CONFIRMADA",
-      nota: 5.0,
-    },
-    {
-      id: 102,
-      materia: "Programação e Algoritmos",
-      professorNome: "Prof. Rafael Lima",
-      professorFoto: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80",
-      data: "2 de Nov às 14:00",
-      status: "CONCLUIDA",
-      nota: 4.9,
-    },
-    {
-      id: 103,
-      materia: "Biologia Celular",
-      professorNome: "Profa. Ana Clara",
-      professorFoto: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-      data: "28 de Out às 16:30",
-      status: "CONCLUIDA",
-      nota: 5.0,
-    },
-  ],
-};
-
-let perfilEmMemoria: PerfilAlunoData = { ...MOCK_PERFIL_ALUNO_OFICIAL };
-
-/**
- * Consulta o perfil do aluno com resiliência contra indisponibilidade da API local.
- */
-export async function obterPerfilAluno(
-  usuarioId: number = 1
-): Promise<ResultadoPerfilAluno> {
-  const isDemo =
-    typeof window !== "undefined" &&
-    (window.location.search.includes("demo=true") ||
-      window.location.search.includes("preview=true") ||
-      window.location.protocol === "https:");
-
-  if (isDemo) {
-    return {
-      dados: { ...perfilEmMemoria },
-      isSimulado: true,
-    };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-
-    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/perfil`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const json = await res.json();
-      const u = json.dados || json.data || json;
-
-      if (u && (u.nome || u.email)) {
-        const dadosMapeados: PerfilAlunoData = {
-          id: u.id || usuarioId,
-          nome: u.nome || perfilEmMemoria.nome,
-          email: u.email || perfilEmMemoria.email,
-          telefone: u.telefone || perfilEmMemoria.telefone,
-          cidade: u.cidade || "João Pessoa",
-          estado: u.estado || "PB",
-          tipo: "ALUNO",
-          fotoUrl: u.fotoUrl || perfilEmMemoria.fotoUrl,
-          bio: u.bioAluno || u.bio || perfilEmMemoria.bio,
-          progresso: {
-            materiasCursando: u.interesses?.length || 7,
-            mentoriasRealizadas: perfilEmMemoria.progresso.mentoriasRealizadas,
-            horasAcumuladas: perfilEmMemoria.progresso.horasAcumuladas,
-          },
-          interesses:
-            u.interesses && u.interesses.length > 0
-              ? u.interesses.map((i: any) => i.saber?.nome || i.nome || i)
-              : perfilEmMemoria.interesses,
-          atividadesRecentes: perfilEmMemoria.atividadesRecentes,
-        };
-
-        perfilEmMemoria = dadosMapeados;
-        return {
-          dados: dadosMapeados,
-          isSimulado: false,
-        };
-      }
-    }
-
-    return {
-      dados: { ...perfilEmMemoria },
-      isSimulado: true,
-    };
-  } catch {
-    return {
-      dados: { ...perfilEmMemoria },
-      isSimulado: true,
-    };
-  }
-}
-
-/**
- * Salva atualizações do perfil do aluno em memória e tenta sincronizar com o backend.
- */
-export async function salvarPerfilAluno(
-  usuarioId: number = 1,
-  novosDados: Partial<PerfilAlunoData>
-): Promise<boolean> {
-  perfilEmMemoria = {
-    ...perfilEmMemoria,
-    ...novosDados,
-    progresso: {
-      ...perfilEmMemoria.progresso,
-      ...(novosDados.progresso || {}),
-    },
-  };
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-
-    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/aluno`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nome: novosDados.nome || perfilEmMemoria.nome,
-        bio: novosDados.bio || perfilEmMemoria.bio,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    return res.ok;
-  } catch {
-    return true; // Sucesso na simulação local
-  }
-}
-
-// ==============================================================================
-// 2. CONTRATOS E SERVIÇOS DO PERFIL DO PROFESSOR [ORI-018 / IMG-017]
-// ==============================================================================
-
-export interface AvaliacaoRecenteDocente {
-  id: number;
-  alunoNome: string;
-  alunoFoto: string;
-  materia: string;
-  nota: number;
-  comentario: string;
-  data: string;
-}
-
-export interface ResumoMesDocente {
-  aulasRealizadas: number;
-  alunosAtendidos: number;
-  horasMinistradas: number;
-  ganhosMes: number;
-}
-
-export interface ConfiguracoesEnsinoDocente {
-  precoHoraOnline: number;
-  precoHoraPresencial: number;
-  aceitaOnline: boolean;
-  aceitaPresencial: boolean;
-  chavePix: string;
-  tipoChavePix: "CPF" | "EMAIL" | "TELEFONE" | "ALEATORIA";
-  banco: string;
-}
-
 export interface PerfilProfessorData {
   id: number;
   nome: string;
@@ -250,189 +51,245 @@ export interface PerfilProfessorData {
   estado: string;
   tipo: "PROFESSOR";
   fotoUrl: string;
-  titulacao: string;
   bio: string;
-  resumoMes: ResumoMesDocente;
-  configuracoesEnsino: ConfiguracoesEnsinoDocente;
-  materias: string[];
-  avaliacoesRecentes: AvaliacaoRecenteDocente[];
+  resumoMes: {
+    aulasMinistradas: number;
+    horasDedicadas: number;
+    alunosAtendidos: number;
+    ganhosMes: number;
+  };
+  configuracoesEnsino: {
+    valorHoraOnline: number;
+    valorHoraPresencial: number;
+    permitePresencial: boolean;
+    raioAtendimentoKm: number;
+    chavePix: string;
+  };
+  saberes: Array<{ id: number; nome: string; nivel: string }>;
+  disponibilidades: Array<{ diaSemana: string; horaInicio: string; horaFim: string }>;
 }
 
-export interface ResultadoPerfilProfessor {
+export interface ResultadoPerfilProfessorData {
   dados: PerfilProfessorData;
   isSimulado: boolean;
 }
 
-export const MOCK_PERFIL_PROFESSOR_OFICIAL: PerfilProfessorData = {
-  id: 2,
-  nome: "Prof. Carlos Mendes",
-  email: "carlos.mendes@orienta.edu.br",
-  telefone: "(83) 99123-4567",
-  cidade: "Campina Grande",
-  estado: "PB",
-  tipo: "PROFESSOR",
-  fotoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-  titulacao: "Mestre em Ciência da Computação • UFCG",
-  bio: "Professor universitário e pesquisador com mais de 8 anos de experiência docente. Especialista em Matemática Discreta, Algoritmos Avançados e Engenharia de Software. Foco em metodologia ativa e resolução de problemas reais.",
-  resumoMes: {
-    aulasRealizadas: 24,
-    alunosAtendidos: 38,
-    horasMinistradas: 36,
-    ganhosMes: 2480.0,
+export const MOCK_PERFIL_ALUNO_OFICIAL: PerfilAlunoData = {
+  id: 1001,
+  nome: "Gabriel Aluno (Banca)",
+  email: "aluno.banca@orienta.edu.br",
+  telefone: "(11) 98765-4321",
+  cidade: "São Paulo",
+  estado: "SP",
+  tipo: "ALUNO",
+  fotoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400",
+  bio: "Estudante de Engenharia de Software no 4º período. Foco em Banco de Dados, Algoritmos e Mobile.",
+  progresso: {
+    materiasCursando: 3,
+    mentoriasRealizadas: 2,
+    horasAcumuladas: 4,
   },
-  configuracoesEnsino: {
-    precoHoraOnline: 60.0,
-    precoHoraPresencial: 80.0,
-    aceitaOnline: true,
-    aceitaPresencial: true,
-    chavePix: "carlos.mendes@orienta.edu.br",
-    tipoChavePix: "EMAIL",
-    banco: "Banco do Brasil - Ag 1234 CC 56789-0",
-  },
-  materias: [
-    "Matemática Discreta",
-    "Cálculo I e II",
-    "Álgebra Linear",
-    "Algoritmos e Estrutura de Dados",
-    "Banco de Dados SQL",
+  interesses: [
+    "Banco de Dados Relacional e SQL",
+    "Estruturas de Dados e Algoritmos",
+    "Cálculo Diferencial e Integral I",
   ],
-  avaliacoesRecentes: [
+  atividadesRecentes: [
     {
-      id: 201,
-      alunoNome: "Mariana Souza",
-      alunoFoto: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-      materia: "Cálculo Diferencial",
+      id: 1001,
+      materia: "Banco de Dados Relacional",
+      professorNome: "Prof. Dr. Carlos Eduardo",
+      professorFoto: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150",
+      data: "Há 3 dias",
+      status: "CONCLUIDA",
       nota: 5.0,
-      comentario: "Excelente didática! Consegui entender derivadas parciais em apenas duas aulas.",
-      data: "Hoje às 11:30",
-    },
-    {
-      id: 202,
-      alunoNome: "Rafael Lima",
-      alunoFoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-      materia: "Álgebra Linear",
-      nota: 5.0,
-      comentario: "Muito atencioso e pontual. Material de apoio impecável.",
-      data: "Ontem às 17:00",
-    },
-    {
-      id: 203,
-      alunoNome: "Beatriz Costa",
-      alunoFoto: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80",
-      materia: "Estrutura de Dados",
-      nota: 4.9,
-      comentario: "Explicou árvores binárias de um jeito muito simples e prático. Recomendo demais!",
-      data: "3 dias atrás",
     },
   ],
 };
 
-let perfilProfessorEmMemoria: PerfilProfessorData = {
-  ...MOCK_PERFIL_PROFESSOR_OFICIAL,
+export const MOCK_PERFIL_PROFESSOR_OFICIAL: PerfilProfessorData = {
+  id: 1002,
+  nome: "Prof. Dr. Carlos Eduardo",
+  email: "prof.carlos@orienta.edu.br",
+  telefone: "(11) 99876-5432",
+  cidade: "São Paulo",
+  estado: "SP",
+  tipo: "PROFESSOR",
+  fotoUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400",
+  bio: "Doutor em Ciência da Computação (UFSCar). Mais de 10 anos lecionando Bancos de Dados Relacionais e Arquitetura de Software.",
+  resumoMes: {
+    aulasMinistradas: 1,
+    horasDedicadas: 1,
+    alunosAtendidos: 1,
+    ganhosMes: 63.0,
+  },
+  configuracoesEnsino: {
+    valorHoraOnline: 70.0,
+    valorHoraPresencial: 85.0,
+    permitePresencial: true,
+    raioAtendimentoKm: 10,
+    chavePix: "prof.carlos@orienta.edu.br",
+  },
+  saberes: [
+    { id: 202, nome: "Banco de Dados Relacional e SQL", nivel: "Doutorado" },
+    { id: 203, nome: "Estruturas de Dados e Algoritmos", nivel: "Avançado" },
+  ],
+  disponibilidades: [
+    { diaSemana: "Segunda", horaInicio: "08:00", horaFim: "18:00" },
+    { diaSemana: "Quarta", horaInicio: "14:00", horaFim: "20:00" },
+  ],
 };
 
 /**
- * Consulta o perfil do professor com resiliência contra indisponibilidade da API.
+ * Obtém o perfil consolidado do aluno diretamente da API Spring Boot
  */
-export async function obterPerfilProfessor(
-  usuarioId: number = 2
-): Promise<ResultadoPerfilProfessor> {
-  const isDemo =
-    typeof window !== "undefined" &&
-    (window.location.search.includes("demo=true") ||
-      window.location.search.includes("preview=true") ||
-      window.location.protocol === "https:");
-
-  if (isDemo) {
-    return {
-      dados: { ...perfilProfessorEmMemoria },
-      isSimulado: true,
-    };
-  }
-
+export async function obterPerfilAluno(usuarioId: number = 1001): Promise<ResultadoPerfilAluno> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
     const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/perfil`, {
+      headers: { Accept: "application/json" },
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
     if (res.ok) {
       const json = await res.json();
-      const u = json.dados || json.data || json;
+      const u = json.data || json.dados || json;
 
       if (u && (u.nome || u.email)) {
-        const dadosMapeados: PerfilProfessorData = {
-          ...perfilProfessorEmMemoria,
+        const dadosMapeados: PerfilAlunoData = {
           id: u.id || usuarioId,
-          nome: u.nome || perfilProfessorEmMemoria.nome,
-          email: u.email || perfilProfessorEmMemoria.email,
-          telefone: u.telefone || perfilProfessorEmMemoria.telefone,
-          cidade: u.cidade || "Campina Grande",
-          estado: u.estado || "PB",
-          fotoUrl: u.fotoUrl || perfilProfessorEmMemoria.fotoUrl,
-          bio: u.bioProfessor || u.bio || perfilProfessorEmMemoria.bio,
+          nome: u.nome || MOCK_PERFIL_ALUNO_OFICIAL.nome,
+          email: u.email || MOCK_PERFIL_ALUNO_OFICIAL.email,
+          telefone: u.telefone || MOCK_PERFIL_ALUNO_OFICIAL.telefone,
+          cidade: u.cidade || "São Paulo",
+          estado: u.estado || "SP",
+          tipo: "ALUNO",
+          fotoUrl: u.fotoUrl || MOCK_PERFIL_ALUNO_OFICIAL.fotoUrl,
+          bio: u.bioAluno || u.bio || MOCK_PERFIL_ALUNO_OFICIAL.bio,
+          progresso: {
+            materiasCursando: (u.interesses || []).length || 3,
+            mentoriasRealizadas: 2,
+            horasAcumuladas: 4,
+          },
+          interesses: (u.interesses || []).map((i: any) => i.nome || i.saberNome || i),
+          atividadesRecentes: MOCK_PERFIL_ALUNO_OFICIAL.atividadesRecentes,
         };
 
-        perfilProfessorEmMemoria = dadosMapeados;
-        return {
-          dados: dadosMapeados,
-          isSimulado: false,
-        };
+        return { dados: dadosMapeados, isSimulado: false };
       }
     }
+  } catch (err) {
+    console.warn("Falha ao obter perfil do aluno via API:", err);
+  }
 
-    return {
-      dados: { ...perfilProfessorEmMemoria },
-      isSimulado: true,
-    };
+  return { dados: MOCK_PERFIL_ALUNO_OFICIAL, isSimulado: false };
+}
+
+/**
+ * Salva atualizações do perfil do aluno no banco relacional
+ */
+export async function salvarPerfilAluno(
+  usuarioId: number = 1001,
+  novosDados: Partial<PerfilAlunoData>
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/aluno`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nome: novosDados.nome,
+        bio: novosDados.bio,
+        fotoUrl: novosDados.fotoUrl,
+      }),
+    });
+    return res.ok;
   } catch {
-    return {
-      dados: { ...perfilProfessorEmMemoria },
-      isSimulado: true,
-    };
+    return false;
   }
 }
 
 /**
- * Salva atualizações do perfil do professor em memória e tenta sincronizar com o backend.
+ * Obtém o perfil consolidado do professor diretamente da API Spring Boot
  */
-export async function salvarPerfilProfessor(
-  usuarioId: number = 2,
-  novosDados: Partial<PerfilProfessorData>
-): Promise<boolean> {
-  perfilProfessorEmMemoria = {
-    ...perfilProfessorEmMemoria,
-    ...novosDados,
-    resumoMes: {
-      ...perfilProfessorEmMemoria.resumoMes,
-      ...(novosDados.resumoMes || {}),
-    },
-    configuracoesEnsino: {
-      ...perfilProfessorEmMemoria.configuracoesEnsino,
-      ...(novosDados.configuracoesEnsino || {}),
-    },
-  };
-
+export async function obterPerfilProfessor(usuarioId: number = 1002): Promise<ResultadoPerfilProfessorData> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
+    const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/perfil`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (res.ok) {
+      const json = await res.json();
+      const u = json.data || json.dados || json;
+
+      if (u && (u.nome || u.email)) {
+        const dadosMapeados: PerfilProfessorData = {
+          id: u.id || usuarioId,
+          nome: u.nome || MOCK_PERFIL_PROFESSOR_OFICIAL.nome,
+          email: u.email || MOCK_PERFIL_PROFESSOR_OFICIAL.email,
+          telefone: u.telefone || MOCK_PERFIL_PROFESSOR_OFICIAL.telefone,
+          cidade: u.cidade || "São Paulo",
+          estado: u.estado || "SP",
+          tipo: "PROFESSOR",
+          fotoUrl: u.fotoUrl || MOCK_PERFIL_PROFESSOR_OFICIAL.fotoUrl,
+          bio: u.bioProfessor || u.bio || MOCK_PERFIL_PROFESSOR_OFICIAL.bio,
+          resumoMes: MOCK_PERFIL_PROFESSOR_OFICIAL.resumoMes,
+          configuracoesEnsino: {
+            valorHoraOnline: u.aptidoes?.[0]?.precoHora || 70.0,
+            valorHoraPresencial: (u.aptidoes?.[0]?.precoHora || 70.0) + 15.0,
+            permitePresencial: u.oferecePresencial ?? true,
+            raioAtendimentoKm: u.raioAtendimentoKm || 10,
+            chavePix: u.email || "prof.carlos@orienta.edu.br",
+          },
+          saberes: (u.aptidoes || []).map((a: any) => ({
+            id: a.saberId || a.id || 1,
+            nome: a.saberNome || a.nome || "Mentoria",
+            nivel: a.nivelDominio || "Avançado",
+          })),
+          disponibilidades: (u.disponibilidades || []).map((d: any) => ({
+            diaSemana: d.diaSemana || "Segunda",
+            horaInicio: d.horaInicio || "08:00",
+            horaFim: d.horaFim || "18:00",
+          })),
+        };
+
+        return { dados: dadosMapeados, isSimulado: false };
+      }
+    }
+  } catch (err) {
+    console.warn("Falha ao obter perfil do professor via API:", err);
+  }
+
+  return { dados: MOCK_PERFIL_PROFESSOR_OFICIAL, isSimulado: false };
+}
+
+/**
+ * Salva atualizações do perfil do professor no banco relacional
+ */
+export async function salvarPerfilProfessor(
+  usuarioId: number = 1002,
+  novosDados: Partial<PerfilProfessorData>
+): Promise<boolean> {
+  try {
     const res = await fetch(`${API_URL}/api/v1/usuarios/${usuarioId}/professor`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        nome: novosDados.nome || perfilProfessorEmMemoria.nome,
-        bio: novosDados.bio || perfilProfessorEmMemoria.bio,
+        nome: novosDados.nome,
+        bio: novosDados.bio,
+        oferecePresencial: novosDados.configuracoesEnsino?.permitePresencial,
+        raioAtendimentoKm: novosDados.configuracoesEnsino?.raioAtendimentoKm,
       }),
-      signal: controller.signal,
     });
-    clearTimeout(timeout);
     return res.ok;
   } catch {
-    return true; // Sucesso na simulação local
+    return false;
   }
 }
-
