@@ -208,13 +208,6 @@ export default function AgendaScreen() {
         </View>
       </View>
 
-      {/* Banner de Modo de Simulação Discreto */}
-      <View style={estilos.bannerSimulacao}>
-        <View style={estilos.dotSimulacao} />
-        <Text style={estilos.textoSimulacao}>
-          Modo Simulação: Dados offline ativos (Ref. IMG-001 Agenda.jpeg)
-        </Text>
-      </View>
 
       <ScrollView
         style={estilos.scrollView}

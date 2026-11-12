@@ -73,8 +73,7 @@ export default function AssistenteScreen() {
   const [currentStep, setCurrentStep] = useState<string>('INITIAL');
   const [quickOptions, setQuickOptions] = useState<QuickOption[]>([]);
   const [inputText, setInputText] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isOfflineSimulation, setIsOfflineSimulation] = useState<boolean>(true);
+  const [isOfflineSimulation, setIsOfflineSimulation] = useState<boolean>(false);
   const [modalAvaliacaoVisivel, setModalAvaliacaoVisivel] = useState<boolean>(false);
   const [alertaAvaliacaoSucesso, setAlertaAvaliacaoSucesso] = useState<string | null>(null);
 
@@ -293,15 +292,7 @@ export default function AssistenteScreen() {
         </View>
       </View>
 
-      {/* Banner de Simulação e Transparência */}
-      {isOfflineSimulation && (
-        <View style={styles.bannerSimulacao}>
-          <Sparkles size={14} color="#D97706" />
-          <Text style={styles.bannerSimulacaoTexto}>
-            ⚠️ Modo Simulação: Dados offline em exibição (ORI-029)
-          </Text>
-        </View>
-      )}
+
 
       {/* Selo Obrigatório de Regras Determinísticas e Transparência */}
       <RuleIndicatorBadge />

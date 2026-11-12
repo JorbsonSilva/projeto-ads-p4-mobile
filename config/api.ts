@@ -17,24 +17,13 @@ export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
 // URL base da API v1 para uso em clientes REST dedicados
 export const API_V1_URL = `${API_URL}/api/v1`;
 
-export type DataSourceMode = 'mock' | 'real';
+export type DataSourceMode = 'real';
 
 /**
- * Obtém o modo de fonte de dados ativo (persistido no localStorage/AsyncStorage ou query param).
+ * Obtém o modo de fonte de dados ativo (Full-Stack Real: Spring Boot 3 + PostgreSQL).
  */
 export function getActiveDataSource(): DataSourceMode {
-  if (typeof window !== 'undefined') {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const q = urlParams.get('dataSource') || urlParams.get('data_source');
-      if (q === 'real' || q === 'mock') return q;
-      const saved = window.localStorage.getItem('orienta_data_source');
-      if (saved === 'real' || saved === 'mock') return saved;
-    } catch {
-      // ignore
-    }
-  }
-  return 'mock';
+  return 'real';
 }
 
 /**

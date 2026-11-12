@@ -131,13 +131,6 @@ export default function MarcarAulaScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Banner de Modo de Simulação Discreto */}
-      <View style={estilos.bannerSimulacao}>
-        <View style={estilos.badgeDot} />
-        <Text style={estilos.textoSimulacao}>
-          Modo Simulação: Dados offline ativos (Ref. IMG-008)
-        </Text>
-      </View>
 
       <ScrollView
         style={estilos.scrollView}
