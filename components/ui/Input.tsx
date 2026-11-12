@@ -177,12 +177,12 @@ export const Input = forwardRef<TextInput, InputProps>(
     const getHeightBySize = () => {
       switch (size) {
         case 'sm':
-          return 42;
+          return 38;
         case 'lg':
-          return 56;
+          return 52;
         case 'md':
         default:
-          return 50;
+          return 46;
       }
     };
 
@@ -247,7 +247,7 @@ export const Input = forwardRef<TextInput, InputProps>(
             style={[
               styles.input,
               {
-                fontSize: size === 'sm' ? 14 : 15,
+                fontSize: size === 'sm' ? 13 : 13.5,
                 color: disabled ? '#94A3B8' : '#1E293B',
               },
               Platform.select({
@@ -321,13 +321,13 @@ Input.displayName = 'Input';
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   label: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#334155', // Slate 700
-    marginBottom: 6,
+    marginBottom: 5,
     letterSpacing: 0.1,
   },
   labelDisabled: {
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: Theme.borderRadius.lg, // 12px conforme o design
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     backgroundColor: '#FFFFFF',
     borderStyle: 'solid',
     transitionProperty: 'border-color, box-shadow',
@@ -360,19 +360,19 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   leftIconContainer: {
-    marginRight: 10,
+    marginRight: 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
   rightActionContainer: {
-    marginLeft: 10,
+    marginLeft: 9,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 2,
   },
   input: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     fontFamily: Platform.select({
       ios: 'System',
       android: 'Roboto',

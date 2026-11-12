@@ -35,7 +35,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { API_URL } from "../config/api";
+import { API_URL, emitHttpLogToParent } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 import { Input, formatCPF } from "../components/ui";
 import { Assets } from "../constants/assets";
@@ -78,30 +78,91 @@ export default function LoginScreen() {
     }
 
     setCarregando(true);
+    const t0 = Date.now();
+    const identificador = emailOrCpf.trim();
+    const endpoint = `${API_URL}/api/v1/auth/login`;
+    const payloadEnvio = {
+      email: identificador,
+      login: identificador,
+      cpf: identificador.replace(/\D/g, ""),
+      senha,
+    };
+
     try {
-      const resposta = await fetch(`${API_URL}/api/v1/auth/login`, {
+      const resposta = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailOrCpf.trim(), senha }),
+        body: JSON.stringify(payloadEnvio),
       });
+
+      const duracao = Date.now() - t0;
 
       if (resposta.ok) {
         const corpo = await resposta.json();
         const payload = corpo.data || corpo;
         const usuario = payload.usuario || payload;
         const token = payload.token || payload.accessToken;
+        const refreshToken = payload.refreshToken;
         const usuarioId = usuario.id || usuario.usuarioId;
         const perfil = usuario.tipo || usuario.perfil || "ALUNO";
         const nome = usuario.nome || "";
+
+        emitHttpLogToParent({
+          method: "POST",
+          url: "/api/v1/auth/login",
+          status: resposta.status,
+          durationMs: duracao,
+          source: "real",
+        });
+
         if (loginGlobal) {
-          await loginGlobal(usuarioId, perfil, nome, token);
+          await loginGlobal(usuarioId, perfil, nome, token, refreshToken);
         }
         router.replace("/(tabs)");
       } else {
         const erro = await resposta.json().catch(() => ({}));
-        Alert.alert("Erro de autenticação", erro.message || "Credenciais inválidas.");
+        const mensagemErro =
+          erro.message ||
+          erro.mensagem ||
+          erro.error ||
+          "Credenciais inválidas. Verifique seu e-mail/CPF e senha.";
+
+        emitHttpLogToParent({
+          method: "POST",
+          url: "/api/v1/auth/login",
+          status: resposta.status,
+          durationMs: duracao,
+          source: "real",
+          error: mensagemErro,
+        });
+
+        Alert.alert("Erro de autenticação", mensagemErro);
       }
-    } catch {
+    } catch (err: any) {
+      const duracao = Date.now() - t0;
+      emitHttpLogToParent({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        status: 0,
+        durationMs: duracao,
+        source: "real",
+        error: err?.message || "Servidor indisponível",
+      });
+
+      // Em modo de demonstração no preview, permite entrada suave para inspeção visual
+      if (isDemo) {
+        const isProf = identificador.toLowerCase().includes("prof");
+        if (loginGlobal) {
+          await loginGlobal(
+            isProf ? "1" : "2",
+            isProf ? "Professor" : "Aluno",
+            isProf ? "Prof. Lucas Rocha" : "Gabriel Silva"
+          );
+        }
+        router.replace("/(tabs)");
+        return;
+      }
+
       setErroConexao(
         "Servidor Spring Boot indisponível (http://localhost:8080). Nenhuma conta real foi autenticada."
       );
@@ -115,12 +176,25 @@ export default function LoginScreen() {
   };
 
   return (
-    // 1. O plano de fundo cobre a tela INTEIRA do celular (Assets.backgrounds.login - IMG-019)
     <ImageBackground
-      source={Assets.backgrounds.login}
+      source={Assets.backgrounds.cadastro}
       style={estilos.fundoTotal}
       resizeMode="cover"
     >
+      {/* 1. Cabeçalho Superior Integrado: Fundo translúcido/natural, logotipo ampliado e sem caixas */}
+      <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
+        <View style={estilos.logoContainer}>
+          <Image
+            source={Assets.logo.transparent}
+            style={estilos.logoImg}
+            resizeMode="contain"
+            accessibilityLabel="Logotipo Orienta"
+          />
+        </View>
+        <Text style={estilos.sloganTexto}>Seu futuro com as melhores escolhas.</Text>
+      </SafeAreaView>
+
+      {/* 2. Área Central com Contêiner Flutuante e Fundo de Ondas Naturais */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={estilos.flexTotal}
@@ -132,28 +206,15 @@ export default function LoginScreen() {
           bounces={true}
         >
           <View style={estilos.containerCentralizado}>
-            {/* 2. Cabeçalho com Logotipo Orienta ampliado e halo de luz suave */}
-            <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
-              <View style={estilos.haloIluminacao}>
-                <Image
-                  source={Assets.logo.transparent}
-                  style={estilos.logoImg}
-                  resizeMode="contain"
-                  accessibilityLabel="Logotipo Orienta"
-                />
-              </View>
-              <Text style={estilos.sloganTexto}>Seu futuro com as melhores escolhas.</Text>
-            </SafeAreaView>
-
-            {/* 3. Cartão Branco Curvo Flutuante (borderRadius: 36) */}
+            {/* 3. Cartão Branco Curvo Flutuante */}
             <View style={estilos.cartaoBranco}>
-              <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
-              <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
+                <Text style={estilos.tituloBemVindo}>Bem-vindo de volta!</Text>
+                <Text style={estilos.subtituloCartao}>Faça login para continuar sua jornada.</Text>
 
               {/* Input E-mail ou CPF com Ícone e Máscara Dinâmica */}
               <Input
                 label="E-mail ou CPF"
-                placeholder="exemplo@email.com ou 000.000.000-00"
+                placeholder="Digite seu e-mail ou CPF"
                 value={emailOrCpf}
                 onChangeText={(texto) => {
                   setErroEmailOrCpf(undefined);
@@ -166,7 +227,7 @@ export default function LoginScreen() {
                 }}
                 autoCapitalize="none"
                 keyboardType="email-address"
-                leftIcon={<Feather name="user" size={18} color="#64748B" />}
+                leftIcon={<Feather name="user" size={17} color="#64748B" />}
                 error={erroEmailOrCpf}
                 disabled={carregando}
                 accessibilityLabel="Campo de e-mail ou CPF"
@@ -176,14 +237,14 @@ export default function LoginScreen() {
               {/* Input Senha com Alternador de Visibilidade e Ícone */}
               <Input
                 label="Senha"
-                placeholder="Digite sua senha de acesso"
+                placeholder="Digite sua senha"
                 value={senha}
                 onChangeText={(texto) => {
                   setSenha(texto);
                   setErroSenha(undefined);
                 }}
                 isPassword
-                leftIcon={<Feather name="lock" size={18} color="#64748B" />}
+                leftIcon={<Feather name="lock" size={17} color="#64748B" />}
                 error={erroSenha}
                 disabled={carregando}
                 accessibilityLabel="Campo de senha"
@@ -289,6 +350,7 @@ const estilos = StyleSheet.create({
     flex: 1,
     width: "100%",
     height: "100%",
+    backgroundColor: "#FDFDFD",
   },
   flexTotal: {
     flex: 1,
@@ -296,84 +358,78 @@ const estilos = StyleSheet.create({
   scrollConteudo: {
     flexGrow: 1,
     justifyContent: "center",
-    paddingVertical: 16,
+    paddingVertical: 18,
   },
   containerCentralizado: {
-    width: "100%",
-    maxWidth: 440,
+    width: "88%",
+    maxWidth: 348,
     alignSelf: "center",
   },
   areaCabecalho: {
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: Platform.OS === "android" ? 20 : 12,
-    paddingBottom: 8,
+    paddingTop: Platform.OS === "android" ? 20 : 14,
+    paddingBottom: 10,
     paddingHorizontal: 20,
   },
-  haloIluminacao: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "rgba(255, 255, 255, 0.22)",
+  logoContainer: {
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#FFFFFF",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 18,
-    elevation: 6,
-    marginVertical: 4,
+    backgroundColor: "transparent",
+    marginBottom: 2,
   },
   logoImg: {
-    width: 110,
-    height: 110,
+    width: 210,
+    height: 160,
     resizeMode: "contain",
   },
   sloganTexto: {
-    fontSize: 15,
+    fontSize: 13.5,
     fontWeight: "600",
-    color: "#334155",
+    color: "#475569",
     textAlign: "center",
-    marginTop: 8,
-    marginBottom: 8,
-    letterSpacing: -0.2,
+    marginTop: 4,
+    letterSpacing: -0.1,
   },
   cartaoBranco: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 36,
-    marginHorizontal: 18,
-    marginTop: 6,
-    marginBottom: 32, // Preserva a visibilidade das ondas de fundo na base
-    paddingHorizontal: 24,
+    borderRadius: 28,
+    marginHorizontal: 0,
+    marginTop: 4,
+    marginBottom: 26, // Preserva a visibilidade ampla e elegante das ondas de fundo
+    paddingHorizontal: 26, // Mais bordas internas, evitando que caixas de texto e botões fiquem esticados
     paddingTop: 28,
     paddingBottom: 26,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.75)",
     shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.12,
-    shadowRadius: 18,
+    shadowRadius: 26,
     elevation: 8,
   },
   tituloBemVindo: {
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: "800",
     color: "#0F172A",
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
   },
   subtituloCartao: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: "#64748B",
-    marginTop: 4,
-    marginBottom: 20,
+    marginTop: 3,
+    marginBottom: 16,
     lineHeight: 18,
   },
   linkEsqueceuSenha: {
     alignSelf: "flex-end",
-    marginTop: 2,
-    marginBottom: 16,
+    marginTop: 0,
+    marginBottom: 14,
     paddingVertical: 2,
   },
   txtEsqueceuSenha: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "600",
     color: "#FF5A1F",
   },
@@ -385,7 +441,7 @@ const estilos = StyleSheet.create({
     borderColor: "#FCA5A5",
     borderRadius: 12,
     padding: 10,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   txtAvisoConexao: {
     flex: 1,
@@ -401,8 +457,8 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#A7F3D0",
     borderRadius: 12,
-    padding: 9,
-    marginBottom: 16,
+    padding: 8,
+    marginBottom: 14,
   },
   txtAvisoDemo: {
     flex: 1,
@@ -416,20 +472,20 @@ const estilos = StyleSheet.create({
     marginTop: 1,
   },
   btnEntrarWrapper: {
-    borderRadius: 26,
+    borderRadius: 24,
     overflow: "hidden",
-    marginBottom: 18,
+    marginBottom: 14,
     shadowColor: "#FF6A00",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    elevation: 5,
+    elevation: 4,
   },
   btnEntrar: {
-    height: 52,
+    height: 48,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 26,
+    borderRadius: 24,
   },
   btnEntrarConteudo: {
     flexDirection: "row",
@@ -445,7 +501,7 @@ const estilos = StyleSheet.create({
   divisorContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginVertical: 14,
   },
   linhaDivisor: {
     flex: 1,
@@ -453,7 +509,7 @@ const estilos = StyleSheet.create({
     backgroundColor: "#E2E8F0",
   },
   txtOu: {
-    marginHorizontal: 14,
+    marginHorizontal: 12,
     fontSize: 12,
     fontWeight: "500",
     color: "#94A3B8",
@@ -464,10 +520,10 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 26,
-    height: 50,
+    borderRadius: 24,
+    height: 46,
     backgroundColor: "#FFFFFF",
-    marginBottom: 20,
+    marginBottom: 18,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -475,12 +531,12 @@ const estilos = StyleSheet.create({
     elevation: 1,
   },
   googleIcon: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
+    width: 18,
+    height: 18,
+    marginRight: 8,
   },
   txtGoogle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "600",
     color: "#1E293B",
   },
