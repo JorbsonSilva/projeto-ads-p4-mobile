@@ -33,7 +33,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import {
   aceitarSolicitacao,
-  MOCK_SOLICITACOES_OFICIAIS,
   obterSolicitacoes,
   recusarSolicitacao,
   ResultadoSolicitacoes,
@@ -48,8 +47,8 @@ export default function SolicitacoesScreen() {
   const [abaAtiva, setAbaAtiva] = useState<"recebidas" | "aguardando" | "historico">("recebidas");
 
   // Dados e estados de carregamento
-  const [solicitacoes, setSolicitacoes] = useState<SolicitacaoAula[]>(MOCK_SOLICITACOES_OFICIAIS);
-  const [totais, setTotais] = useState({ recebidas: 3, aguardando: 1, historico: 2 });
+  const [solicitacoes, setSolicitacoes] = useState<SolicitacaoAula[]>([]);
+  const [totais, setTotais] = useState({ recebidas: 0, aguardando: 0, historico: 0 });
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);

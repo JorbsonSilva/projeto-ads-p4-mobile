@@ -33,7 +33,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  buscarProfessoresPresencialComFallback,
+  obterProfessoresPresenciais,
   ProfessorPresencial,
   ResultadoBuscaPresencial,
 } from "../services/buscaPresencialService";
@@ -99,7 +99,7 @@ export default function BuscaPresencialScreen() {
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     try {
-      const res: ResultadoBuscaPresencial = await buscarProfessoresPresencialComFallback({
+      const res: ResultadoBuscaPresencial = await obterProfessoresPresenciais({
         area: areaSelecionada,
         raioKm: 15,
       });

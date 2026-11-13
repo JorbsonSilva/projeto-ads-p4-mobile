@@ -38,13 +38,40 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
+  ConversaCompleta,
   enviarMensagemChat,
   MensagemChat,
-  MOCK_CONVERSA_OFICIAL,
-  obterConversaComContexto,
+  obterConversaChat,
   registrarDenunciaChat,
   ResultadoConversa,
 } from "../services/chatService";
+
+const CONVERSA_INICIAL: ConversaCompleta = {
+  conversaId: 0,
+  agendamentoId: 0,
+  interlocutor: {
+    id: "0",
+    nome: "Carregando...",
+    papel: "PROFESSOR",
+    avatar: "",
+    verificado: false,
+    online: false,
+    disciplina: "",
+    avaliacao: 5.0,
+    totalAvaliacoes: 0,
+  },
+  contextoAula: {
+    agendamentoId: 0,
+    disciplina: "",
+    status: "CONFIRMADA",
+    dataTexto: "",
+    horarioTexto: "",
+    modalidade: "ONLINE",
+    localizacao: "",
+    valor: 0,
+  },
+  mensagens: [],
+};
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
@@ -54,8 +81,8 @@ export default function ChatScreen() {
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
-  const [conversa, setConversa] = useState(MOCK_CONVERSA_OFICIAL);
-  const [mensagens, setMensagens] = useState<MensagemChat[]>(MOCK_CONVERSA_OFICIAL.mensagens);
+  const [conversa, setConversa] = useState<ConversaCompleta>(CONVERSA_INICIAL);
+  const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
   const [textoInput, setTextoInput] = useState<string>("");
   const [enviando, setEnviando] = useState<boolean>(false);
 
@@ -70,7 +97,7 @@ export default function ChatScreen() {
 
   const carregarDadosChat = useCallback(async () => {
     try {
-      const res: ResultadoConversa = await obterConversaComContexto(agendamentoId);
+      const res: ResultadoConversa = await obterConversaChat(agendamentoId);
       setConversa(res.conversa);
       setMensagens(res.conversa.mensagens);
       setIsSimulado(res.isSimulado);

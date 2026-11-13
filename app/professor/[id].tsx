@@ -33,19 +33,37 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  MOCK_PERFIS_PROFESSORES,
   obterPerfilProfessorComFallback,
   PerfilProfessorPublico,
   ResultadoPerfilProfessor,
 } from "../../services/professorService";
 
+const PROFESSOR_INICIAL: PerfilProfessorPublico = {
+  id: 0,
+  nome: "Carregando...",
+  tituloAcademico: "",
+  fotoUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400",
+  online: false,
+  verificado: false,
+  cidade: "",
+  notaMedia: 5.0,
+  totalAvaliacoes: 0,
+  alunosAtendidos: 0,
+  taxaAprovacao: 100,
+  bio: "",
+  precoOnline: 0,
+  precoPresencial: 0,
+  materias: [],
+  disponibilidadeSemanal: [],
+  avaliacoesRecentes: [],
+};
+
 export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
 
-  const defaultProfessor = MOCK_PERFIS_PROFESSORES["101"];
-  const [professor, setProfessor] = useState<PerfilProfessorPublico>(defaultProfessor);
-  const [isSimulado, setIsSimulado] = useState<boolean>(true);
+  const [professor, setProfessor] = useState<PerfilProfessorPublico>(PROFESSOR_INICIAL);
+  const [isSimulado, setIsSimulado] = useState<boolean>(false);
   const [favoritado, setFavoritado] = useState<boolean>(false);
 
   // Seleção de Modalidade (ONLINE vs PRESENCIAL)
@@ -55,10 +73,12 @@ export default function PerfilProfessorScreen() {
     try {
       const professorId = Array.isArray(id) ? id[0] : id || "101";
       const res: ResultadoPerfilProfessor = await obterPerfilProfessorComFallback(professorId);
-      setProfessor(res.professor);
+      if (res.professor) {
+        setProfessor(res.professor);
+      }
       setIsSimulado(res.isSimulado);
     } catch {
-      setIsSimulado(true);
+      setIsSimulado(false);
     }
   }, [id]);
 

@@ -34,19 +34,34 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   MetodoRecebimento,
-  MOCK_RESUMO_SAQUE_OFICIAL,
   obterResumoSaqueProfessor,
   ResultadoResumoFinanceiro,
+  ResumoFinanceiroProfessor,
   SolicitacaoSaqueResponse,
   solicitarSaqueProfessor,
 } from "../services/saqueService";
+
+const RESUMO_SAQUE_INICIAL: ResumoFinanceiroProfessor = {
+  saldoDisponivel: 0,
+  valorPendente: 0,
+  ganhosMes: 0,
+  saquesRealizados: 0,
+  totalRecebido: 0,
+  chavePixPadrao: "",
+  tipoChavePix: "CPF",
+  bancoPadrao: {
+    banco: "",
+    agencia: "",
+    conta: "",
+  },
+};
 
 export default function SaqueScreen() {
   const insets = useSafeAreaInsets();
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
-  const [resumo, setResumo] = useState(MOCK_RESUMO_SAQUE_OFICIAL);
+  const [resumo, setResumo] = useState<ResumoFinanceiroProfessor>(RESUMO_SAQUE_INICIAL);
 
   // Estados Interativos
   const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
@@ -537,8 +552,8 @@ export default function SaqueScreen() {
                   {metodoSelecionado === "PIX"
                     ? "Pix (Instantâneo)"
                     : metodoSelecionado === "TED"
-                    ? "TED Bancário"
-                    : "Carteira Orienta"}
+                      ? "TED Bancário"
+                      : "Carteira Orienta"}
                 </Text>
               </View>
             </View>

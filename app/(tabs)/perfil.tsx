@@ -30,14 +30,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../context/AuthContext";
 import {
-  MOCK_PERFIL_ALUNO_OFICIAL,
-  MOCK_PERFIL_PROFESSOR_OFICIAL,
   obterPerfilAluno,
   obterPerfilProfessor,
   PerfilAlunoData,
   PerfilProfessorData,
   ResultadoPerfilAluno,
-  ResultadoPerfilProfessor,
+  ResultadoPerfilProfessorData,
   salvarPerfilAluno,
   salvarPerfilProfessor,
 } from "../../services/perfilService";
@@ -51,8 +49,18 @@ export default function PerfilScreen() {
   const [personaAtiva, setPersonaAtiva] = useState<"Aluno" | "Professor">("Aluno");
 
   // Estados dos dados de perfil
-  const [perfilAluno, setPerfilAluno] = useState<PerfilAlunoData>(MOCK_PERFIL_ALUNO_OFICIAL);
-  const [perfilProfessor, setPerfilProfessor] = useState<PerfilProfessorData>(MOCK_PERFIL_PROFESSOR_OFICIAL);
+  const [perfilAluno, setPerfilAluno] = useState<PerfilAlunoData>({
+    id: 0, nome: '', email: '', telefone: '', cidade: '', estado: '', tipo: 'ALUNO',
+    fotoUrl: '', bio: '', progresso: { materiasCursando: 0, mentoriasRealizadas: 0, horasAcumuladas: 0 },
+    interesses: [], atividadesRecentes: [],
+  });
+  const [perfilProfessor, setPerfilProfessor] = useState<PerfilProfessorData>({
+    id: 0, nome: '', email: '', telefone: '', cidade: '', estado: '', tipo: 'PROFESSOR',
+    fotoUrl: '', bio: '',
+    resumoMes: { aulasMinistradas: 0, horasDedicadas: 0, alunosAtendidos: 0, ganhosMes: 0 },
+    configuracoesEnsino: { valorHoraOnline: 0, valorHoraPresencial: 0, permitePresencial: false, raioAtendimentoKm: 0, chavePix: '' },
+    saberes: [], disponibilidades: [],
+  });
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
@@ -96,7 +104,7 @@ export default function PerfilScreen() {
   // Carregar dados de ambos os perfis
   const carregarDados = useCallback(async () => {
     try {
-      const [resAluno, resProf]: [ResultadoPerfilAluno, ResultadoPerfilProfessor] =
+      const [resAluno, resProf]: [ResultadoPerfilAluno, ResultadoPerfilProfessorData] =
         await Promise.all([obterPerfilAluno(1), obterPerfilProfessor(2)]);
 
       setPerfilAluno(resAluno.dados);
@@ -111,12 +119,12 @@ export default function PerfilScreen() {
 
       // Preencher formulário professor
       setFormProfNome(resProf.dados.nome);
-      setFormProfTitulacao(resProf.dados.titulacao);
+      setFormProfTitulacao('');
       setFormProfTelefone(resProf.dados.telefone);
       setFormProfCidade(resProf.dados.cidade);
       setFormProfBio(resProf.dados.bio);
-      setFormProfPrecoOnline(String(resProf.dados.configuracoesEnsino.precoHoraOnline));
-      setFormProfPrecoPresencial(String(resProf.dados.configuracoesEnsino.precoHoraPresencial));
+      setFormProfPrecoOnline(String(resProf.dados.configuracoesEnsino.valorHoraOnline));
+      setFormProfPrecoPresencial(String(resProf.dados.configuracoesEnsino.valorHoraPresencial));
       setFormProfPix(resProf.dados.configuracoesEnsino.chavePix);
     } catch {
       setIsSimulado(true);
@@ -166,14 +174,13 @@ export default function PerfilScreen() {
 
       await salvarPerfilProfessor(perfilProfessor.id, {
         nome: formProfNome,
-        titulacao: formProfTitulacao,
         telefone: formProfTelefone,
         cidade: formProfCidade,
         bio: formProfBio,
         configuracoesEnsino: {
           ...perfilProfessor.configuracoesEnsino,
-          precoHoraOnline: precoOnlineNum,
-          precoHoraPresencial: precoPresencialNum,
+          valorHoraOnline: precoOnlineNum,
+          valorHoraPresencial: precoPresencialNum,
           chavePix: formProfPix,
         },
       });
@@ -181,14 +188,13 @@ export default function PerfilScreen() {
       setPerfilProfessor((prev) => ({
         ...prev,
         nome: formProfNome,
-        titulacao: formProfTitulacao,
         telefone: formProfTelefone,
         cidade: formProfCidade,
         bio: formProfBio,
         configuracoesEnsino: {
           ...prev.configuracoesEnsino,
-          precoHoraOnline: precoOnlineNum,
-          precoHoraPresencial: precoPresencialNum,
+          valorHoraOnline: precoOnlineNum,
+          valorHoraPresencial: precoPresencialNum,
           chavePix: formProfPix,
         },
       }));
@@ -574,7 +580,7 @@ export default function PerfilScreen() {
                   </View>
                 </View>
 
-                <Text style={estilos.titulacaoDocente}>{perfilProfessor.titulacao}</Text>
+                <Text style={estilos.titulacaoDocente}>{perfilProfessor.bio ? 'Professor' : ''}</Text>
                 <Text style={estilos.emailEstudante}>{perfilProfessor.email}</Text>
 
                 <View style={estilos.linhaLocalizacao}>
@@ -617,7 +623,7 @@ export default function PerfilScreen() {
                     <Feather name="calendar" size={13} color="#D97706" />
                   </View>
                   <Text style={estilos.valorMetricaDocente}>
-                    {perfilProfessor.resumoMes.aulasRealizadas}
+                    {perfilProfessor.resumoMes.aulasMinistradas}
                   </Text>
                   <Text style={estilos.labelMetricaDocente}>Aulas realizadas</Text>
                 </View>
@@ -637,7 +643,7 @@ export default function PerfilScreen() {
                     <Feather name="clock" size={13} color="#9333EA" />
                   </View>
                   <Text style={estilos.valorMetricaDocente}>
-                    {perfilProfessor.resumoMes.horasMinistradas}h
+                    {perfilProfessor.resumoMes.horasDedicadas}h
                   </Text>
                   <Text style={estilos.labelMetricaDocente}>Horas ministradas</Text>
                 </View>
@@ -666,10 +672,10 @@ export default function PerfilScreen() {
                 <View style={estilos.divisorSuave} />
                 <Text style={estilos.subtituloInteresses}>Disciplinas lecionadas:</Text>
                 <View style={estilos.chipsContainer}>
-                  {perfilProfessor.materias.map((mat, idx) => (
+                  {perfilProfessor.saberes.map((mat: { id: number; nome: string; nivel: string }, idx: number) => (
                     <View key={idx} style={estilos.chipMateriaDocente}>
                       <FontAwesome5 name="book-reader" size={10} color="#047857" style={{ marginRight: 6 }} />
-                      <Text style={estilos.textoChipMateriaDocente}>{mat}</Text>
+                      <Text style={estilos.textoChipMateriaDocente}>{mat.nome}</Text>
                     </View>
                   ))}
                 </View>
@@ -710,7 +716,7 @@ export default function PerfilScreen() {
                   <View style={estilos.infoMenuItem}>
                     <Text style={estilos.tituloMenuItem}>Formatos de aula e tarifas</Text>
                     <Text style={estilos.subtituloMenuItem}>
-                      Online: R$ {perfilProfessor.configuracoesEnsino.precoHoraOnline.toFixed(2)}/h • Presencial: R$ {perfilProfessor.configuracoesEnsino.precoHoraPresencial.toFixed(2)}/h
+                      Online: R$ {perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h • Presencial: R$ {perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h
                     </Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
@@ -785,24 +791,9 @@ export default function PerfilScreen() {
               </View>
 
               <View style={estilos.listaAvaliacoes}>
-                {perfilProfessor.avaliacoesRecentes.map((rev) => (
-                  <View key={rev.id} style={estilos.cardAvaliacao}>
-                    <View style={estilos.headerAvaliacao}>
-                      <Image source={{ uri: rev.alunoFoto }} style={estilos.avatarAvaliacao} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={estilos.nomeAlunoAvaliacao}>{rev.alunoNome}</Text>
-                        <Text style={estilos.materiaAvaliacao}>{rev.materia}</Text>
-                      </View>
-                      <View style={estilos.estrelasRow}>
-                        {[...Array(5)].map((_, i) => (
-                          <Ionicons key={i} name="star" size={11} color="#F59E0B" />
-                        ))}
-                      </View>
-                    </View>
-                    <Text style={estilos.comentarioAvaliacao}>"{rev.comentario}"</Text>
-                    <Text style={estilos.dataAvaliacao}>{rev.data}</Text>
-                  </View>
-                ))}
+                <Text style={{ color: '#64748B', fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>
+                  Nenhuma avaliação disponível no momento.
+                </Text>
               </View>
             </View>
 

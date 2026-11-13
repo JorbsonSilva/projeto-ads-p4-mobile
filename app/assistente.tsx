@@ -73,6 +73,7 @@ export default function AssistenteScreen() {
   const [currentStep, setCurrentStep] = useState<string>('INITIAL');
   const [quickOptions, setQuickOptions] = useState<QuickOption[]>([]);
   const [inputText, setInputText] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isOfflineSimulation, setIsOfflineSimulation] = useState<boolean>(false);
   const [modalAvaliacaoVisivel, setModalAvaliacaoVisivel] = useState<boolean>(false);
   const [alertaAvaliacaoSucesso, setAlertaAvaliacaoSucesso] = useState<string | null>(null);

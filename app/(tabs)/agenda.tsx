@@ -41,7 +41,6 @@ import {
   aceitarSolicitacaoComFallback,
   AgendaCompleta,
   CompromissoAgenda,
-  MOCK_AGENDA_INICIAL,
   obterAgendaComFallback,
   PerfilAgenda,
   recusarSolicitacaoComFallback,
@@ -70,7 +69,14 @@ export default function AgendaScreen() {
   const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(2); // Quarta 25/06 por padrão
 
   // Dados da Agenda
-  const [dados, setDados] = useState<AgendaCompleta>(MOCK_AGENDA_INICIAL);
+  const [dados, setDados] = useState<AgendaCompleta>({
+    perfil: "PROFESSOR",
+    solicitacoes: [],
+    aulasProfessor: [],
+    aulasAluno: [],
+    mentoriasAluno: [],
+    isSimulado: false,
+  });
   const [carregando, setCarregando] = useState<boolean>(false);
 
   // Estados dos Modais

@@ -35,10 +35,22 @@ import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   DadosHomeProfessor,
-  MOCK_HOME_PROFESSOR_OFICIAL,
   obterDadosHomeProfessor,
   ResultadoHomeProfessor,
 } from "../services/professorHomeService";
+
+const DADOS_HOME_INICIAIS: DadosHomeProfessor = {
+  professorId: 0,
+  professorNome: "",
+  metricas: {
+    aulasRealizadas: { valor: 0, label: "Aulas realizadas", variacaoPercentual: "", icone: "calendar", positivo: true },
+    alunosAtendidos: { valor: 0, label: "Alunos atendidos", variacaoPercentual: "", icone: "users", positivo: true },
+    horasMinistradas: { valor: 0, label: "Horas ministradas", variacaoPercentual: "", icone: "clock", positivo: true },
+    ganhosMes: { valor: 0, label: "Ganhos do mês", variacaoPercentual: "", icone: "dollar-sign", positivo: true },
+  },
+  proximasAulas: [],
+  solicitacoesPendentesCount: 0,
+};
 
 export default function HomeProfessorScreen({
   exibirBarraInferior = true,
@@ -51,7 +63,7 @@ export default function HomeProfessorScreen({
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [isSimulado, setIsSimulado] = useState<boolean>(false);
-  const [dados, setDados] = useState<DadosHomeProfessor>(MOCK_HOME_PROFESSOR_OFICIAL);
+  const [dados, setDados] = useState<DadosHomeProfessor>(DADOS_HOME_INICIAIS);
   const [modalNotificacoes, setModalNotificacoes] = useState<boolean>(false);
 
   const carregarDashboard = useCallback(async () => {
