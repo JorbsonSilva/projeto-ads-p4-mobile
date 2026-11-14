@@ -11,10 +11,9 @@ import { Agendamento, AgendamentoRequest, ApiResponse, JustificativaRequest, Rem
 
 export type { ApiResponse };
 
-const isBrowser = typeof window !== "undefined" && typeof window.location !== "undefined";
 const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
-const defaultBaseUrl = isBrowser ? "" : "http://localhost:8080";
-const RAW_API_URL = (envApiUrl && !envApiUrl.includes("localhost:8080") ? envApiUrl : (isBrowser ? "" : (envApiUrl || defaultBaseUrl))).replace(/\/+$/, "");
+const defaultBaseUrl = "http://localhost:8080";
+const RAW_API_URL = (envApiUrl || defaultBaseUrl).replace(/\/+$/, "");
 // Garante URL raiz para chamadas que já utilizam '/api/...' ou '/agendamentos'
 export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
 // URL base da API v1 para uso em clientes REST dedicados

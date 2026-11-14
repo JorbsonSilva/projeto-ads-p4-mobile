@@ -181,20 +181,6 @@ export default function LoginScreen() {
       style={estilos.fundoTotal}
       resizeMode="cover"
     >
-      {/* 1. Cabeçalho Superior Integrado: Fundo translúcido/natural, logotipo ampliado e sem caixas */}
-      <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
-        <View style={estilos.logoContainer}>
-          <Image
-            source={Assets.logo.transparent}
-            style={estilos.logoImg}
-            resizeMode="contain"
-            accessibilityLabel="Logotipo Orienta"
-          />
-        </View>
-        <Text style={estilos.sloganTexto}>Seu futuro com as melhores escolhas.</Text>
-      </SafeAreaView>
-
-      {/* 2. Área Central com Contêiner Flutuante e Fundo de Ondas Naturais */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={estilos.flexTotal}
@@ -205,6 +191,19 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
           bounces={true}
         >
+          {/* Cabeçalho rola junto com o formulário */}
+          <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
+            <View style={estilos.logoContainer}>
+              <Image
+                source={Assets.logo.transparent}
+                style={estilos.logoImg}
+                resizeMode="contain"
+                accessibilityLabel="Logotipo Orienta"
+              />
+            </View>
+            <Text style={estilos.sloganTexto}>Seu futuro com as melhores escolhas.</Text>
+          </SafeAreaView>
+
           <View style={estilos.containerCentralizado}>
             {/* 3. Cartão Branco Curvo Flutuante */}
             <View style={estilos.cartaoBranco}>

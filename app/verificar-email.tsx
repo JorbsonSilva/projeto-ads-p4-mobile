@@ -5,7 +5,7 @@
  * 
  * Especificações implementadas:
  * - Fundo suave orgânico com Assets.backgrounds.verificacao (IMG-020).
- * - Barra superior com botão voltar (Feather arrow-left) e Logotipo oficial transparente (Assets.logo.transparent).
+ * - Barra superior com botão voltar (Feather arrow-left).
  * - Ilustração moderna central do envelope aberto com insígnia @ laranja e raios solares radiantes (IMG-018).
  * - Título institucional "Verifique seu e-mail" e subtítulo destacando o e-mail do parâmetro de navegação.
  * - Seis caixas de código OTP numérico com foco automático, avanço sequencial, retorno ao apagar (Backspace),
@@ -305,7 +305,7 @@ export default function VerificarEmailScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={estilos.containerCentralizado}>
-              {/* Top Bar: Botão Voltar (←) e Logotipo Orienta Centralizado */}
+              {/* Top Bar: Botão Voltar */}
               <View style={estilos.cabecalhoTopo}>
                 <TouchableOpacity
                   onPress={voltarParaCadastro}
@@ -316,17 +316,6 @@ export default function VerificarEmailScreen() {
                 >
                   <Feather name="arrow-left" size={24} color="#0F172A" />
                 </TouchableOpacity>
-
-                <View style={estilos.areaLogo}>
-                  <Image
-                    source={Assets.logo.transparent}
-                    style={estilos.logoImg}
-                    resizeMode="contain"
-                    accessibilityLabel="Logotipo Orienta"
-                  />
-                </View>
-
-                <View style={estilos.espacadorDireita} />
               </View>
 
               {/* Ilustração Central: Envelope de E-mail com insígnia @ e raios solares (IMG-018) */}
@@ -582,17 +571,6 @@ const estilos = StyleSheet.create({
     height: 40,
     justifyContent: "center",
     alignItems: "flex-start",
-  },
-  areaLogo: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoImg: {
-    width: 120,
-    height: 44,
-  },
-  espacadorDireita: {
-    width: 40,
   },
   areaIlustracao: {
     alignItems: "center",

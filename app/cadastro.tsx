@@ -28,8 +28,8 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -42,9 +42,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { API_URL } from "../config/api";
 import { Input, formatCPF, formatDate } from "../components/ui";
 import { Assets } from "../constants/assets";
-import { Theme } from "../constants/theme";
-
-const { width: LARGURA_TELA, height: ALTURA_TELA } = Dimensions.get("window");
 
 export default function CadastroScreen() {
   const [nome, setNome] = useState("");
@@ -175,59 +172,49 @@ export default function CadastroScreen() {
   };
 
   return (
-    <View style={estilos.containerGeral}>
-      {/* 1. Imagem de fundo oficial suave (Assets.backgrounds.cadastro - IMG-020) */}
-      <Image
-        source={Assets.backgrounds.cadastro}
-        style={estilos.fundoAbsoluto}
-        resizeMode="cover"
-      />
-
-      {/* 2. Conteúdo rolável independente com adaptação responsiva */}
-      <SafeAreaView style={estilos.safeArea} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={estilos.flexTotal}
+    <ImageBackground
+      source={Assets.backgrounds.cadastro}
+      style={estilos.fundoTotal}
+      resizeMode="cover"
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={estilos.flexTotal}
+      >
+        <ScrollView
+          contentContainerStyle={estilos.scrollConteudo}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            contentContainerStyle={estilos.scrollConteudo}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={estilos.containerCentralizado}>
-              {/* Top Bar: Botão Voltar e Logotipo Centralizado */}
-              <View style={estilos.cabecalhoTopo}>
-                <TouchableOpacity
-                  onPress={() => router.back()}
-                  style={estilos.btnVoltar}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Voltar"
-                >
-                  <Feather name="arrow-left" size={24} color="#0F172A" />
-                </TouchableOpacity>
+          <SafeAreaView edges={["top"]} style={estilos.areaCabecalho}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={estilos.btnVoltar}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar"
+            >
+              <Feather name="arrow-left" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          </SafeAreaView>
 
-                <View style={estilos.areaLogo}>
-                  <Image
-                    source={Assets.logo.transparent}
-                    style={estilos.logoImg}
-                    resizeMode="contain"
-                    accessibilityLabel="Logotipo Orienta"
-                  />
+          <View style={estilos.containerCentralizado}>
+            <View style={estilos.cartaoBranco}>
+              <View style={estilos.cabecalhoCadastro}>
+                <View style={estilos.textosCabecalho}>
+                  <Text style={estilos.tituloPrincipal}>Crie sua conta</Text>
+                  <Text style={estilos.subtitulo}>
+                    Vamos começar! Preencha seus dados para continuar.
+                  </Text>
                 </View>
-
-                <View style={estilos.espacadorDireita} />
+                <Image
+                  source={Assets.logo.transparent}
+                  style={estilos.logoCadastro}
+                  resizeMode="contain"
+                  accessibilityLabel="Logotipo Orienta"
+                />
               </View>
 
-              {/* Título e Subtítulo */}
-              <View style={estilos.areaTitulos}>
-                <Text style={estilos.tituloPrincipal}>Crie sua conta</Text>
-                <Text style={estilos.subtitulo}>
-                  Vamos começar! Preencha seus dados para continuar.
-                </Text>
-              </View>
-
-              {/* Formulário com os 6 campos idênticos a IMG-012 */}
               <View style={estilos.formulario}>
                 {/* 1. Nome completo */}
                 <Input
@@ -399,48 +386,40 @@ export default function CadastroScreen() {
                 </View>
               </View>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const estilos = StyleSheet.create({
-  containerGeral: {
+  fundoTotal: {
     flex: 1,
-    backgroundColor: "#FDFBF9",
-  },
-  fundoAbsoluto: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: LARGURA_TELA,
-    height: ALTURA_TELA,
-  },
-  safeArea: {
-    flex: 1,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#FDFDFD",
   },
   flexTotal: {
     flex: 1,
   },
   scrollConteudo: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 28,
+    justifyContent: "center",
+    paddingVertical: 18,
   },
   containerCentralizado: {
-    width: "100%",
-    maxWidth: 440,
+    width: "88%",
+    maxWidth: 348,
     alignSelf: "center",
   },
-  cabecalhoTopo: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-    paddingTop: Platform.OS === "android" ? 10 : 4,
+  areaCabecalho: {
+    backgroundColor: "transparent",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingTop: Platform.OS === "android" ? 8 : 4,
+    paddingBottom: 8,
+    paddingHorizontal: 20,
   },
   btnVoltar: {
     width: 40,
@@ -448,50 +427,65 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
     alignItems: "flex-start",
   },
-  areaLogo: {
+  cartaoBranco: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    marginTop: 4,
+    marginBottom: 26,
+    paddingHorizontal: 26,
+    paddingTop: 28,
+    paddingBottom: 26,
+    borderWidth: 1,
+    borderColor: "rgba(226, 232, 240, 0.75)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 26,
+    elevation: 8,
+  },
+  cabecalhoCadastro: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    marginBottom: 16,
   },
-  logoImg: {
-    width: 120,
-    height: 44,
+  logoCadastro: {
+    width: 68,
+    height: 68,
+    marginLeft: 12,
   },
-  espacadorDireita: {
-    width: 40,
-  },
-  areaTitulos: {
-    marginBottom: 20,
+  textosCabecalho: {
+    flex: 1,
   },
   tituloPrincipal: {
-    fontSize: 26,
+    fontSize: 21,
     fontWeight: "800",
     color: "#0F172A",
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   subtitulo: {
-    fontSize: 14,
+    fontSize: 12.5,
     color: "#64748B",
-    marginTop: 4,
-    lineHeight: 20,
+    marginTop: 3,
+    lineHeight: 18,
   },
   formulario: {
-    gap: 12,
+    width: "100%",
   },
   btnCriarContaWrapper: {
-    borderRadius: 26,
+    borderRadius: 24,
     overflow: "hidden",
-    marginTop: 6,
+    marginBottom: 14,
     shadowColor: "#FF6A00",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
-    elevation: 5,
+    elevation: 4,
   },
   btnCriarConta: {
-    height: 52,
+    height: 48,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 26,
+    borderRadius: 24,
   },
   btnCriarContaConteudo: {
     flexDirection: "row",
@@ -507,7 +501,7 @@ const estilos = StyleSheet.create({
   divisorContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 12,
+    marginVertical: 14,
   },
   linhaDivisor: {
     flex: 1,
@@ -526,10 +520,10 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 26,
-    height: 50,
+    borderRadius: 24,
+    height: 46,
     backgroundColor: "#FFFFFF",
-    marginBottom: 16,
+    marginBottom: 18,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -537,12 +531,12 @@ const estilos = StyleSheet.create({
     elevation: 1,
   },
   googleIcon: {
-    width: 20,
-    height: 20,
-    marginRight: 10,
+    width: 18,
+    height: 18,
+    marginRight: 8,
   },
   txtGoogle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "600",
     color: "#1E293B",
   },
@@ -550,7 +544,6 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
     gap: 6,
   },
   txtJaTemConta: {
