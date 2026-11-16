@@ -1,9 +1,9 @@
 /**
  * @file explorar-disciplinas.tsx
  * @description Catálogo Geral de Disciplinas e Áreas de Ensino [ORI-022].
- * Apresenta a árvore de saberes acadêmicos, métricas do catálogo, busca inteligente
- * em tempo real com contador dinâmico, chips horizontais de macro-áreas, seção de disciplinas
- * em alta, modal de ementa com tópicos demandados, integração com a busca de professores
+ * Apresenta as disciplinas e categorias cadastradas, busca inteligente
+ * em tempo real com contador dinâmico, chips horizontais de macro-áreas,
+ * modal com informações da disciplina, integração com a busca de professores
  * e barra de navegação inferior dockada de 5 abas (Persona Aluno - RN-001).
  */
 
@@ -24,7 +24,6 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  CategoriaAgrupada,
   CONFIG_CATEGORIAS,
   obterCatalogoDisciplinas,
   ResultadoCatalogo,
@@ -37,15 +36,12 @@ export default function ExplorarDisciplinas() {
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
-  const [erroCatalogo, setErroCatalogo] = useState<boolean>(false);
   const [catalogo, setCatalogo] = useState<ResultadoCatalogo>({
     categorias: [],
     todasDisciplinas: [],
     resumo: {
       totalDisciplinas: 0,
       totalCategorias: 0,
-      totalProfessores: 0,
-      disciplinasEmAlta: [],
     },
   });
 
@@ -64,9 +60,7 @@ export default function ExplorarDisciplinas() {
     try {
       const resultado = await obterCatalogoDisciplinas();
       setCatalogo(resultado);
-      setErroCatalogo(false);
     } catch (err) {
-      setErroCatalogo(true);
       Alert.alert("Não foi possível carregar o catálogo", getApiErrorMessage(err));
     } finally {
       setCarregando(false);
@@ -211,34 +205,7 @@ export default function ExplorarDisciplinas() {
             />
           }
         >
-          <View
-            style={[
-              estilos.faixaModoSimulacao,
-              {
-                backgroundColor: erroCatalogo ? "#FEF3C7" : "#ECFDF5",
-                borderBottomColor: erroCatalogo ? "#FDE68A" : "#A7F3D0",
-              },
-            ]}
-          >
-            <Ionicons
-              name={erroCatalogo ? "alert-circle-outline" : "checkmark-circle-outline"}
-              size={14}
-              color={erroCatalogo ? "#D97706" : "#059669"}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={[
-                estilos.textoModoSimulacao,
-                { color: erroCatalogo ? "#92400E" : "#065F46" },
-              ]}
-            >
-              {erroCatalogo
-                ? "Não foi possível atualizar o catálogo do servidor"
-                : "Catálogo carregado do servidor"}
-            </Text>
-          </View>
-
-          {/* CARDS DE RESUMO DO CATÁLOGO (3 COLUNAS) */}
+          {/* RESUMO DO CATÁLOGO */}
           <View style={estilos.gridMetricasCatalogo}>
             <View style={estilos.cardMetricaCatalogo}>
               <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "#EFF6FF" }]}>
@@ -256,13 +223,6 @@ export default function ExplorarDisciplinas() {
               <Text style={estilos.labelMetrica}>Macro-Áreas</Text>
             </View>
 
-            <View style={estilos.cardMetricaCatalogo}>
-              <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "#ECFDF5" }]}>
-                <FontAwesome5 name="chalkboard-teacher" size={16} color="#059669" />
-              </View>
-              <Text style={estilos.valorMetrica}>{catalogo.resumo.totalProfessores}+</Text>
-              <Text style={estilos.labelMetrica}>Especialistas</Text>
-            </View>
           </View>
 
           {/* BARRA DE BUSCA EM TEMPO REAL */}
@@ -326,56 +286,6 @@ export default function ExplorarDisciplinas() {
           </ScrollView>
 
           {/* ============================================================== */}
-          {/* SEÇÃO "EM ALTA NO SEMESTRE" (QUANDO SEM BUSCA ESPECÍFICA)      */}
-          {/* ============================================================== */}
-          {busca.trim().length === 0 && categoriaSelecionada === "TODAS" && (
-            <View style={estilos.secaoEmAlta}>
-              <View style={estilos.headerSecao}>
-                <View style={estilos.tituloComIcone}>
-                  <Text style={estilos.iconeFogo}>🔥</Text>
-                  <Text style={estilos.tituloSecao}>Mais Buscadas no Semestre</Text>
-                </View>
-                <Text style={estilos.subtituloSecao}>Alta demanda de monitoria</Text>
-              </View>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={estilos.scrollEmAlta}
-              >
-                {catalogo.resumo.disciplinasEmAlta.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={estilos.cardEmAlta}
-                    onPress={() => setDisciplinaModal(item)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={estilos.topoCardEmAlta}>
-                      <View style={estilos.tagAreaEmAlta}>
-                        <Text style={estilos.textoTagAreaEmAlta}>{item.categoria}</Text>
-                      </View>
-                      <Text style={estilos.precoEmAlta}>R$ {item.mediaPreco.toFixed(0)}/h</Text>
-                    </View>
-
-                    <Text style={estilos.nomeEmAlta} numberOfLines={2}>
-                      {item.nome}
-                    </Text>
-
-                    <Text style={estilos.professoresEmAlta}>
-                      👨‍🏫 {item.totalProfessores} mentores disponíveis
-                    </Text>
-
-                    <View style={estilos.rodapeCardEmAlta}>
-                      <Text style={estilos.linkVerEmenta}>Ver ementa</Text>
-                      <Feather name="arrow-right" size={14} color="#FF5A1F" />
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* ============================================================== */}
           {/* SEÇÕES CATEGORIZADAS DE DISCIPLINAS                            */}
           {/* ============================================================== */}
           {secoesAgrupadas.length === 0 ? (
@@ -410,9 +320,6 @@ export default function ExplorarDisciplinas() {
                         <Text style={estilos.textoBadgeAreaItens}>{itens.length} matérias</Text>
                       </View>
                     </View>
-                    <Text style={estilos.descArea} numberOfLines={1}>
-                      {config.desc}
-                    </Text>
                   </View>
                 </View>
 
@@ -443,7 +350,7 @@ export default function ExplorarDisciplinas() {
                         {disciplina.descricao}
                       </Text>
 
-                      {/* TÓPICOS EM DESTAQUE (CHIPS MENORES) */}
+                      {/* Alguns conteúdos cadastrados para a disciplina */}
                       <View style={estilos.tagsTopicosWrapper}>
                         {disciplina.topicosPopulares.slice(0, 2).map((topico, idx) => (
                           <View key={idx} style={estilos.chipMiniTopico}>
@@ -454,18 +361,6 @@ export default function ExplorarDisciplinas() {
                         ))}
                       </View>
 
-                      {/* RODAPÉ DO CARD: PROFESSORES E PREÇO */}
-                      <View style={estilos.cardDisciplinaFooter}>
-                        <View style={estilos.infoProfessoresMini}>
-                          <FontAwesome5 name="user-graduate" size={12} color="#059669" />
-                          <Text style={estilos.textoProfessoresMini}>
-                            {disciplina.totalProfessores} mentores
-                          </Text>
-                        </View>
-                        <Text style={estilos.textoPrecoMedio}>
-                          a partir de R$ {disciplina.mediaPreco.toFixed(0)}/h
-                        </Text>
-                      </View>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -509,24 +404,7 @@ export default function ExplorarDisciplinas() {
                   <Text style={estilos.labelSecaoModal}>Ementa e Conteúdo Programático</Text>
                   <Text style={estilos.textoDescricaoModal}>{disciplinaModal.descricao}</Text>
 
-                  {/* Métricas Rápidas */}
-                  <View style={estilos.gridMetricasModal}>
-                    <View style={estilos.boxMetricaModal}>
-                      <Text style={estilos.valorMetricaModal}>{disciplinaModal.totalProfessores}</Text>
-                      <Text style={estilos.labelMetricaModal}>Mentores Ativos</Text>
-                    </View>
-                    <View style={estilos.boxMetricaModal}>
-                      <Text style={estilos.valorMetricaModal}>R$ {disciplinaModal.mediaPreco.toFixed(2)}</Text>
-                      <Text style={estilos.labelMetricaModal}>Preço Médio / h</Text>
-                    </View>
-                    <View style={estilos.boxMetricaModal}>
-                      <Text style={estilos.valorMetricaModal}>4.9 ★</Text>
-                      <Text style={estilos.labelMetricaModal}>Avaliação Média</Text>
-                    </View>
-                  </View>
-
-                  {/* Tópicos Mais Solicitados para Mentoria */}
-                  <Text style={estilos.labelSecaoModal}>Tópicos com Maior Demanda</Text>
+                  <Text style={estilos.labelSecaoModal}>Conteúdos cadastrados</Text>
                   <View style={estilos.containerTopicosModal}>
                     {disciplinaModal.topicosPopulares.map((topico, idx) => (
                       <View key={idx} style={estilos.chipTopicoModal}>
@@ -683,20 +561,6 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  faixaModoSimulacao: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
-  },
-  textoModoSimulacao: {
-    fontSize: 11,
-    fontWeight: "600",
-  },
   scrollArea: {
     flex: 1,
   },
@@ -850,97 +714,6 @@ const estilos = StyleSheet.create({
     color: "#F8FAFC",
   },
 
-  // SEÇÃO EM ALTA NO SEMESTRE
-  secaoEmAlta: {
-    marginBottom: 20,
-  },
-  headerSecao: {
-    marginBottom: 10,
-  },
-  tituloComIcone: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconeFogo: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  tituloSecao: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  subtituloSecao: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 1,
-  },
-  scrollEmAlta: {
-    paddingRight: 8,
-    gap: 12,
-  },
-  cardEmAlta: {
-    width: 220,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  topoCardEmAlta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  tagAreaEmAlta: {
-    backgroundColor: "#FFF7ED",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  textoTagAreaEmAlta: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#FF5A1F",
-  },
-  precoEmAlta: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#059669",
-  },
-  nomeEmAlta: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0F172A",
-    lineHeight: 18,
-    marginBottom: 8,
-    minHeight: 36,
-  },
-  professoresEmAlta: {
-    fontSize: 11,
-    color: "#64748B",
-    marginBottom: 12,
-  },
-  rodapeCardEmAlta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    paddingTop: 8,
-  },
-  linkVerEmenta: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FF5A1F",
-  },
-
   // BLOCO DE CATEGORIA
   blocoCategoriaSecao: {
     marginBottom: 24,
@@ -982,12 +755,6 @@ const estilos = StyleSheet.create({
     fontWeight: "600",
     color: "#475569",
   },
-  descArea: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 2,
-  },
-
   // GRADE DE DISCIPLINAS
   gridDisciplinasArea: {
     gap: 10,
@@ -1049,30 +816,6 @@ const estilos = StyleSheet.create({
     color: "#475569",
     fontWeight: "500",
   },
-  cardDisciplinaFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    paddingTop: 8,
-  },
-  infoProfessoresMini: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  textoProfessoresMini: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#059669",
-  },
-  textoPrecoMedio: {
-    fontSize: 11,
-    color: "#94A3B8",
-    fontWeight: "500",
-  },
-
   // ESTADO VAZIO
   containerVazio: {
     backgroundColor: "#FFFFFF",
@@ -1176,31 +919,6 @@ const estilos = StyleSheet.create({
     color: "#475569",
     lineHeight: 20,
     marginBottom: 16,
-  },
-  gridMetricasModal: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  boxMetricaModal: {
-    flex: 1,
-    alignItems: "center",
-  },
-  valorMetricaModal: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  labelMetricaModal: {
-    fontSize: 10,
-    color: "#64748B",
-    marginTop: 2,
-    fontWeight: "600",
   },
   containerTopicosModal: {
     gap: 8,
