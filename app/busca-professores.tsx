@@ -10,12 +10,12 @@
  * - Barra de ordenação ("Mais relevantes", "Menor preço", "Maior preço", "Melhor avaliação") e contador dinâmico de professores
  * - Cards ricos de professores: foto com indicador online, selo verificado, botão de favoritar interativo, estrelas de avaliação, badges de status/modalidade, preço horário destacado e clique navegando para /professor/[id]
  * - Banner institucional de rodapé: "Não encontrou o que procura? Crie uma solicitação personalizada"
- * - Preservação de toda a lógica existente: busca textual, API de saberes, busca por proximidade/raio GPS (Fase 8 / MAP), consentimento LGPD e fallback robusto para DEMO_PROFESSORES.
+ * - Busca autenticada de professores e saberes, proximidade/raio GPS (Fase 8 / MAP) e consentimento LGPD.
  */
 
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -32,7 +32,12 @@ import {
 // Componentes Unificados do Design System (ORI-000 a ORI-003)
 import { Card, Badge, Chip, Button } from "../components/ui";
 import { Theme } from "../constants/theme";
-import { API_URL } from "../config/api";
+import {
+  API_URL,
+  apiFetch,
+  extrairDadosLista,
+  getApiErrorMessage,
+} from "../config/api";
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 
@@ -41,23 +46,29 @@ import TabBarRN001 from "../components/navigation/TabBarRN001";
 // ==========================================
 
 interface Saber {
-  id: number;
+  id: number | null;
   nome: string;
 }
 
 interface Aptidao {
   saber: Saber;
-  precoHora: number;
+  precoHora: number | null;
+}
+
+interface AptidaoResposta {
+  saberId: number | null;
+  saberNome: string | null;
+  precoHora: number | null;
 }
 
 interface ProfessorBusca {
   id: number;
   nome: string;
-  notaMedia?: number;
-  totalAvaliacoes?: number;
-  fotoUrl?: string;
+  notaMedia?: number | null;
+  totalAvaliacoes?: number | null;
+  fotoUrl?: string | null;
   oferecePresencial?: boolean;
-  regiaoAtendimento?: string;
+  regiaoAtendimento?: string | null;
   distanciaAproximadaKm?: number;
   textoProximidade?: string;
   nivelEnsino?: string;
@@ -65,135 +76,29 @@ interface ProfessorBusca {
   aptidoes?: Aptidao[];
 }
 
-// Lista rica de professores demonstrativos para cobrir todas as categorias da IMG-007
-const PROFESSORES_DEMO_EXPANDIDOS: ProfessorBusca[] = [
-  {
-    id: 101,
-    nome: "Prof. Lucas Rocha",
-    notaMedia: 4.9,
-    totalAvaliacoes: 128,
-    fotoUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: true,
-    regiaoAtendimento: "Campus Central / Online",
-    distanciaAproximadaKm: 2.4,
-    textoProximidade: "A 2,4 km de você",
-    nivelEnsino: "Superior",
-    disponibilidade: "Hoje",
-    aptidoes: [
-      { saber: { id: 1, nome: "Matemática" }, precoHora: 40.0 },
-      { saber: { id: 5, nome: "Cálculo Diferencial" }, precoHora: 50.0 },
-    ],
-  },
-  {
-    id: 102,
-    nome: "Profa. Ana Clara",
-    notaMedia: 4.8,
-    totalAvaliacoes: 96,
-    fotoUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: true,
-    regiaoAtendimento: "Zona Sul / Online",
-    distanciaAproximadaKm: 3.8,
-    textoProximidade: "A 3,8 km de você",
-    nivelEnsino: "Ensino Médio",
-    disponibilidade: "Hoje",
-    aptidoes: [
-      { saber: { id: 4, nome: "Biologia" }, precoHora: 45.0 },
-      { saber: { id: 7, nome: "Ciências Naturais" }, precoHora: 45.0 },
-    ],
-  },
-  {
-    id: 103,
-    nome: "Prof. Rafael Lima",
-    notaMedia: 4.9,
-    totalAvaliacoes: 152,
-    fotoUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: false,
-    regiaoAtendimento: "Sala Virtual Exclusiva",
-    distanciaAproximadaKm: 0,
-    textoProximidade: "100% Online",
-    nivelEnsino: "Superior",
-    disponibilidade: "Hoje",
-    aptidoes: [
-      { saber: { id: 2, nome: "Programação" }, precoHora: 50.0 },
-      { saber: { id: 8, nome: "Python & Java" }, precoHora: 55.0 },
-    ],
-  },
-  {
-    id: 104,
-    nome: "Profa. Mariana Costa",
-    notaMedia: 5.0,
-    totalAvaliacoes: 84,
-    fotoUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: true,
-    regiaoAtendimento: "Boa Viagem / Online",
-    distanciaAproximadaKm: 4.5,
-    textoProximidade: "A 4,5 km de você",
-    nivelEnsino: "Preparatório / Concursos",
-    disponibilidade: "Amanhã",
-    aptidoes: [
-      { saber: { id: 9, nome: "Redação" }, precoHora: 60.0 },
-      { saber: { id: 10, nome: "Gramática ENEM" }, precoHora: 55.0 },
-    ],
-  },
-  {
-    id: 105,
-    nome: "Prof. Gabriel Torres",
-    notaMedia: 4.7,
-    totalAvaliacoes: 62,
-    fotoUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: true,
-    regiaoAtendimento: "Centro / Online",
-    distanciaAproximadaKm: 1.8,
-    textoProximidade: "A 1,8 km de você",
-    nivelEnsino: "Ensino Médio",
-    disponibilidade: "Hoje",
-    aptidoes: [
-      { saber: { id: 3, nome: "Física" }, precoHora: 50.0 },
-      { saber: { id: 11, nome: "Física Mecânica" }, precoHora: 55.0 },
-    ],
-  },
-  {
-    id: 106,
-    nome: "Profa. Beatriz Silveira",
-    notaMedia: 4.9,
-    totalAvaliacoes: 110,
-    fotoUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: false,
-    regiaoAtendimento: "Sala Virtual Exclusiva",
-    distanciaAproximadaKm: 0,
-    textoProximidade: "100% Online",
-    nivelEnsino: "Ensino Médio",
-    disponibilidade: "Esta semana",
-    aptidoes: [
-      { saber: { id: 12, nome: "Química" }, precoHora: 45.0 },
-      { saber: { id: 13, nome: "Química Orgânica" }, precoHora: 50.0 },
-    ],
-  },
-  {
-    id: 107,
-    nome: "Prof. David Miller",
-    notaMedia: 4.9,
-    totalAvaliacoes: 95,
-    fotoUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200&auto=format&fit=crop&q=80",
-    oferecePresencial: false,
-    regiaoAtendimento: "Sala Virtual Exclusiva",
-    distanciaAproximadaKm: 0,
-    textoProximidade: "100% Online",
-    nivelEnsino: "Todos os níveis",
-    disponibilidade: "Hoje",
-    aptidoes: [
-      { saber: { id: 14, nome: "Inglês" }, precoHora: 65.0 },
-      { saber: { id: 15, nome: "Conversação TOEFL" }, precoHora: 70.0 },
-    ],
-  },
-];
+interface ProfessorBuscaResposta extends Omit<ProfessorBusca, "aptidoes"> {
+  aptidoes?: AptidaoResposta[] | null;
+}
+
+function normalizarProfessor(professor: ProfessorBuscaResposta): ProfessorBusca {
+  return {
+    ...professor,
+    aptidoes: professor.aptidoes?.map((aptidao) => ({
+      saber: {
+        id: aptidao.saberId,
+        nome: aptidao.saberNome ?? "",
+      },
+      precoHora: aptidao.precoHora,
+    })) ?? [],
+  };
+}
 
 // ==========================================
 // 2. COMPONENTE PRINCIPAL
 // ==========================================
 
 export default function BuscaProfessores() {
-  const { usuarioId, carregandoAuth } = useAuth() as any;
+  const { token, carregandoAuth } = useAuth();
 
   // Captura parâmetro de rota enviado pela Home (ex: categoria=Matemática)
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
@@ -201,30 +106,17 @@ export default function BuscaProfessores() {
   // ==========================================
   // ESTADOS DE DADOS
   // ==========================================
-  const [professoresBanco, setProfessoresBanco] = useState<ProfessorBusca[]>(
-    PROFESSORES_DEMO_EXPANDIDOS,
-  );
-  const [professoresFiltrados, setProfessoresFiltrados] = useState<
-    ProfessorBusca[]
-  >(PROFESSORES_DEMO_EXPANDIDOS);
-  const [saberes, setSaberes] = useState<string[]>([
-    "Todas as matérias",
-    "Matemática",
-    "Física",
-    "Programação",
-    "Redação",
-    "Química",
-    "Biologia",
-    "Inglês",
-  ]);
-  const [carregando, setCarregando] = useState(false);
+  const [professoresBanco, setProfessoresBanco] = useState<ProfessorBusca[]>([]);
+  const [professoresFiltrados, setProfessoresFiltrados] = useState<ProfessorBusca[]>([]);
+  const [saberes, setSaberes] = useState<string[]>(["Todas as matérias"]);
+  const [carregando, setCarregando] = useState(true);
+  const [erroBusca, setErroBusca] = useState<string | null>(null);
   const [favoritos, setFavoritos] = useState<Record<number, boolean>>({});
 
   // Paginação
-  const [paginaAtual, setPaginaAtual] = useState(1);
-  const [paginaMaximaVisivel, setPaginaMaximaVisivel] = useState(1);
-  const [temMaisPaginas, setTemMaisPaginas] = useState(true);
   const PAGE_SIZE = 10;
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const scrollConteudoRef = useRef<ScrollView>(null);
 
   // ==========================================
   // ESTADOS DE FILTRO
@@ -324,16 +216,29 @@ export default function BuscaProfessores() {
    * Dispara a requisição para buscar os professores no backend Spring Boot
    */
   const buscarProfessoresPagina = useCallback(
-    async (page: number) => {
+    async (signal?: AbortSignal) => {
+      if (carregandoAuth) return;
+      if (!token) {
+        setProfessoresBanco([]);
+        setErroBusca("Sua sessão expirou. Entre novamente.");
+        setCarregando(false);
+        return;
+      }
+
       setCarregando(true);
+      setErroBusca(null);
 
       try {
         const params = new URLSearchParams();
         if (filtroFormato && filtroFormato !== "TODAS") params.append("modalidade", filtroFormato);
-        if (filtroMateria && filtroMateria !== "Todas as matérias") params.append("termo", filtroMateria);
-        if (busca.trim()) params.append("termo", busca.trim());
+        const termoBusca = busca.trim() || (
+          filtroMateria !== "Todas as matérias" && filtroMateria !== "Todas"
+            ? filtroMateria
+            : ""
+        );
+        if (termoBusca) params.append("termo", termoBusca);
         if (regiaoBusca.trim()) params.append("regiao", regiaoBusca.trim());
-        if (filtroPrecoMax) params.append("precoMax", filtroPrecoMax.toString());
+        if (filtroPrecoMax < 150) params.append("precoMax", filtroPrecoMax.toString());
 
         if (coordenadasAluno && filtroFormato === "PRESENCIAL") {
           params.append("latitude", coordenadasAluno.latitude.toString());
@@ -342,39 +247,30 @@ export default function BuscaProfessores() {
         }
 
         const urlBusca = `${API_URL}/api/v1/usuarios/professores/busca?${params.toString()}`;
-        let resProfs = await fetch(urlBusca);
-
-        if (!resProfs.ok && usuarioId) {
-          resProfs = await fetch(`${API_URL}/api/usuarios/professores/destaque/${usuarioId}`);
-        }
-
-        if (resProfs.ok) {
-          const json = await resProfs.json();
-          const dadosProfs: ProfessorBusca[] = Array.isArray(json)
-            ? json
-            : json.dados || json.data || [];
-
-          if (dadosProfs.length > 0) {
-            setProfessoresBanco(dadosProfs);
-            setProfessoresFiltrados(dadosProfs);
-          } else {
-            setProfessoresBanco(PROFESSORES_DEMO_EXPANDIDOS);
-            setProfessoresFiltrados(PROFESSORES_DEMO_EXPANDIDOS);
-          }
-          setPaginaAtual(page);
-          setPaginaMaximaVisivel(Math.max(1, Math.ceil((dadosProfs.length || PROFESSORES_DEMO_EXPANDIDOS.length) / PAGE_SIZE)));
-        } else {
-          setProfessoresBanco(PROFESSORES_DEMO_EXPANDIDOS);
-          setProfessoresFiltrados(PROFESSORES_DEMO_EXPANDIDOS);
-        }
-      } catch {
-        setProfessoresBanco(PROFESSORES_DEMO_EXPANDIDOS);
-        setProfessoresFiltrados(PROFESSORES_DEMO_EXPANDIDOS);
+        const resProfs = await apiFetch(urlBusca, { signal });
+        const resposta = await resProfs.json();
+        const dadosProfs = extrairDadosLista<ProfessorBuscaResposta>(resposta)
+          .map(normalizarProfessor);
+        setProfessoresBanco(dadosProfs);
+      } catch (error) {
+        if (signal?.aborted) return;
+        setProfessoresBanco([]);
+        setErroBusca(getApiErrorMessage(error));
       } finally {
-        setCarregando(false);
+        if (!signal?.aborted) setCarregando(false);
       }
     },
-    [usuarioId, filtroFormato, filtroMateria, busca, regiaoBusca, filtroPrecoMax, coordenadasAluno, raioKm],
+    [
+      token,
+      carregandoAuth,
+      filtroFormato,
+      filtroMateria,
+      busca,
+      regiaoBusca,
+      filtroPrecoMax,
+      coordenadasAluno,
+      raioKm,
+    ],
   );
 
   const handleFecharBusca = () => {
@@ -385,33 +281,43 @@ export default function BuscaProfessores() {
     }
   };
 
-  // Efeito 1: Busca inicial no banco / saberes
+  // Carrega o catálogo de saberes autenticado no backend.
   useEffect(() => {
+    if (carregandoAuth || !token) return;
+    const controller = new AbortController();
     let cancelado = false;
 
-    const buscarDadosIniciais = async () => {
-      setCarregando(true);
+    const buscarSaberes = async () => {
       try {
-        const resSaberes = await fetch(`${API_URL}/api/saberes`);
-        if (!cancelado && resSaberes.ok) {
-          const dadosSaberes: Saber[] = await resSaberes.json();
+        const resSaberes = await apiFetch(`${API_URL}/api/v1/saberes`, {
+          signal: controller.signal,
+        });
+        const resposta = await resSaberes.json();
+        if (!cancelado) {
+          const dadosSaberes = extrairDadosLista<Saber>(resposta);
           const nomesSaberes = dadosSaberes.map((s) => s.nome);
           setSaberes(["Todas as matérias", ...nomesSaberes]);
         }
-      } catch {
-        // Fallback silencioso mantendo saberes padrões
+      } catch (error) {
+        if (!cancelado) setErroBusca(getApiErrorMessage(error));
       }
-
-      await buscarProfessoresPagina(1);
-      if (!cancelado) setCarregando(false);
     };
 
-    buscarDadosIniciais();
+    void buscarSaberes();
 
     return () => {
       cancelado = true;
+      controller.abort();
     };
-  }, [buscarProfessoresPagina]);
+  }, [carregandoAuth, token]);
+
+  // Busca novamente quando a sessão ou os filtros mudam.
+  useEffect(() => {
+    if (carregandoAuth) return;
+    const controller = new AbortController();
+    void buscarProfessoresPagina(controller.signal);
+    return () => controller.abort();
+  }, [buscarProfessoresPagina, carregandoAuth]);
 
   // Efeito 2: Motor de filtragem e ordenação client-side
   useEffect(() => {
@@ -437,7 +343,7 @@ export default function BuscaProfessores() {
 
     // 3. Filtro por Formato (Online / Presencial)
     if (filtroFormato === "ONLINE") {
-      resultado = resultado.filter((prof) => !prof.oferecePresencial || prof.regiaoAtendimento?.includes("Online"));
+      resultado = resultado.filter((prof) => prof.oferecePresencial === false);
     } else if (filtroFormato === "PRESENCIAL") {
       resultado = resultado.filter((prof) => prof.oferecePresencial);
     }
@@ -459,22 +365,29 @@ export default function BuscaProfessores() {
     }
 
     // 6. Filtro por Preço Máximo
-    resultado = resultado.filter((prof) => {
-      const menorPreco = Math.min(...(prof.aptidoes?.map((a) => a.precoHora) || [40]));
-      return menorPreco <= filtroPrecoMax;
-    });
+    if (filtroPrecoMax < 150) {
+      resultado = resultado.filter((prof) =>
+        (prof.aptidoes ?? []).some(
+          (aptidao) => aptidao.precoHora !== null && aptidao.precoHora <= filtroPrecoMax,
+        ),
+      );
+    }
 
     // 7. Ordenação
     if (ordenacao === "maisBarato") {
       resultado.sort((a, b) => {
-        const precoA = a.aptidoes?.[0]?.precoHora || 0;
-        const precoB = b.aptidoes?.[0]?.precoHora || 0;
+        const precoA = a.aptidoes?.[0]?.precoHora;
+        const precoB = b.aptidoes?.[0]?.precoHora;
+        if (precoA === null || precoA === undefined) return precoB == null ? 0 : 1;
+        if (precoB === null || precoB === undefined) return -1;
         return precoA - precoB;
       });
     } else if (ordenacao === "maisCaro") {
       resultado.sort((a, b) => {
-        const precoA = a.aptidoes?.[0]?.precoHora || 0;
-        const precoB = b.aptidoes?.[0]?.precoHora || 0;
+        const precoA = a.aptidoes?.[0]?.precoHora;
+        const precoB = b.aptidoes?.[0]?.precoHora;
+        if (precoA === null || precoA === undefined) return precoB == null ? 0 : 1;
+        if (precoB === null || precoB === undefined) return -1;
         return precoB - precoA;
       });
     } else if (ordenacao === "melhorAvaliado") {
@@ -482,6 +395,7 @@ export default function BuscaProfessores() {
     }
 
     setProfessoresFiltrados(resultado);
+    setPaginaAtual(1);
   }, [
     busca,
     filtroMateria,
@@ -521,6 +435,26 @@ export default function BuscaProfessores() {
     setFiltroNivelEnsino("Todos");
     setFiltroPrecoMax(150);
     setOrdenacao("maisRelevantes");
+  };
+
+  const totalPaginas = Math.max(1, Math.ceil(professoresFiltrados.length / PAGE_SIZE));
+  const primeiraPaginaVisivel = Math.max(
+    1,
+    Math.min(paginaAtual - 2, totalPaginas - 4),
+  );
+  const paginasVisiveis = Array.from(
+    { length: Math.min(totalPaginas, 5) },
+    (_, indice) => primeiraPaginaVisivel + indice,
+  );
+  const inicioPagina = (paginaAtual - 1) * PAGE_SIZE;
+  const professoresDaPagina = professoresFiltrados.slice(
+    inicioPagina,
+    inicioPagina + PAGE_SIZE,
+  );
+
+  const mudarPagina = (pagina: number) => {
+    setPaginaAtual(pagina);
+    scrollConteudoRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   return (
@@ -568,22 +502,32 @@ export default function BuscaProfessores() {
       </View>
 
       <ScrollView
+        ref={scrollConteudoRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={estilos.scrollConteudo}
       >
-        {/* Atalho Oficial para Busca Presencial com Mapa (ORI-009B) */}
+        {/* Atalho para busca presencial */}
         <TouchableOpacity
           style={estilos.atalhoBuscaPresencial}
           onPress={() => router.push("/busca-presencial" as any)}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Buscar professores para aulas presenciais perto de você"
         >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="map" size={16} color="#FF6B1A" style={{ marginRight: 8 }} />
-            <Text style={estilos.textoAtalhoPresencial}>
-              Ver Busca Presencial no Mapa (ORI-009B)
+          <View style={estilos.iconeAtalhoPresencial}>
+            <Ionicons name="map-outline" size={19} color="#FF5A1F" />
+          </View>
+          <View style={estilos.conteudoAtalhoPresencial}>
+            <Text style={estilos.tituloAtalhoPresencial}>
+              Aulas presenciais
+            </Text>
+            <Text style={estilos.descricaoAtalhoPresencial}>
+              Encontre professores perto de você
             </Text>
           </View>
-          <Feather name="arrow-right" size={16} color="#FF6B1A" />
+          <View style={estilos.iconeSetaAtalho}>
+            <Feather name="arrow-right" size={16} color="#FF5A1F" />
+          </View>
         </TouchableOpacity>
 
         {/* ==================================================== */}
@@ -787,7 +731,7 @@ export default function BuscaProfessores() {
         {/* ==================================================== */}
         <View style={estilos.barraContadorEOrdenacao}>
           <Text style={estilos.textoContadorProfessores}>
-            {carregando
+            {carregandoAuth || carregando
               ? "Buscando professores..."
               : `${professoresFiltrados.length} professores encontrados`}
           </Text>
@@ -814,10 +758,25 @@ export default function BuscaProfessores() {
         {/* 5. LISTA DE CARDS DE PROFESSORES (CARD OFICIAL ORI-003) */}
         {/* ==================================================== */}
         <View style={estilos.listaProfessoresContainer}>
-          {carregando ? (
+          {carregandoAuth || carregando ? (
             <View style={estilos.loadingContainer}>
               <ActivityIndicator size="large" color="#FF5A1F" />
               <Text style={estilos.textoCarregando}>Carregando professores...</Text>
+            </View>
+          ) : erroBusca ? (
+            <View style={estilos.containerVazio}>
+              <View style={estilos.iconeVazioWrapper}>
+                <Feather name="alert-circle" size={32} color="#DC2626" />
+              </View>
+              <Text style={estilos.tituloVazio}>Não foi possível carregar os professores</Text>
+              <Text style={estilos.descricaoVazio}>{erroBusca}</Text>
+              <TouchableOpacity
+                style={estilos.botaoLimparVazio}
+                onPress={() => void buscarProfessoresPagina()}
+                disabled={!token}
+              >
+                <Text style={estilos.textoBotaoLimparVazio}>Tentar novamente</Text>
+              </TouchableOpacity>
             </View>
           ) : professoresFiltrados.length === 0 ? (
             <View style={estilos.containerVazio}>
@@ -833,11 +792,12 @@ export default function BuscaProfessores() {
               </TouchableOpacity>
             </View>
           ) : (
-            professoresFiltrados.map((prof) => {
-              const precoFormatado = (
-                prof.aptidoes?.[0]?.precoHora || 40
-              ).toFixed(2).replace(".", ",");
-              const notaFormatada = (prof.notaMedia || 4.9).toFixed(1).replace(".", ",");
+            professoresDaPagina.map((prof) => {
+              const preco = prof.aptidoes?.find(
+                (aptidao) => aptidao.precoHora !== null,
+              )?.precoHora;
+              const precoFormatado = preco?.toFixed(2).replace(".", ",");
+              const notaFormatada = prof.notaMedia?.toFixed(1).replace(".", ",");
               const ehFavorito = !!favoritos[prof.id];
 
               return (
@@ -851,13 +811,16 @@ export default function BuscaProfessores() {
                   <View style={estilos.cardCorpoPrincipal}>
                     {/* Avatar com status online verde */}
                     <View style={estilos.avatarContainer}>
-                      <Image
-                        source={{
-                          uri: prof.fotoUrl || `https://i.pravatar.cc/150?u=${prof.id}`,
-                        }}
-                        style={estilos.avatarImagem}
-                      />
-                      <View style={estilos.indicadorOnlineVerde} />
+                      {prof.fotoUrl ? (
+                        <Image
+                          source={{ uri: prof.fotoUrl }}
+                          style={estilos.avatarImagem}
+                        />
+                      ) : (
+                        <View style={[estilos.avatarImagem, estilos.avatarSemFoto]}>
+                          <Feather name="user" size={26} color="#94A3B8" />
+                        </View>
+                      )}
                     </View>
 
                     {/* Informações centrais */}
@@ -895,58 +858,125 @@ export default function BuscaProfessores() {
 
                       {/* Linha 2: Matéria lecionada */}
                       <Text style={estilos.textoEspecialidade} numberOfLines={1}>
-                        {prof.aptidoes?.[0]?.saber?.nome || "Matemática"}
+                        {prof.aptidoes?.[0]?.saber?.nome || "Especialidade não informada"}
                       </Text>
 
                       {/* Linha 3: Avaliação com estrelas */}
-                      <View style={estilos.linhaAvaliacao}>
-                        <Ionicons name="star" size={14} color="#F59E0B" />
-                        <Text style={estilos.textoNotaMedia}>
-                          {notaFormatada}{" "}
-                          <Text style={estilos.textoTotalAvaliacoes}>
-                            ({prof.totalAvaliacoes || 128} avaliações)
+                      {notaFormatada ? (
+                        <View style={estilos.linhaAvaliacao}>
+                          <Ionicons name="star" size={14} color="#F59E0B" />
+                          <Text style={estilos.textoNotaMedia}>
+                            {notaFormatada}{" "}
+                            <Text style={estilos.textoTotalAvaliacoes}>
+                              ({prof.totalAvaliacoes ?? 0} avaliações)
+                            </Text>
                           </Text>
-                        </Text>
-                      </View>
+                        </View>
+                      ) : (
+                        <Text style={estilos.textoTotalAvaliacoes}>Sem avaliações</Text>
+                      )}
 
                       {/* Linha 4: Badges de status e modalidade */}
                       <View style={estilos.grupoBadges}>
-                        <Badge
-                          variant="success"
-                          size="sm"
-                          dot
-                          label="Disponível hoje"
-                        />
-                        {prof.oferecePresencial ? (
+                        {prof.oferecePresencial === true ? (
                           <Badge
                             variant="info"
                             size="sm"
                             icon={<Feather name="map-pin" size={10} color="#0284C7" />}
                             label={prof.textoProximidade || prof.regiaoAtendimento || "Presencial"}
                           />
-                        ) : (
+                        ) : prof.oferecePresencial === false ? (
                           <Badge
                             variant="neutral"
                             size="sm"
                             icon={<Feather name="monitor" size={10} color="#475569" />}
-                            label="100% Online"
+                            label="Online"
                           />
-                        )}
+                        ) : null}
                       </View>
                     </View>
                   </View>
 
                   {/* Linha Inferior: Preço em destaque */}
                   <View style={estilos.linhaPrecoRodape}>
-                    <Text style={estilos.textoRotuloPreco}>A partir de</Text>
-                    <View style={estilos.grupoPrecoValor}>
-                      <Text style={estilos.textoValorPreco}>R$ {precoFormatado}</Text>
-                      <Text style={estilos.textoSufixoHora}>/h</Text>
-                    </View>
+                    {precoFormatado ? (
+                      <>
+                        <Text style={estilos.textoRotuloPreco}>A partir de</Text>
+                        <View style={estilos.grupoPrecoValor}>
+                          <Text style={estilos.textoValorPreco}>R$ {precoFormatado}</Text>
+                          <Text style={estilos.textoSufixoHora}>/h</Text>
+                        </View>
+                      </>
+                    ) : (
+                      <Text style={estilos.textoRotuloPreco}>Preço não informado</Text>
+                    )}
                   </View>
                 </Card>
               );
             })
+          )}
+
+          {!carregandoAuth && !carregando && !erroBusca && totalPaginas > 1 && (
+            <View style={estilos.containerPaginacao}>
+              <Text style={estilos.textoResumoPaginacao}>
+                Exibindo {inicioPagina + 1} a{" "}
+                {Math.min(inicioPagina + PAGE_SIZE, professoresFiltrados.length)} de{" "}
+                {professoresFiltrados.length} professores
+              </Text>
+              <View style={estilos.controlesPaginacao}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Página anterior"
+                  disabled={paginaAtual === 1}
+                  onPress={() => mudarPagina(Math.max(1, paginaAtual - 1))}
+                  style={[
+                    estilos.botaoPagina,
+                    paginaAtual === 1 && estilos.botaoPaginaDesativado,
+                  ]}
+                >
+                  <Feather name="chevron-left" size={18} color="#475569" />
+                </TouchableOpacity>
+                {paginasVisiveis.map((pagina) => {
+                  const ativa = pagina === paginaAtual;
+                  return (
+                    <TouchableOpacity
+                      key={pagina}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Página ${pagina}`}
+                      accessibilityState={{ selected: ativa }}
+                      onPress={() => mudarPagina(pagina)}
+                      style={[
+                        estilos.botaoPagina,
+                        ativa && estilos.botaoPaginaAtivo,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          estilos.textoPagina,
+                          ativa && estilos.textoPaginaAtivo,
+                        ]}
+                      >
+                        {pagina}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Próxima página"
+                  disabled={paginaAtual === totalPaginas}
+                  onPress={() =>
+                    mudarPagina(Math.min(totalPaginas, paginaAtual + 1))
+                  }
+                  style={[
+                    estilos.botaoPagina,
+                    paginaAtual === totalPaginas && estilos.botaoPaginaDesativado,
+                  ]}
+                >
+                  <Feather name="chevron-right" size={18} color="#475569" />
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
 
           {/* ==================================================== */}
@@ -1494,6 +1524,46 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     fontWeight: "500",
   },
+  containerPaginacao: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 14,
+  },
+  textoResumoPaginacao: {
+    fontSize: 12,
+    color: "#64748B",
+  },
+  controlesPaginacao: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  botaoPagina: {
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  botaoPaginaAtivo: {
+    borderColor: "#FF5A1F",
+    backgroundColor: "#FF5A1F",
+  },
+  botaoPaginaDesativado: {
+    opacity: 0.4,
+  },
+  textoPagina: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  textoPaginaAtivo: {
+    color: "#FFFFFF",
+  },
 
   // Estado Vazio
   containerVazio: {
@@ -1560,6 +1630,10 @@ const estilos = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     backgroundColor: "#E2E8F0",
+  },
+  avatarSemFoto: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   indicadorOnlineVerde: {
     position: "absolute",
@@ -1815,20 +1889,44 @@ const estilos = StyleSheet.create({
   atalhoBuscaPresencial: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#FFF7ED",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#FDBA74",
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderColor: "#E2E8F0",
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 8,
+    padding: 12,
   },
-  textoAtalhoPresencial: {
-    fontSize: 13,
+  iconeAtalhoPresencial: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: "#FFF1E8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  conteudoAtalhoPresencial: {
+    flex: 1,
+  },
+  tituloAtalhoPresencial: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#C2410C",
+    color: "#0F172A",
+  },
+  descricaoAtalhoPresencial: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 3,
+  },
+  iconeSetaAtalho: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FFF7ED",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
   },
 });

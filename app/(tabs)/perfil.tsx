@@ -286,7 +286,7 @@ export default function PerfilScreen() {
               personaAtiva === "Aluno" && estilos.textoAlternadorAtivo,
             ]}
           >
-            🎓 Aluno (IMG-016)
+            🎓 Aluno
           </Text>
         </TouchableOpacity>
 
@@ -307,7 +307,7 @@ export default function PerfilScreen() {
               personaAtiva === "Professor" && estilos.textoAlternadorAtivo,
             ]}
           >
-            👨‍🏫 Professor (IMG-017)
+            👨‍🏫 Professor
           </Text>
         </TouchableOpacity>
       </View>

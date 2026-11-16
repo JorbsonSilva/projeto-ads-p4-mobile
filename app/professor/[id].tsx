@@ -6,14 +6,14 @@
  * Funcionalidades:
  * - Header superior com botão voltar, favoritar com estado interativo e compartilhar
  * - Hero do Mentor com foto grande, dot online, selo verificado, formação acadêmica e modalidade
- * - Grid de 3 métricas de alto impacto (Alunos atendidos, Taxa de aprovação, Avaliação média)
+ * - Métricas do perfil público (disciplinas, modalidades e avaliações)
  * - Cards comparativos de modalidade (Online com tag "Mais escolhida" vs Presencial)
  * - Grade de disponibilidade semanal interativa (dias da semana e slots de horários clicáveis)
  * - Tags das disciplinas lecionadas
  * - Biografia e metodologia pedagógica
  * - Avaliações recentes de alunos
  * - Barra de ação fixa no rodapé (Sticky Action Footer) com preço dinâmico e botão "Agendar aula"
- * - Serviço híbrido resiliente com fallback mocado oficial e banner de simulação offline
+ * - Dados do perfil público carregados da API autenticada
  */
 
 import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -23,7 +23,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,57 +32,66 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  obterPerfilProfessorComFallback,
+  obterPerfilProfessor,
   PerfilProfessorPublico,
-  ResultadoPerfilProfessor,
 } from "../../services/professorService";
-
-const PROFESSOR_INICIAL: PerfilProfessorPublico = {
-  id: 0,
-  nome: "Carregando...",
-  tituloAcademico: "",
-  fotoUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400",
-  online: false,
-  verificado: false,
-  cidade: "",
-  notaMedia: 5.0,
-  totalAvaliacoes: 0,
-  alunosAtendidos: 0,
-  taxaAprovacao: 100,
-  bio: "",
-  precoOnline: 0,
-  precoPresencial: 0,
-  materias: [],
-  disponibilidadeSemanal: [],
-  avaliacoesRecentes: [],
-};
+import { getApiErrorMessage } from "../../config/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
+  const { token, carregandoAuth } = useAuth();
 
-  const [professor, setProfessor] = useState<PerfilProfessorPublico>(PROFESSOR_INICIAL);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
+  const [professor, setProfessor] = useState<PerfilProfessorPublico | null>(null);
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true);
+  const [erroPerfil, setErroPerfil] = useState<string | null>(null);
   const [favoritado, setFavoritado] = useState<boolean>(false);
 
   // Seleção de Modalidade (ONLINE vs PRESENCIAL)
   const [modalidade, setModalidade] = useState<"ONLINE" | "PRESENCIAL">("ONLINE");
 
-  const carregarPerfil = useCallback(async () => {
-    try {
-      const professorId = Array.isArray(id) ? id[0] : id || "101";
-      const res: ResultadoPerfilProfessor = await obterPerfilProfessorComFallback(professorId);
-      if (res.professor) {
-        setProfessor(res.professor);
-      }
-      setIsSimulado(res.isSimulado);
-    } catch {
-      setIsSimulado(false);
+  const carregarPerfil = useCallback(async (signal?: AbortSignal) => {
+    if (carregandoAuth) return;
+    if (!token) {
+      setErroPerfil("Sua sessão expirou. Entre novamente.");
+      setCarregandoPerfil(false);
+      return;
     }
-  }, [id]);
+
+    const professorId = Array.isArray(id) ? id[0] : id;
+    if (!professorId || !/^\d+$/.test(professorId)) {
+      setErroPerfil("Identificador de professor inválido.");
+      setCarregandoPerfil(false);
+      return;
+    }
+
+    setCarregandoPerfil(true);
+    setErroPerfil(null);
+    try {
+      const resultado = await obterPerfilProfessor(professorId, signal);
+      if (!signal?.aborted) {
+        setProfessor(resultado);
+        setModalidade(
+          resultado.aceitaOnline || !resultado.oferecePresencial
+            ? "ONLINE"
+            : "PRESENCIAL",
+        );
+      }
+    } catch (error) {
+      if (!signal?.aborted) {
+        setProfessor(null);
+        setErroPerfil(getApiErrorMessage(error));
+      }
+    } finally {
+      if (!signal?.aborted) setCarregandoPerfil(false);
+    }
+  }, [id, token, carregandoAuth]);
 
   useEffect(() => {
-    carregarPerfil();
+    const controller = new AbortController();
+    void carregarPerfil(controller.signal);
+    return () => controller.abort();
   }, [carregarPerfil]);
 
   const toggleFavorito = () => {
@@ -106,19 +114,38 @@ export default function PerfilProfessorScreen() {
     router.push("/marcar-aula" as any);
   };
 
-  if (!professor) {
+  if (carregandoAuth || carregandoPerfil) {
     return (
       <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
-        <Feather name="alert-circle" size={48} color="#94A3B8" />
-        <Text style={estilos.textoVazio}>Professor não encontrado</Text>
-        <TouchableOpacity style={estilos.botaoVoltar} onPress={() => router.back()}>
-          <Text style={estilos.textoBotaoVoltar}>Voltar</Text>
+        <ActivityIndicator size="large" color="#FF5A1F" />
+        <Text style={estilos.textoLoading}>Carregando perfil do professor...</Text>
+      </View>
+    );
+  }
+
+  if (erroPerfil || !professor) {
+    return (
+      <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
+        <Feather name="alert-circle" size={48} color="#DC2626" />
+        <Text style={estilos.textoVazio}>Não foi possível carregar o perfil</Text>
+        <Text style={estilos.textoErroPerfil}>
+          {erroPerfil ?? "Professor não encontrado."}
+        </Text>
+        <TouchableOpacity style={estilos.botaoVoltar} onPress={() => void carregarPerfil()}>
+          <Text style={estilos.textoBotaoVoltar}>Tentar novamente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={estilos.linkVoltar}>Voltar à busca</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   const precoAtual = modalidade === "ONLINE" ? professor.precoOnline : professor.precoPresencial;
+  const totalModalidades = Number(professor.aceitaOnline) + Number(professor.oferecePresencial);
+  const avaliacaoArredondada = professor.notaMedia === null
+    ? 0
+    : Math.round(professor.notaMedia);
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
@@ -174,7 +201,13 @@ export default function PerfilProfessorScreen() {
         <View style={estilos.heroCard}>
           {/* Avatar com Dot Online */}
           <View style={estilos.avatarContainer}>
-            <Image source={{ uri: professor.fotoUrl }} style={estilos.avatarFoto} />
+            {professor.fotoUrl ? (
+              <Image source={{ uri: professor.fotoUrl }} style={estilos.avatarFoto} />
+            ) : (
+              <View style={[estilos.avatarFoto, estilos.avatarSemFoto]}>
+                <Feather name="user" size={36} color="#94A3B8" />
+              </View>
+            )}
             {professor.online && <View style={estilos.dotOnlineVerde} />}
           </View>
 
@@ -192,72 +225,71 @@ export default function PerfilProfessorScreen() {
           </View>
 
           {/* Título Acadêmico / Formação */}
-          <Text style={estilos.tituloAcademico}>{professor.tituloAcademico}</Text>
+          {professor.tituloAcademico ? (
+            <Text style={estilos.tituloAcademico}>{professor.tituloAcademico}</Text>
+          ) : null}
 
           {/* Linha de Avaliação com Estrelas */}
-          <View style={estilos.avaliacaoLinha}>
-            <View style={estilos.estrelasRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <MaterialIcons key={star} name="star" size={16} color="#F5A623" />
-              ))}
-            </View>
-            <Text style={estilos.notaDestaque}>
-              {professor.notaMedia.toString().replace(".", ",")}{" "}
-              <Text style={estilos.totalAvaliacoesTexto}>
-                ({professor.totalAvaliacoes} avaliações)
+          {professor.notaMedia !== null ? (
+            <View style={estilos.avaliacaoLinha}>
+              <View style={estilos.estrelasRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <MaterialIcons
+                    key={star}
+                    name={star <= avaliacaoArredondada ? "star" : "star-outline"}
+                    size={16}
+                    color="#F5A623"
+                  />
+                ))}
+              </View>
+              <Text style={estilos.notaDestaque}>
+                {professor.notaMedia.toString().replace(".", ",")}{" "}
+                <Text style={estilos.totalAvaliacoesTexto}>
+                  ({professor.totalAvaliacoes} avaliações)
+                </Text>
               </Text>
-            </Text>
-          </View>
+            </View>
+          ) : (
+            <Text style={estilos.semAvaliacao}>Ainda sem avaliações</Text>
+          )}
 
           {/* Tag de Modalidade e Região */}
-          <View style={estilos.badgeLocalizacao}>
-            <Ionicons name="location-sharp" size={13} color="#0284C7" />
-            <Text style={estilos.textoBadgeLocalizacao}>
-              Presencial e Online • {professor.cidade}
-            </Text>
-          </View>
+          {professor.cidade ? (
+            <View style={estilos.badgeLocalizacao}>
+              <Ionicons name="location-sharp" size={13} color="#0284C7" />
+              <Text style={estilos.textoBadgeLocalizacao}>{professor.cidade}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* ============================================================== */}
         {/* 3. ALERTA DE SIMULAÇÃO / RESILIÊNCIA                           */}
         {/* ============================================================== */}
         <View style={estilos.containerAlerta}>
-          {isSimulado ? (
-            <View style={estilos.badgeSimulacao}>
-              <Text style={{ fontSize: 13, marginRight: 6 }}>⚠️</Text>
-              <Text style={estilos.textoBadgeSimulacao}>
-                Modo Simulação: Dados offline (Backend indisponível)
-              </Text>
-              <TouchableOpacity onPress={carregarPerfil} style={{ marginLeft: "auto" }}>
-                <Feather name="refresh-cw" size={13} color="#B45309" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={estilos.badgeConectado}>
-              <View style={estilos.dotVerdeOnline} />
-              <Text style={estilos.textoConectado}>Conectado à API Orienta em tempo real</Text>
-            </View>
-          )}
+          <View style={estilos.badgeConectado}>
+            <View style={estilos.dotVerdeOnline} />
+            <Text style={estilos.textoConectado}>Perfil carregado da API Orienta</Text>
+          </View>
         </View>
 
         {/* ============================================================== */}
-        {/* 4. GRID DE 3 MÉTRICAS (ALUNOS, APROVAÇÃO, NOTA MÉDIA)          */}
+        {/* 4. MÉTRICAS DISPONÍVEIS NO PERFIL PÚBLICO                     */}
         {/* ============================================================== */}
         <View style={estilos.metricasGrid}>
           <View style={estilos.metricaItem}>
             <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#EFF6FF" }]}>
-              <Feather name="users" size={18} color="#2563EB" />
+              <Feather name="book-open" size={18} color="#2563EB" />
             </View>
-            <Text style={estilos.metricaNumero}>{professor.alunosAtendidos}+</Text>
-            <Text style={estilos.metricaLabel}>Alunos atendidos</Text>
+            <Text style={estilos.metricaNumero}>{professor.materias.length}</Text>
+            <Text style={estilos.metricaLabel}>Disciplinas</Text>
           </View>
 
           <View style={estilos.metricaItem}>
             <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#ECFDF5" }]}>
-              <Feather name="award" size={18} color="#059669" />
+              <Feather name="monitor" size={18} color="#059669" />
             </View>
-            <Text style={estilos.metricaNumero}>{professor.taxaAprovacao}%</Text>
-            <Text style={estilos.metricaLabel}>Taxa de aprovação</Text>
+            <Text style={estilos.metricaNumero}>{totalModalidades}</Text>
+            <Text style={estilos.metricaLabel}>Modalidades</Text>
           </View>
 
           <View style={estilos.metricaItem}>
@@ -265,7 +297,7 @@ export default function PerfilProfessorScreen() {
               <MaterialIcons name="star-outline" size={20} color="#D97706" />
             </View>
             <Text style={estilos.metricaNumero}>
-              {professor.notaMedia.toString().replace(".", ",")}
+              {professor.notaMedia?.toString().replace(".", ",") ?? "—"}
             </Text>
             <Text style={estilos.metricaLabel}>Avaliação média</Text>
           </View>
@@ -281,96 +313,103 @@ export default function PerfilProfessorScreen() {
           </Text>
 
           <View style={estilos.modalidadesContainer}>
-            {/* Card Modalidade 1: Online */}
-            <TouchableOpacity
-              style={[
-                estilos.cardModalidade,
-                modalidade === "ONLINE" && estilos.cardModalidadeAtivo,
-              ]}
-              onPress={() => setModalidade("ONLINE")}
-              activeOpacity={0.8}
-            >
-              <View style={estilos.modalidadeTopoLinha}>
-                <View style={estilos.modalidadeIconeTitulo}>
-                  <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#EFF6FF" }]}>
-                    <Feather name="monitor" size={18} color="#2563EB" />
+            {professor.aceitaOnline ? (
+              <TouchableOpacity
+                style={[
+                  estilos.cardModalidade,
+                  modalidade === "ONLINE" && estilos.cardModalidadeAtivo,
+                ]}
+                onPress={() => setModalidade("ONLINE")}
+                activeOpacity={0.8}
+              >
+                <View style={estilos.modalidadeTopoLinha}>
+                  <View style={estilos.modalidadeIconeTitulo}>
+                    <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#EFF6FF" }]}>
+                      <Feather name="monitor" size={18} color="#2563EB" />
+                    </View>
+                    <View>
+                      <Text style={estilos.tituloModalidade}>100% Online</Text>
+                      <Text style={estilos.subtituloModalidade}>Sala Virtual Orienta</Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={estilos.tituloModalidade}>100% Online</Text>
-                    <Text style={estilos.subtituloModalidade}>Sala Virtual Orienta</Text>
+                  <View style={estilos.badgeMaisEscolhida}>
+                    <Text style={estilos.textoMaisEscolhida}>Mais escolhida</Text>
                   </View>
                 </View>
 
-                {/* Badge "Mais Escolhida" */}
-                <View style={estilos.badgeMaisEscolhida}>
-                  <Text style={estilos.textoMaisEscolhida}>Mais escolhida</Text>
-                </View>
-              </View>
-
-              <Text style={estilos.descricaoModalidade}>
-                Aula ao vivo com quadro interativo, gravação da sessão e compartilhamento de materiais.
-              </Text>
-
-              <View style={estilos.modalidadePrecoLinha}>
-                <Text style={estilos.precoModalidade}>
-                  R$ {professor.precoOnline.toFixed(2).replace(".", ",")}{" "}
-                  <Text style={estilos.unidadeHora}>/ hora</Text>
+                <Text style={estilos.descricaoModalidade}>
+                  Aula ao vivo com quadro interativo, gravação da sessão e compartilhamento de materiais.
                 </Text>
-                <View
-                  style={[
-                    estilos.radioIndicador,
-                    modalidade === "ONLINE" && estilos.radioIndicadorAtivo,
-                  ]}
-                >
-                  {modalidade === "ONLINE" && <View style={estilos.radioPontoInterno} />}
-                </View>
-              </View>
-            </TouchableOpacity>
 
-            {/* Card Modalidade 2: Presencial */}
-            <TouchableOpacity
-              style={[
-                estilos.cardModalidade,
-                modalidade === "PRESENCIAL" && estilos.cardModalidadeAtivo,
-              ]}
-              onPress={() => setModalidade("PRESENCIAL")}
-              activeOpacity={0.8}
-            >
-              <View style={estilos.modalidadeTopoLinha}>
-                <View style={estilos.modalidadeIconeTitulo}>
-                  <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#FFF7ED" }]}>
-                    <Ionicons name="location-sharp" size={18} color="#FF6B1A" />
-                  </View>
-                  <View>
-                    <Text style={estilos.tituloModalidade}>Presencial</Text>
-                    <Text style={estilos.subtituloModalidade}>{professor.cidade}</Text>
+                <View style={estilos.modalidadePrecoLinha}>
+                  <Text style={estilos.precoModalidade}>
+                    {professor.precoOnline !== null
+                      ? `R$ ${professor.precoOnline.toFixed(2).replace(".", ",")} / hora`
+                      : "Preço não informado"}
+                  </Text>
+                  <View
+                    style={[
+                      estilos.radioIndicador,
+                      modalidade === "ONLINE" && estilos.radioIndicadorAtivo,
+                    ]}
+                  >
+                    {modalidade === "ONLINE" && <View style={estilos.radioPontoInterno} />}
                   </View>
                 </View>
+              </TouchableOpacity>
+            ) : null}
 
-                <View style={estilos.badgePresencialTag}>
-                  <Text style={estilos.textoPresencialTag}>Sob consulta</Text>
+            {professor.oferecePresencial ? (
+              <TouchableOpacity
+                style={[
+                  estilos.cardModalidade,
+                  modalidade === "PRESENCIAL" && estilos.cardModalidadeAtivo,
+                ]}
+                onPress={() => setModalidade("PRESENCIAL")}
+                activeOpacity={0.8}
+              >
+                <View style={estilos.modalidadeTopoLinha}>
+                  <View style={estilos.modalidadeIconeTitulo}>
+                    <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#FFF7ED" }]}>
+                      <Ionicons name="location-sharp" size={18} color="#FF6B1A" />
+                    </View>
+                    <View>
+                      <Text style={estilos.tituloModalidade}>Presencial</Text>
+                      <Text style={estilos.subtituloModalidade}>{professor.cidade}</Text>
+                    </View>
+                  </View>
+                  <View style={estilos.badgePresencialTag}>
+                    <Text style={estilos.textoPresencialTag}>Sob consulta</Text>
+                  </View>
                 </View>
-              </View>
 
-              <Text style={estilos.descricaoModalidade}>
-                Aula presencial em domicílio ou biblioteca acordada, respeitando os protocolos de segurança.
-              </Text>
-
-              <View style={estilos.modalidadePrecoLinha}>
-                <Text style={estilos.precoModalidade}>
-                  R$ {professor.precoPresencial.toFixed(2).replace(".", ",")}{" "}
-                  <Text style={estilos.unidadeHora}>/ hora</Text>
+                <Text style={estilos.descricaoModalidade}>
+                  Aula presencial em domicílio ou biblioteca acordada, respeitando os protocolos de segurança.
                 </Text>
-                <View
-                  style={[
-                    estilos.radioIndicador,
-                    modalidade === "PRESENCIAL" && estilos.radioIndicadorAtivo,
-                  ]}
-                >
-                  {modalidade === "PRESENCIAL" && <View style={estilos.radioPontoInterno} />}
+
+                <View style={estilos.modalidadePrecoLinha}>
+                  <Text style={estilos.precoModalidade}>
+                    {professor.precoPresencial !== null
+                      ? `R$ ${professor.precoPresencial.toFixed(2).replace(".", ",")} / hora`
+                      : "Preço não informado"}
+                  </Text>
+                  <View
+                    style={[
+                      estilos.radioIndicador,
+                      modalidade === "PRESENCIAL" && estilos.radioIndicadorAtivo,
+                    ]}
+                  >
+                    {modalidade === "PRESENCIAL" && <View style={estilos.radioPontoInterno} />}
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            ) : null}
+
+            {totalModalidades === 0 ? (
+              <Text style={estilos.textoBiografia}>
+                Este professor ainda não informou as modalidades de atendimento.
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -386,6 +425,9 @@ export default function PerfilProfessorScreen() {
                 <Text style={estilos.chipDisciplinaTexto}>{materia}</Text>
               </View>
             ))}
+            {professor.materias.length === 0 ? (
+              <Text style={estilos.textoBiografia}>Nenhuma disciplina informada.</Text>
+            ) : null}
           </View>
         </View>
 
@@ -395,7 +437,9 @@ export default function PerfilProfessorScreen() {
         <View style={estilos.secaoContainer}>
           <Text style={estilos.secaoTitulo}>Sobre o Professor</Text>
           <View style={estilos.cardBiografia}>
-            <Text style={estilos.textoBiografia}>{professor.bio}</Text>
+            <Text style={estilos.textoBiografia}>
+              {professor.bio || "O professor ainda não adicionou uma biografia."}
+            </Text>
           </View>
         </View>
 
@@ -427,6 +471,9 @@ export default function PerfilProfessorScreen() {
               <Text style={estilos.avaliacaoComentario}>{av.comentario}</Text>
             </View>
           ))}
+          {professor.avaliacoesRecentes.length === 0 ? (
+            <Text style={estilos.textoBiografia}>Ainda não há comentários disponíveis.</Text>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -443,9 +490,13 @@ export default function PerfilProfessorScreen() {
           <Text style={estilos.labelPrecoFooter}>Valor por hora</Text>
           <View style={estilos.valorFooterLinha}>
             <Text style={estilos.valorFooterGrande}>
-              R$ {precoAtual.toFixed(2).replace(".", ",")}
+              {precoAtual !== null
+                ? `R$ ${precoAtual.toFixed(2).replace(".", ",")}`
+                : "Consultar"}
             </Text>
-            <Text style={estilos.unidadeFooter}>/h</Text>
+            {precoAtual !== null ? (
+              <Text style={estilos.unidadeFooter}>/h</Text>
+            ) : null}
           </View>
         </View>
 
@@ -490,6 +541,18 @@ const estilos = StyleSheet.create({
     fontWeight: "700",
     color: "#0F172A",
     marginTop: 12,
+  },
+  textoErroPerfil: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  linkVoltar: {
+    marginTop: 18,
+    fontSize: 14,
+    color: "#475569",
+    fontWeight: "600",
   },
   botaoVoltar: {
     marginTop: 16,
@@ -564,6 +627,10 @@ const estilos = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
   },
+  avatarSemFoto: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   dotOnlineVerde: {
     position: "absolute",
     bottom: 2,
@@ -605,6 +672,11 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: "#0F172A",
+  },
+  semAvaliacao: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 6,
   },
   totalAvaliacoesTexto: {
     fontWeight: "400",
