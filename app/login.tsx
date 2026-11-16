@@ -77,8 +77,6 @@ export default function LoginScreen() {
     const endpoint = `${API_URL}/api/v1/auth/login`;
     const payloadEnvio = {
       email: identificador,
-      login: identificador,
-      cpf: identificador.replace(/\D/g, ""),
       senha,
     };
 
