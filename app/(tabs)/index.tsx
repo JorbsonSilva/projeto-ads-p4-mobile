@@ -181,40 +181,6 @@ const BENEFICIOS_IMG005 = [
   },
 ];
 
-const CONTINUE_APRENDENDO_IMG005 = [
-  {
-    id: 1,
-    materia: "Cálculo",
-    professoresCount: 3,
-    icone: "check-circle" as const,
-    cor: "#2563EB",
-    bg: "#EFF6FF",
-  },
-  {
-    id: 2,
-    materia: "Física",
-    professoresCount: 4,
-    icone: "alert-triangle" as const,
-    cor: "#EA580C",
-    bg: "#FFF7ED",
-  },
-  {
-    id: 3,
-    materia: "Python",
-    professoresCount: 5,
-    icone: "terminal" as const,
-    cor: "#059669",
-    bg: "#ECFDF5",
-  },
-  {
-    id: 4,
-    materia: "Inglês",
-    professoresCount: 6,
-    icone: "grid" as const,
-    cor: "#7C3AED",
-    bg: "#F5F3FF",
-  },
-];
 
 // ==========================================
 // 3. COMPONENTE PRINCIPAL (HUB CHAVEADOR)
@@ -736,55 +702,6 @@ function HomeAluno({ nome }: { nome: string }) {
           ))}
         </View>
 
-        {/* ============================================================== */}
-        {/* 7. SEÇÃO CONTINUE APRENDENDO (IMG-005)                         */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoHeader}>
-          <Text style={estilos.secaoTitulo}>Continue aprendendo</Text>
-          <TouchableOpacity
-            onPress={() => router.push("/explorar-disciplinas")}
-            activeOpacity={0.7}
-          >
-            <Text style={estilos.secaoLink}>Ver todos &gt;</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={estilos.carrosselContinueContainer}
-        >
-          {CONTINUE_APRENDENDO_IMG005.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              activeOpacity={0.8}
-              onPress={() =>
-                router.push({
-                  pathname: "/busca-professores",
-                  params: { categoria: item.materia },
-                })
-              }
-              style={estilos.cardContinueItem}
-            >
-              <View
-                style={[
-                  estilos.iconeContinueWrap,
-                  { backgroundColor: item.bg },
-                ]}
-              >
-                <Feather name={item.icone} size={18} color={item.cor} />
-              </View>
-              <View style={estilos.infoContinueTextos}>
-                <Text style={estilos.tituloContinueMateria} numberOfLines={1}>
-                  {item.materia}
-                </Text>
-                <Text style={estilos.subtituloContinueProf}>
-                  {item.professoresCount} professores
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
       </ScrollView>
 
     </View>
