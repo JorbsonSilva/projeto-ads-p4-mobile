@@ -502,7 +502,7 @@ export default function PerfilScreen() {
             <View style={estilos.secaoContainer}>
               <View style={estilos.secaoHeaderLinha}>
                 <Text style={estilos.secaoTitulo}>Atividade recente</Text>
-                <TouchableOpacity onPress={() => router.push("/agenda" as any)}>
+                <TouchableOpacity onPress={() => router.push("/(tabs)/agenda" as any)}>
                   <Text style={estilos.linkVerTodas}>Ver agenda &gt;</Text>
                 </TouchableOpacity>
               </View>

@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -19,25 +20,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import BarraBusca from "../components/BarraBusca";
 import CardAula from "../components/CardAula";
-import { API_URL, extrairDadosLista } from "../config/api";
+import { API_URL, apiFetch, extrairDadosLista, getApiErrorMessage } from "../config/api";
 import { useAuth } from "../context/AuthContext";
+import { Agendamento } from "../types/agendamento";
 
 // ==========================================
 // 1. CONTRATOS DE TIPAGEM (INTERFACES)
 // ==========================================
-
-interface AlunoVinculado {
-  id: number;
-  nome: string;
-}
-
-interface Agendamento {
-  id: number;
-  data: string;
-  hora: string;
-  status: string;
-  aluno?: AlunoVinculado;
-}
 
 type FiltroStatus = "TODOS" | "PENDENTE" | "CONFIRMADO" | "CANCELADO";
 
@@ -45,7 +34,7 @@ type FiltroStatus = "TODOS" | "PENDENTE" | "CONFIRMADO" | "CANCELADO";
 // 2. COMPONENTE PRINCIPAL
 // ==========================================
 export default function TodasMentorias() {
-  const { usuarioId, carregandoAuth } = useAuth() as any;
+  const { usuarioId, carregandoAuth } = useAuth();
 
   // Estados de dados
   const [agendamentosBanco, setAgendamentosBanco] = useState<Agendamento[]>([]);
@@ -53,6 +42,7 @@ export default function TodasMentorias() {
     Agendamento[]
   >([]);
   const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
 
   // Estados de controle de filtros
   const [busca, setBusca] = useState("");
@@ -63,28 +53,30 @@ export default function TodasMentorias() {
    * @async
    */
   const buscarTodasMentorias = useCallback(async () => {
-    if (!usuarioId) return;
+    if (!usuarioId) {
+      setAgendamentosBanco([]);
+      setAgendamentosFiltrados([]);
+      setErro("Entre novamente para consultar suas aulas.");
+      setCarregando(false);
+      return;
+    }
     setCarregando(true);
 
     try {
-      const resposta = await fetch(
-        `${API_URL}/agendamentos/professor/${usuarioId}`,
+      const resposta = await apiFetch(
+        `${API_URL}/api/v1/agendamentos/professor/${usuarioId}`,
       );
-      if (resposta.ok) {
-        const payload: unknown = await resposta.json();
-        const dados = extrairDadosLista<Agendamento>(payload);
+      const payload: unknown = await resposta.json();
+      const dados = extrairDadosLista<Agendamento>(payload);
+      const ordenados = dados.sort((a, b) => b.data.localeCompare(a.data));
 
-        // Ordena cronologicamente decrescente (mais recentes primeiro)
-        const ordenados = dados.sort((a, b) => b.data.localeCompare(a.data));
-
-        setAgendamentosBanco(ordenados);
-        setAgendamentosFiltrados(ordenados);
-      }
+      setAgendamentosBanco(ordenados);
+      setAgendamentosFiltrados(ordenados);
+      setErro(null);
     } catch (error) {
-      console.error(
-        "Erro fatal ao carregar listagem unificada de mentorias:",
-        error,
-      );
+      setErro(getApiErrorMessage(error));
+      setAgendamentosBanco([]);
+      setAgendamentosFiltrados([]);
     } finally {
       setCarregando(false);
     }
@@ -110,17 +102,36 @@ export default function TodasMentorias() {
     // Filtro 2: Pesquisa por nome do aluno
     if (busca.trim() !== "") {
       const termo = busca.toLowerCase();
-      resultado = resultado.filter((item) =>
-        item.aluno?.nome.toLowerCase().includes(termo),
-      );
+      resultado = resultado.filter((item) => item.alunoNome.toLowerCase().includes(termo));
     }
 
     setAgendamentosFiltrados(resultado);
   }, [busca, statusAtivo, agendamentosBanco]);
 
   // Funções de callback exigidas pelo CardAula para atualizar o estado após modificação
-  const renovarDadosAposAcao = () => {
-    buscarTodasMentorias();
+  const renovarDadosAposAcao = async () => {
+    await buscarTodasMentorias();
+  };
+
+  const executarAcao = async (id: number, acao: "aceitar" | "recusar") => {
+    try {
+      await apiFetch(`${API_URL}/api/v1/agendamentos/${id}/${acao}`, {
+        method: "PUT",
+        ...(acao === "recusar"
+          ? {
+              body: JSON.stringify({
+                justificativa: "Indisponibilidade de horário na agenda",
+              }),
+            }
+          : {}),
+      });
+      await renovarDadosAposAcao();
+    } catch (error) {
+      Alert.alert(
+        "Não foi possível atualizar a solicitação",
+        getApiErrorMessage(error),
+      );
+    }
   };
 
   return (
@@ -175,6 +186,13 @@ export default function TodasMentorias() {
           <ActivityIndicator size="large" color="#FF6B1A" />
           <Text style={estilos.textoAviso}>Buscando registros...</Text>
         </View>
+      ) : erro ? (
+        <View style={estilos.containerCentro}>
+          <Text style={estilos.textoAviso}>{erro}</Text>
+          <TouchableOpacity onPress={buscarTodasMentorias}>
+            <Text style={estilos.textoTentarNovamente}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
       ) : agendamentosFiltrados.length === 0 ? (
         <View style={estilos.containerCentro}>
           <Feather name="calendar" size={48} color="#CCC" />
@@ -192,28 +210,14 @@ export default function TodasMentorias() {
             <View style={estilos.wrapperCard}>
               <CardAula
                 id={item.id}
-                nome={item.aluno?.nome || "Estudante"}
-                materia="Mentoria Particular"
+                nome={item.alunoNome}
+                materia={item.saberNome || item.assunto || "Aula"}
                 data={item.data}
                 hora={item.hora.substring(0, 5)}
                 status={item.status}
-                foto={`https://i.pravatar.cc/150?u=${item.aluno?.id || item.id}`}
-                onAceitar={async (id) => {
-                  await fetch(`${API_URL}/agendamentos/${id}/aceitar`, {
-                    method: "PUT",
-                  });
-                  renovarDadosAposAcao();
-                }}
-                onRecusar={async (id) => {
-                  await fetch(`${API_URL}/agendamentos/${id}/cancelar`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      justificativa: "Recusado pelo painel geral.",
-                    }),
-                  });
-                  renovarDadosAposAcao();
-                }}
+                foto={null}
+                onAceitar={(id) => executarAcao(id, "aceitar")}
+                onRecusar={(id) => executarAcao(id, "recusar")}
               />
             </View>
           )}
@@ -255,6 +259,11 @@ const estilos = StyleSheet.create({
     fontSize: 15,
     color: "#777",
     textAlign: "center",
+  },
+  textoTentarNovamente: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#EA580C",
   },
   containerAbas: {
     flexDirection: "row",

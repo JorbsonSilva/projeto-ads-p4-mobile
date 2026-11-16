@@ -238,7 +238,7 @@ export default function MarcarAulaScreen() {
 
   const handleIrParaAgenda = () => {
     setModalSucesso(false);
-    router.push("/agenda" as any);
+    router.push("/(tabs)/agenda" as any);
   };
 
   if (carregandoAuth || carregandoPerfil) {

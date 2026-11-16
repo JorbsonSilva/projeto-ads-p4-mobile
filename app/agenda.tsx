@@ -1,7 +1,5 @@
-/**
- * @file agenda.tsx
- * @description Rota de atalho para a tela de Minha Agenda (ORI-012).
- */
-import AgendaScreen from "./(tabs)/agenda";
+import { Redirect } from "expo-router";
 
-export default AgendaScreen;
+export default function AgendaRouteRedirect() {
+  return <Redirect href="/(tabs)/agenda" />;
+}

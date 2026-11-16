@@ -1,14 +1,8 @@
 /**
- * @file notificacoesService.ts
- * @description Serviço Oficial para a Central de Notificações conectado à API Spring Boot 3 [ORI-016 / IMG-006].
- * Endpoints:
- * - GET   /api/v1/notificacoes?usuarioId={id}
- * - GET   /api/v1/notificacoes/nao-lidas/count?usuarioId={id}
- * - PATCH /api/v1/notificacoes/{id}/lida?usuarioId={id}
- * - PATCH /api/v1/notificacoes/marcar-todas-lidas?usuarioId={id}
+ * Serviço da central de notificações conectado à API autenticada.
  */
 
-import { API_URL } from "../config/api";
+import { API_URL, apiFetch, extrairDadosLista } from "../config/api";
 
 export type CategoriaNotificacao =
   | "TODAS"
@@ -50,121 +44,129 @@ export interface NotificacaoItem {
 export interface ResultadoNotificacoes {
   notificacoes: NotificacaoItem[];
   totalNaoLidas: number;
-  isSimulado: boolean;
 }
 
-/**
- * Consulta a lista de notificações do usuário a partir da tabela tb_notificacoes
- */
-export async function obterNotificacoes(
-  usuarioId: number = 1001,
-  categoriaFiltro: CategoriaNotificacao = "TODAS"
-): Promise<ResultadoNotificacoes> {
-  let notificacoesMapeadas: NotificacaoItem[] = [];
+interface NotificacaoApi {
+  id: number;
+  usuarioId: number;
+  titulo: string;
+  mensagem: string;
+  tipo: TipoNotificacao;
+  lida: boolean;
+  dataHora: string;
+  referenciaId?: number;
+}
 
-  try {
-    const res = await fetch(`${API_URL}/api/v1/notificacoes?usuarioId=${usuarioId}`, {
-      headers: { Accept: "application/json" },
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      const listaApi = json.data || (Array.isArray(json) ? json : []);
-
-      if (Array.isArray(listaApi)) {
-        notificacoesMapeadas = listaApi.map((item: any) => {
-          const tipo = (item.tipo || "SISTEMA").toUpperCase() as TipoNotificacao;
-          let categoria: CategoriaNotificacao = "SISTEMA";
-          let icone = "bell";
-          let corIcone = "#3B82F6";
-          let bgIcone = "#EFF6FF";
-          let rotaDestino = "/(tabs)";
-
-          if (tipo === "AGENDAMENTO" || tipo === "AVALIACAO") {
-            categoria = "AULAS";
-            icone = "calendar";
-            corIcone = "#10B981";
-            bgIcone = "#ECFDF5";
-            rotaDestino = "/agenda";
-          } else if (tipo === "CHAT") {
-            categoria = "MENSAGENS";
-            icone = "message-circle";
-            corIcone = "#8B5CF6";
-            bgIcone = "#F5F3FF";
-            rotaDestino = "/chat";
-          } else if (tipo === "PAGAMENTO" || tipo === "SAQUE") {
-            categoria = "PAGAMENTOS";
-            icone = "credit-card";
-            corIcone = "#F59E0B";
-            bgIcone = "#FFFBEB";
-            rotaDestino = "/painel-ganhos";
-          }
-
-          return {
-            id: item.id,
-            usuarioId: item.usuarioId || usuarioId,
-            titulo: item.titulo || "Notificação Orienta",
-            mensagem: item.mensagem || "",
-            tipo,
-            lida: item.lida ?? false,
-            dataHora: item.dataHora || new Date().toISOString(),
-            tempoRelativo: "Recentemente",
-            agrupamento: "Hoje" as GrupoTemporal,
-            categoria,
-            icone,
-            iconeTipo: "feather",
-            corIcone,
-            bgIcone,
-            rotaDestino,
-            referenciaId: item.referenciaId,
-          };
-        });
-      }
-    }
-  } catch (err) {
-    console.warn("Falha ao obter notificações da API:", err);
+function agruparData(valor: string): { agrupamento: GrupoTemporal; tempoRelativo: string } {
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) {
+    throw new Error("A API retornou uma data inválida para uma notificação.");
   }
 
-  if (categoriaFiltro !== "TODAS") {
-    notificacoesMapeadas = notificacoesMapeadas.filter((n) => n.categoria === categoriaFiltro);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const dia = new Date(data);
+  dia.setHours(0, 0, 0, 0);
+  const dias = Math.floor((hoje.getTime() - dia.getTime()) / 86400000);
+
+  if (dias <= 0) {
+    return {
+      agrupamento: "Hoje",
+      tempoRelativo: data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+    };
   }
-
-  const totalNaoLidas = notificacoesMapeadas.filter((n) => !n.lida).length;
-
+  if (dias === 1) return { agrupamento: "Ontem", tempoRelativo: "Ontem" };
+  if (dias < 7) return { agrupamento: "Últimos 7 dias", tempoRelativo: `${dias} dias atrás` };
   return {
-    notificacoes: notificacoesMapeadas,
-    totalNaoLidas,
-    isSimulado: false,
+    agrupamento: "Anteriores",
+    tempoRelativo: data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
   };
 }
 
-/**
- * Marca uma notificação específica como lida no servidor
- */
-export async function marcarComoLida(
-  notificacaoId: number,
-  usuarioId: number = 1001
-): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/notificacoes/${notificacaoId}/lida?usuarioId=${usuarioId}`, {
-      method: "PATCH",
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+function mapearNotificacao(item: NotificacaoApi): NotificacaoItem {
+  const categorias: Record<TipoNotificacao, CategoriaNotificacao> = {
+    AGENDAMENTO: "AULAS",
+    AVALIACAO: "AULAS",
+    CHAT: "MENSAGENS",
+    PAGAMENTO: "PAGAMENTOS",
+    SAQUE: "PAGAMENTOS",
+    SUPORTE: "SISTEMA",
+    SISTEMA: "SISTEMA",
+  };
+  const icones: Record<TipoNotificacao, string> = {
+    AGENDAMENTO: "calendar",
+    AVALIACAO: "star",
+    CHAT: "message-circle",
+    PAGAMENTO: "credit-card",
+    SAQUE: "credit-card",
+    SUPORTE: "help-circle",
+    SISTEMA: "bell",
+  };
+  const cores: Record<CategoriaNotificacao, { cor: string; fundo: string }> = {
+    TODAS: { cor: "#3B82F6", fundo: "#EFF6FF" },
+    AULAS: { cor: "#10B981", fundo: "#ECFDF5" },
+    MENSAGENS: { cor: "#8B5CF6", fundo: "#F5F3FF" },
+    PAGAMENTOS: { cor: "#F59E0B", fundo: "#FFFBEB" },
+    SISTEMA: { cor: "#3B82F6", fundo: "#EFF6FF" },
+  };
+  const categoria = categorias[item.tipo];
+  const cor = cores[categoria];
+  const destinos: Partial<Record<TipoNotificacao, string>> = {
+    AGENDAMENTO: "/(tabs)/agenda",
+    AVALIACAO: "/(tabs)/agenda",
+    CHAT: "/chat",
+    PAGAMENTO: "/painel-ganhos",
+    SAQUE: "/painel-ganhos",
+  };
+
+  return {
+    ...item,
+    categoria,
+    icone: icones[item.tipo],
+    iconeTipo: "feather",
+    corIcone: cor.cor,
+    bgIcone: cor.fundo,
+    rotaDestino: destinos[item.tipo],
+    ...agruparData(item.dataHora),
+  };
 }
 
-/**
- * Marca todas as notificações do usuário como lidas
- */
-export async function marcarTodasComoLidas(usuarioId: number = 1001): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/notificacoes/marcar-todas-lidas?usuarioId=${usuarioId}`, {
-      method: "PATCH",
-    });
-    return res.ok;
-  } catch {
-    return false;
+export async function obterNotificacoes(
+  usuarioId: number,
+  categoriaFiltro: CategoriaNotificacao = "TODAS",
+): Promise<ResultadoNotificacoes> {
+  if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+    throw new Error("Não foi possível identificar o usuário da sessão.");
   }
+
+  const response = await apiFetch(
+    `${API_URL}/api/v1/notificacoes?usuarioId=${usuarioId}`,
+  );
+  const registros = extrairDadosLista<NotificacaoApi>(await response.json());
+  const notificacoes = registros.map(mapearNotificacao);
+  const totalNaoLidas = notificacoes.filter((item) => !item.lida).length;
+
+  return {
+    notificacoes: categoriaFiltro === "TODAS"
+      ? notificacoes
+      : notificacoes.filter((item) => item.categoria === categoriaFiltro),
+    totalNaoLidas,
+  };
+}
+
+export async function marcarComoLida(
+  notificacaoId: number,
+  usuarioId: number,
+): Promise<void> {
+  await apiFetch(
+    `${API_URL}/api/v1/notificacoes/${notificacaoId}/lida?usuarioId=${usuarioId}`,
+    { method: "PATCH" },
+  );
+}
+
+export async function marcarTodasComoLidas(usuarioId: number): Promise<void> {
+  await apiFetch(
+    `${API_URL}/api/v1/notificacoes/marcar-todas-lidas?usuarioId=${usuarioId}`,
+    { method: "PATCH" },
+  );
 }

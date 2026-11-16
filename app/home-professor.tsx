@@ -276,7 +276,7 @@ export default function HomeProfessorScreen({
             {/* 1. Minha Agenda */}
             <TouchableOpacity
               style={estilos.itemAtalhoCircular}
-              onPress={() => router.push("/agenda" as any)}
+              onPress={() => router.push("/(tabs)/agenda" as any)}
               activeOpacity={0.8}
             >
               <View style={[estilos.circuloAtalho, { backgroundColor: "#EFF6FF" }]}>
@@ -361,7 +361,7 @@ export default function HomeProfessorScreen({
           <View style={estilos.secaoHeaderRow}>
             <Text style={estilos.secaoTitulo}>Próximas aulas</Text>
             <TouchableOpacity
-              onPress={() => router.push("/agenda" as any)}
+              onPress={() => router.push("/(tabs)/agenda" as any)}
               activeOpacity={0.7}
             >
               <Text style={estilos.linkVerTodas}>Ver todas →</Text>

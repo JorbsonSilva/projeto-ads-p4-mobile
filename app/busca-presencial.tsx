@@ -718,7 +718,7 @@ export default function BuscaPresencialScreen() {
 
         <TouchableOpacity
           style={estilos.tabItem}
-          onPress={() => router.push("/agenda")}
+          onPress={() => router.push("/(tabs)/agenda")}
         >
           <Feather name="calendar" size={20} color="#94A3B8" />
           <Text style={estilos.tabLabel}>Minhas aulas</Text>

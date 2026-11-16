@@ -589,7 +589,7 @@ export default function HistoricoAlunosScreen() {
                     style={estilos.botaoModalAgenda}
                     onPress={() => {
                       setModalFichaVisivel(false);
-                      router.push("/agenda" as any);
+                      router.push("/(tabs)/agenda" as any);
                     }}
                     activeOpacity={0.85}
                   >
@@ -634,7 +634,7 @@ export default function HistoricoAlunosScreen() {
 
         <TouchableOpacity
           style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
+          onPress={() => router.push("/(tabs)/agenda" as any)}
           activeOpacity={0.8}
           accessibilityLabel="Aba Agenda"
         >

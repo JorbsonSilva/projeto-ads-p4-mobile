@@ -29,7 +29,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Importações de Componentes Globais e Contexto de Sessão
 import BotaoRapido from "../../components/BotaoRapido";
 import CardAula from "../../components/CardAula";
-import { CentralNotificacoesModal } from "../../components/CentralNotificacoesModal";
 import ResumoProfessor from "../../components/ResumoProfessor";
 import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../../config/api";
 import { Theme } from "../../constants/theme";
@@ -235,7 +234,6 @@ function HomeAluno({ nome }: { nome: string }) {
   const [favoritos, setFavoritos] = useState<Record<number, boolean>>({});
   const [carregandoDados, setCarregandoDados] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
-  const [modalNotificacoes, setModalNotificacoes] = useState(false);
 
   const buscarDadosAluno = useCallback(async () => {
     const isDemo =
@@ -347,11 +345,10 @@ function HomeAluno({ nome }: { nome: string }) {
           <TouchableOpacity
             style={estilos.botaoSino}
             activeOpacity={0.7}
-            onPress={() => setModalNotificacoes(true)}
+            onPress={() => router.push("/notificacoes" as any)}
             accessibilityLabel="Central de Notificações"
           >
             <Feather name="bell" size={24} color="#0F172A" />
-            <View style={estilos.badgeSino} />
           </TouchableOpacity>
         </View>
 
@@ -673,12 +670,6 @@ function HomeAluno({ nome }: { nome: string }) {
         </ScrollView>
       </ScrollView>
 
-      {/* Modal Central de Notificações */}
-      <CentralNotificacoesModal
-        visible={modalNotificacoes}
-        onClose={() => setModalNotificacoes(false)}
-        usuarioId={usuarioId || 1}
-      />
     </View>
   );
 }
@@ -836,7 +827,7 @@ function HomeProfessor({ nome }: { nome: string }) {
           <BotaoRapido
             icon="calendar"
             texto="Nova aula"
-            onPress={() => router.push("/agenda")}
+            onPress={() => router.push("/(tabs)/agenda")}
           />
           <BotaoRapido
             icon="dollar-sign"
@@ -1042,18 +1033,6 @@ const estilos = StyleSheet.create({
     elevation: 2,
     position: "relative",
   },
-  badgeSino: {
-    position: "absolute",
-    top: 9,
-    right: 10,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: "#FF5A1F",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
-  },
-
   // 2. Barra de Busca e Filtros
   linhaBusca: {
     flexDirection: "row",

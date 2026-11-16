@@ -668,7 +668,7 @@ export default function ChatScreen() {
               style={estilos.opcaoMenuItem}
               onPress={() => {
                 setMenuOpcoesVisivel(false);
-                router.push("/agenda" as any);
+                router.push("/(tabs)/agenda" as any);
               }}
             >
               <Ionicons name="calendar-outline" size={18} color="#0F172A" style={{ marginRight: 10 }} />

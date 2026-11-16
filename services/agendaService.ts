@@ -1,40 +1,38 @@
 /**
- * @file agendaService.ts
- * @description Serviço Oficial de Agenda Unificada conectado aos endpoints REST da API Orienta (ORI-012).
- * 
- * Endpoints consumidos:
- * - GET /api/v1/agendamentos/aluno/{id}
- * - GET /api/v1/agendamentos/professor/{id}
- * - PUT /api/v1/agendamentos/{id}/aceitar
- * - PUT /api/v1/agendamentos/{id}/recusar
+ * Serviço da agenda conectado aos endpoints REST autenticados da API Orienta.
  */
 
-import { API_URL } from "../config/api";
+import { API_URL, apiFetch, extrairDadosLista } from "../config/api";
+import {
+  Agendamento,
+  RemarcarAgendamentoRequest,
+  StatusAgendamento,
+} from "../types/agendamento";
 
 export type PerfilAgenda = "ALUNO" | "PROFESSOR";
+export type ModalidadeAgenda = "Presencial" | "Online" | "Não informada";
 
 export interface SolicitacaoAula {
   id: number;
   alunoNome: string;
-  alunoFoto: string;
   materia: string;
-  modalidade: "Presencial" | "Online";
+  modalidade: ModalidadeAgenda;
   horario: string;
-  status: "PENDENTE" | "ACEITA" | "RECUSADA";
+  dataIso: string;
+  status: StatusAgendamento;
   online: boolean;
 }
 
 export interface CompromissoAgenda {
   id: number;
   nome: string;
-  foto: string;
-  tituloProfissional?: string;
+  foto: string | null;
   materia: string;
   horario: string;
-  modalidade: "Online" | "Presencial";
+  dataIso: string;
+  modalidade: ModalidadeAgenda;
   localizacao?: string;
-  status: "Confirmada" | "Pendente" | "Cancelada";
-  tipo: "AULA" | "MENTORIA";
+  status: StatusAgendamento;
   online: boolean;
 }
 
@@ -43,151 +41,151 @@ export interface AgendaCompleta {
   solicitacoes: SolicitacaoAula[];
   aulasProfessor: CompromissoAgenda[];
   aulasAluno: CompromissoAgenda[];
-  mentoriasAluno: CompromissoAgenda[];
-  isSimulado: boolean;
 }
 
-/**
- * Consulta a agenda diretamente da API REST do Spring Boot
- */
-export async function obterAgendaComFallback(
+function formatarDataHora(data: string, hora: string): string {
+  if (!data || !hora) {
+    throw new Error("A API retornou um agendamento sem data ou horário.");
+  }
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const dataFormatada =
+    ano && mes && dia
+      ? new Date(ano, mes - 1, dia).toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : data;
+  return `${dataFormatada} • ${hora.slice(0, 5)}`;
+}
+
+function normalizarStatus(status: StatusAgendamento | string): StatusAgendamento {
+  const statuses: StatusAgendamento[] = [
+    "PENDENTE",
+    "CONFIRMADO",
+    "RECUSADO",
+    "CANCELADO",
+    "EM_ANDAMENTO",
+    "AGUARDANDO_CONFIRMACAO",
+    "REALIZADA",
+  ];
+  if (!statuses.includes(status as StatusAgendamento)) {
+    throw new Error(`Status de agendamento inválido recebido da API: ${status}`);
+  }
+  return status as StatusAgendamento;
+}
+
+function mapearCompromisso(
+  item: Agendamento,
   perfil: PerfilAgenda,
-  usuarioId: number = 1001
+): CompromissoAgenda {
+  const modalidade: ModalidadeAgenda =
+    item.modalidade?.toUpperCase() === "PRESENCIAL"
+      ? "Presencial"
+      : item.modalidade?.toUpperCase() === "ONLINE"
+        ? "Online"
+        : "Não informada";
+  const data = item.data ?? "";
+  const hora = item.hora ?? "";
+  const status = normalizarStatus(item.status);
+
+  return {
+    id: item.id,
+    nome: perfil === "PROFESSOR"
+      ? item.alunoNome || `Aluno #${item.alunoId}`
+      : item.professorNome || `Professor #${item.professorId}`,
+    foto: null,
+    materia: item.saberNome || item.assunto || "Aula",
+    horario: formatarDataHora(data, hora),
+    dataIso: data,
+    modalidade,
+    localizacao:
+      modalidade === "Presencial"
+        ? "Presencial"
+        : modalidade === "Online"
+          ? "Online via Plataforma"
+          : "Modalidade não informada",
+    status,
+    online: modalidade === "Online",
+  };
+}
+
+export async function obterAgenda(
+  perfil: PerfilAgenda,
+  usuarioId: number,
 ): Promise<AgendaCompleta> {
+  if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+    throw new Error("Não foi possível identificar o usuário da sessão.");
+  }
+
+  const papel = perfil === "PROFESSOR" ? "professor" : "aluno";
+  const response = await apiFetch(`${API_URL}/api/v1/agendamentos/${papel}/${usuarioId}`);
+  const agendamentos = extrairDadosLista<Agendamento>(await response.json());
+
   const agenda: AgendaCompleta = {
     perfil,
     solicitacoes: [],
     aulasProfessor: [],
     aulasAluno: [],
-    mentoriasAluno: [],
-    isSimulado: false,
   };
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-    const rota =
-      perfil === "PROFESSOR"
-        ? `${API_URL}/api/v1/agendamentos/professor/${usuarioId}`
-        : `${API_URL}/api/v1/agendamentos/aluno/${usuarioId}`;
-
-    const res = await fetch(rota, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const json = await res.json();
-      const itens: any[] = json.data || (Array.isArray(json) ? json : []);
-
-      if (Array.isArray(itens)) {
-        itens.forEach((item) => {
-          const statusNormalizado = (item.status || "").toUpperCase();
-          const modalidadeFormatada =
-            item.modalidade === "PRESENCIAL" ? "Presencial" : "Online";
-          const horarioFormatado = `${item.data || ""} ${item.hora || ""}`.trim();
-
-          if (perfil === "PROFESSOR") {
-            if (statusNormalizado === "PENDENTE") {
-              agenda.solicitacoes.push({
-                id: item.id,
-                alunoNome: item.alunoNome || `Aluno #${item.alunoId}`,
-                alunoFoto: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
-                materia: item.disciplinaNome || "Mentoria",
-                modalidade: modalidadeFormatada as any,
-                horario: horarioFormatado,
-                status: "PENDENTE",
-                online: item.modalidade === "ONLINE",
-              });
-            } else {
-              agenda.aulasProfessor.push({
-                id: item.id,
-                nome: item.alunoNome || `Aluno #${item.alunoId}`,
-                foto: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
-                materia: item.disciplinaNome || "Mentoria",
-                modalidade: modalidadeFormatada as any,
-                horario: horarioFormatado,
-                status:
-                  statusNormalizado === "CONFIRMADO" || statusNormalizado === "REALIZADA"
-                    ? "Confirmada"
-                    : statusNormalizado === "CANCELADO"
-                    ? "Cancelada"
-                    : "Pendente",
-                tipo: "AULA",
-                online: item.modalidade === "ONLINE",
-              });
-            }
-          } else {
-            // Perfil ALUNO
-            const compromisso: CompromissoAgenda = {
-              id: item.id,
-              nome: item.professorNome || `Prof. #${item.professorId}`,
-              foto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-              tituloProfissional: "Docente Orienta",
-              materia: item.disciplinaNome || "Mentoria Acadêmica",
-              horario: horarioFormatado,
-              modalidade: modalidadeFormatada as any,
-              localizacao:
-                item.modalidade === "PRESENCIAL"
-                  ? item.regiaoOuLocalReferencia || "Presencial"
-                  : "Online via Plataforma",
-              status:
-                statusNormalizado === "CONFIRMADO" || statusNormalizado === "REALIZADA"
-                  ? "Confirmada"
-                  : statusNormalizado === "CANCELADO"
-                  ? "Cancelada"
-                  : "Pendente",
-              tipo: item.modalidade === "ONLINE" ? "MENTORIA" : "AULA",
-              online: item.modalidade === "ONLINE",
-            };
-
-            if (item.modalidade === "ONLINE") {
-              agenda.mentoriasAluno.push(compromisso);
-            } else {
-              agenda.aulasAluno.push(compromisso);
-            }
-          }
-        });
-      }
+  for (const agendamento of agendamentos) {
+    const status = normalizarStatus(agendamento.status);
+    if (perfil === "PROFESSOR" && status === "PENDENTE") {
+      const modalidade: ModalidadeAgenda =
+        agendamento.modalidade?.toUpperCase() === "PRESENCIAL"
+          ? "Presencial"
+          : agendamento.modalidade?.toUpperCase() === "ONLINE"
+            ? "Online"
+            : "Não informada";
+      agenda.solicitacoes.push({
+        id: agendamento.id,
+        alunoNome: agendamento.alunoNome || `Aluno #${agendamento.alunoId}`,
+        materia: agendamento.saberNome || agendamento.assunto || "Aula",
+        modalidade,
+        horario: formatarDataHora(agendamento.data, agendamento.hora),
+        dataIso: agendamento.data,
+        status,
+        online: modalidade === "Online",
+      });
+      continue;
     }
-  } catch (err) {
-    console.warn("Falha ao obter agenda da API:", err);
+
+    const compromisso = mapearCompromisso(agendamento, perfil);
+    if (perfil === "PROFESSOR") {
+      agenda.aulasProfessor.push(compromisso);
+    } else {
+      agenda.aulasAluno.push(compromisso);
+    }
   }
 
   return agenda;
 }
 
-/**
- * Aceitar solicitação de aula (Professor)
- */
-export async function aceitarSolicitacaoComFallback(id: number): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/agendamentos/${id}/aceitar`, {
-      method: "PUT",
-      headers: { Accept: "application/json" },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+export async function aceitarSolicitacao(id: number): Promise<void> {
+  await apiFetch(`${API_URL}/api/v1/agendamentos/${id}/aceitar`, { method: "PUT" });
 }
 
-/**
- * Recusar solicitação de aula (Professor)
- */
-export async function recusarSolicitacaoComFallback(id: number): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/agendamentos/${id}/recusar`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ motivo: "Indisponibilidade de horário na agenda" }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+export async function recusarSolicitacao(id: number, justificativa: string): Promise<void> {
+  await apiFetch(`${API_URL}/api/v1/agendamentos/${id}/recusar`, {
+    method: "PUT",
+    body: JSON.stringify({ justificativa }),
+  });
+}
+
+export async function cancelarAgendamento(id: number, justificativa: string): Promise<void> {
+  await apiFetch(`${API_URL}/api/v1/agendamentos/${id}/cancelar`, {
+    method: "PUT",
+    body: JSON.stringify({ justificativa }),
+  });
+}
+
+export async function remarcarAgendamento(
+  id: number,
+  dados: RemarcarAgendamentoRequest,
+): Promise<void> {
+  await apiFetch(`${API_URL}/api/v1/agendamentos/${id}/remarcar`, {
+    method: "PUT",
+    body: JSON.stringify(dados),
+  });
 }

@@ -1,28 +1,11 @@
 /**
  * @file agenda.tsx
- * @description Tela de Minha Agenda Unificada (Aluno & Professor) - Orienta 2.0 [ORI-012].
- * Implementada com total fidelidade à especificação visual oficial Agenda.jpeg (IMG-001).
- * 
- * Funcionalidades:
- * - Header institucional com Logotipo Orienta e sino com badge numérico
- * - Alternador de visão (Aluno vs Professor) permitindo homologação completa da imagem dupla
- * - Segmented Control pílula ([Agenda] ativo / [Resumo] ou [Histórico])
- * - Seletor semanal horizontal interativo (Seg 23/06 a Sex 27/06 com dia ativo em azul marinho)
- * - Visão Professor:
- *   - Seção "Solicitações de Aula" (badge '2') com ações bilaterais imediatas [✔ Aceitar] e [✕ Recusar]
- *   - Seção "Minhas Aulas Agendadas" com faixa marcadora azul e chips de horário
- * - Visão Aluno:
- *   - Seção "Próximas Aulas" com card do Prof. Lucas Rocha, badge Confirmada e ações [Remarcar] e [Desistir]
- *   - Seção "Próximas Mentorias" com card da Profa. Juliana Santos
- *   - Banner informativo com regra de cancelamento de até 2 horas de antecedência
- * - Modais interativos de remarcação e cancelamento
- * - Barra inferior de 5 abas (Início, Buscar, Agenda ativa, Mensagens, Perfil)
- * - Serviço híbrido resiliente agendaService.ts
+ * @description Agenda autenticada de aluno e professor, sincronizada com a API Orienta.
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -38,114 +21,260 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  aceitarSolicitacaoComFallback,
+  aceitarSolicitacao,
   AgendaCompleta,
+  cancelarAgendamento,
   CompromissoAgenda,
-  obterAgendaComFallback,
+  obterAgenda,
   PerfilAgenda,
-  recusarSolicitacaoComFallback,
-  SolicitacaoAula,
+  recusarSolicitacao,
+  remarcarAgendamento,
 } from "../../services/agendaService";
+import AvatarPerfil from "../../components/AvatarPerfil";
+import { getApiErrorMessage } from "../../config/api";
+import { useAuth } from "../../context/AuthContext";
+import { obterNotificacoes } from "../../services/notificacoesService";
 
 interface DiaSemana {
-  dia: string; // "Seg", "Ter", "Qua", "Qui", "Sex"
-  dataMes: string; // "23/06"
+  dia: string;
+  dataMes: string;
+  dataIso: string;
 }
 
-const DIAS_SEMANA: DiaSemana[] = [
-  { dia: "Seg", dataMes: "23/06" },
-  { dia: "Ter", dataMes: "24/06" },
-  { dia: "Qua", dataMes: "25/06" },
-  { dia: "Qui", dataMes: "26/06" },
-  { dia: "Sex", dataMes: "27/06" },
-];
+function obterInicioSemana(data: Date): Date {
+  const inicio = new Date(data);
+  inicio.setHours(12, 0, 0, 0);
+  inicio.setDate(inicio.getDate() - ((inicio.getDay() + 6) % 7));
+  return inicio;
+}
+
+function adicionarDias(data: Date, dias: number): Date {
+  const resultado = new Date(data);
+  resultado.setDate(resultado.getDate() + dias);
+  return resultado;
+}
+
+function dataIso(data: Date): string {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
+function gerarDiasSemana(inicio: Date): DiaSemana[] {
+  return Array.from({ length: 7 }, (_, indice) => {
+    const data = adicionarDias(inicio, indice);
+    return {
+      dia: data.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", ""),
+      dataMes: data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      dataIso: dataIso(data),
+    };
+  });
+}
+
+function rotuloStatus(status: CompromissoAgenda["status"]): string {
+  const rotulos: Record<CompromissoAgenda["status"], string> = {
+    PENDENTE: "Pendente",
+    CONFIRMADO: "Confirmada",
+    RECUSADO: "Recusada",
+    CANCELADO: "Cancelada",
+    EM_ANDAMENTO: "Em andamento",
+    AGUARDANDO_CONFIRMACAO: "Aguardando confirmação",
+    REALIZADA: "Realizada",
+  };
+  return rotulos[status];
+}
 
 export default function AgendaScreen() {
   const insets = useSafeAreaInsets();
+  const { usuarioId, perfilAtivo: perfilSessao, trocarPerfil, carregandoAuth } = useAuth();
 
-  // Alternador de Visão de Perfil (Para testar tanto visão Aluno quanto Professor da IMG-001)
-  const [perfilAtivo, setPerfilAtivo] = useState<PerfilAgenda>("PROFESSOR");
+  const perfilAtivo: PerfilAgenda = perfilSessao === "Professor" ? "PROFESSOR" : "ALUNO";
   const [abaSegmentada, setAbaSegmentada] = useState<"AGENDA" | "SECUNDARIA">("AGENDA");
-  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(2); // Quarta 25/06 por padrão
+  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(() => {
+    const hoje = new Date().getDay();
+    return (hoje + 6) % 7;
+  });
+  const [inicioSemana, setInicioSemana] = useState<Date>(() => obterInicioSemana(new Date()));
+  const diaEscolhidoManualmente = useRef(false);
+  const diasSemana = useMemo(() => gerarDiasSemana(inicioSemana), [inicioSemana]);
+  const diaSelecionado = diasSemana[diaSelecionadoIdx];
 
   // Dados da Agenda
   const [dados, setDados] = useState<AgendaCompleta>({
-    perfil: "PROFESSOR",
+    perfil: perfilAtivo,
     solicitacoes: [],
     aulasProfessor: [],
     aulasAluno: [],
-    mentoriasAluno: [],
-    isSimulado: false,
   });
-  const [carregando, setCarregando] = useState<boolean>(false);
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [totalNotificacoesNaoLidas, setTotalNotificacoesNaoLidas] = useState<number | null>(null);
+  const [processandoAcao, setProcessandoAcao] = useState<boolean>(false);
 
   // Estados dos Modais
   const [modalRemarcar, setModalRemarcar] = useState<boolean>(false);
   const [itemSelecionado, setItemSelecionado] = useState<CompromissoAgenda | null>(null);
   const [modalCancelar, setModalCancelar] = useState<boolean>(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState<string>("");
+  const [novaData, setNovaData] = useState<string>("");
+  const [novoHorario, setNovoHorario] = useState<string>("");
+  const [motivoRemarcacao, setMotivoRemarcacao] = useState<string>("");
 
   const carregarDados = useCallback(async () => {
-    try {
-      const res = await obterAgendaComFallback(perfilAtivo);
-      setDados(res);
-    } catch {
-      // fallback
+    if (carregandoAuth) return;
+    const id = Number(usuarioId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setErro("Entre novamente para consultar sua agenda.");
+      setCarregando(false);
+      return;
     }
-  }, [perfilAtivo]);
 
-  useEffect(() => {
+    setCarregando(true);
+    try {
+      const res = await obterAgenda(perfilAtivo, id);
+      setDados(res);
+      setErro(null);
+      if (!diaEscolhidoManualmente.current) {
+        const compromissos = perfilAtivo === "PROFESSOR"
+          ? [
+              ...res.solicitacoes.map((item) => ({
+                dataIso: item.dataIso,
+                status: item.status,
+              })),
+              ...res.aulasProfessor,
+            ]
+          : res.aulasAluno;
+        const hoje = dataIso(new Date());
+        const proximaData = compromissos
+          .filter((item) =>
+            item.dataIso >= hoje &&
+            ["PENDENTE", "CONFIRMADO", "EM_ANDAMENTO", "AGUARDANDO_CONFIRMACAO"]
+              .includes(item.status),
+          )
+          .map((item) => item.dataIso)
+          .sort()[0];
+        if (proximaData) {
+          const dataCompromisso = new Date(`${proximaData}T12:00:00`);
+          setInicioSemana(obterInicioSemana(dataCompromisso));
+          setDiaSelecionadoIdx((dataCompromisso.getDay() + 6) % 7);
+        }
+      }
+      try {
+        const notificacoes = await obterNotificacoes(id);
+        setTotalNotificacoesNaoLidas(notificacoes.totalNaoLidas);
+      } catch {
+        setTotalNotificacoesNaoLidas(null);
+      }
+    } catch (error) {
+      setErro(getApiErrorMessage(error));
+    }
+    finally {
+      setCarregando(false);
+    }
+  }, [carregandoAuth, perfilAtivo, usuarioId]);
+
+  useFocusEffect(useCallback(() => {
     carregarDados();
-  }, [carregarDados]);
+  }, [carregarDados]));
 
+  const aulasProfessorDoDia = dados.aulasProfessor.filter(
+    (item) => item.dataIso === diaSelecionado?.dataIso,
+  );
+  const aulasAlunoDoDia = dados.aulasAluno.filter(
+    (item) => item.dataIso === diaSelecionado?.dataIso,
+  );
   // Ações do Professor
   const handleAceitarSolicitacao = async (id: number) => {
-    await aceitarSolicitacaoComFallback(id);
-    setDados((prev) => ({
-      ...prev,
-      solicitacoes: prev.solicitacoes.filter((s) => s.id !== id),
-    }));
-    Alert.alert("Solicitação Aceita", "A aula foi confirmada e adicionada à sua agenda!");
+    setProcessandoAcao(true);
+    try {
+      await aceitarSolicitacao(id);
+      await carregarDados();
+      Alert.alert("Solicitação aceita", "A aula foi confirmada e adicionada à sua agenda.");
+    } catch (error) {
+      Alert.alert("Não foi possível aceitar", getApiErrorMessage(error));
+    } finally {
+      setProcessandoAcao(false);
+    }
   };
 
   const handleRecusarSolicitacao = async (id: number) => {
-    await recusarSolicitacaoComFallback(id);
-    setDados((prev) => ({
-      ...prev,
-      solicitacoes: prev.solicitacoes.filter((s) => s.id !== id),
-    }));
-    Alert.alert("Solicitação Recusada", "A solicitação foi recusada.");
+    setProcessandoAcao(true);
+    try {
+      await recusarSolicitacao(id, "Indisponibilidade de horário na agenda");
+      await carregarDados();
+      Alert.alert("Solicitação recusada", "A solicitação foi recusada.");
+    } catch (error) {
+      Alert.alert("Não foi possível recusar", getApiErrorMessage(error));
+    } finally {
+      setProcessandoAcao(false);
+    }
   };
 
   // Ações do Aluno
   const handleAbrirRemarcar = (item: CompromissoAgenda) => {
     setItemSelecionado(item);
+    setNovaData("");
+    setNovoHorario("");
+    setMotivoRemarcacao("");
     setModalRemarcar(true);
   };
 
-  const handleConfirmarRemarcacao = () => {
-    setModalRemarcar(false);
-    Alert.alert(
-      "Remarcação Solicitada",
-      `Solicitação de remarcação enviada para ${itemSelecionado?.nome}. Aguarde a confirmação.`
-    );
+  const handleConfirmarRemarcacao = async () => {
+    if (!itemSelecionado || !/^\d{4}-\d{2}-\d{2}$/.test(novaData) || !/^\d{2}:\d{2}$/.test(novoHorario)) {
+      Alert.alert("Dados inválidos", "Informe uma data no formato AAAA-MM-DD e um horário HH:MM.");
+      return;
+    }
+    setProcessandoAcao(true);
+    try {
+      await remarcarAgendamento(itemSelecionado.id, {
+        data: novaData,
+        hora: `${novoHorario}:00`,
+        motivo: motivoRemarcacao.trim() || undefined,
+      });
+      setModalRemarcar(false);
+      await carregarDados();
+      Alert.alert("Aula remarcada", "A nova data e horário foram enviados para a agenda.");
+    } catch (error) {
+      Alert.alert("Não foi possível remarcar", getApiErrorMessage(error));
+    } finally {
+      setProcessandoAcao(false);
+    }
   };
 
   const handleAbrirDesistir = (item: CompromissoAgenda) => {
     setItemSelecionado(item);
+    setMotivoCancelamento("");
     setModalCancelar(true);
   };
 
-  const handleConfirmarDesistencia = () => {
-    if (itemSelecionado) {
-      setDados((prev) => ({
-        ...prev,
-        aulasAluno: prev.aulasAluno.filter((a) => a.id !== itemSelecionado.id),
-        mentoriasAluno: prev.mentoriasAluno.filter((m) => m.id !== itemSelecionado.id),
-      }));
+  const handleConfirmarDesistencia = async () => {
+    if (!itemSelecionado) return;
+    if (motivoCancelamento.trim().length < 5) {
+      Alert.alert("Informe o motivo", "A justificativa deve ter pelo menos 5 caracteres.");
+      return;
     }
-    setModalCancelar(false);
-    Alert.alert("Aula Cancelada", "Seu cancelamento foi registrado dentro do prazo de 2 horas.");
+    setProcessandoAcao(true);
+    try {
+      await cancelarAgendamento(itemSelecionado.id, motivoCancelamento.trim());
+      setModalCancelar(false);
+      await carregarDados();
+      Alert.alert("Aula cancelada", "O cancelamento foi registrado.");
+    } catch (error) {
+      Alert.alert("Não foi possível cancelar", getApiErrorMessage(error));
+    } finally {
+      setProcessandoAcao(false);
+    }
+  };
+
+  const alternarPerfil = async (perfil: PerfilAgenda) => {
+    const nomePerfil = perfil === "PROFESSOR" ? "Professor" : "Aluno";
+    if (perfil === perfilAtivo) return;
+    try {
+      await trocarPerfil(nomePerfil);
+    } catch (error) {
+      Alert.alert("Não foi possível trocar de perfil", getApiErrorMessage(error));
+    }
   };
 
   return (
@@ -154,20 +283,20 @@ export default function AgendaScreen() {
       {/* 1. TOP HEADER INSTITUCIONAL (LOGO ORIENTA + SINO DE NOTIFICAÇÃO)*/}
       {/* ============================================================== */}
       <View style={estilos.topHeader}>
-        {/* Logotipo Orienta */}
         <View style={estilos.logoRow}>
-          <View style={estilos.logoIconeBox}>
-            <View style={estilos.logoCirculoInterno} />
-          </View>
-          <Text style={estilos.logoTexto}>Orienta</Text>
+          <Image
+            source={require("../../assets/images/branding/logo.png")}
+            style={estilos.logoImagem}
+            resizeMode="contain"
+            accessibilityLabel="Orienta"
+          />
         </View>
 
-        {/* Lado Direito: Alternador Rápido de Perfil + Sino de Notificações */}
         <View style={estilos.headerAcoesDireita}>
-          {/* Alternador de Perfil para Homologação da Imagem Dupla */}
           <View style={estilos.perfilToggle}>
             <TouchableOpacity
-              onPress={() => setPerfilAtivo("PROFESSOR")}
+              onPress={() => alternarPerfil("PROFESSOR")}
+              disabled={processandoAcao}
               style={[
                 estilos.perfilBotao,
                 perfilAtivo === "PROFESSOR" && estilos.perfilBotaoAtivo,
@@ -184,7 +313,8 @@ export default function AgendaScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => setPerfilAtivo("ALUNO")}
+              onPress={() => alternarPerfil("ALUNO")}
+              disabled={processandoAcao}
               style={[
                 estilos.perfilBotao,
                 perfilAtivo === "ALUNO" && estilos.perfilBotaoAtivo,
@@ -202,14 +332,20 @@ export default function AgendaScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Sino com Badge Numérico Laranja */}
-          <TouchableOpacity style={estilos.sinoBotao} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={estilos.sinoBotao}
+            activeOpacity={0.7}
+            onPress={() => router.push("/notificacoes" as any)}
+            accessibilityLabel="Abrir notificações"
+          >
             <Ionicons name="notifications-outline" size={22} color="#0F172A" />
-            <View style={estilos.badgeSino}>
-              <Text style={estilos.badgeSinoTexto}>
-                {perfilAtivo === "PROFESSOR" ? "3" : "2"}
-              </Text>
-            </View>
+            {totalNotificacoesNaoLidas !== null && totalNotificacoesNaoLidas > 0 && (
+              <View style={estilos.badgeSino}>
+                <Text style={estilos.badgeSinoTexto}>
+                  {totalNotificacoesNaoLidas > 9 ? "9+" : totalNotificacoesNaoLidas}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -291,21 +427,30 @@ export default function AgendaScreen() {
         <View style={estilos.weeklyStripContainer}>
           <TouchableOpacity
             style={estilos.chevronSemana}
-            onPress={() =>
-              setDiaSelecionadoIdx((prev) => (prev > 0 ? prev - 1 : DIAS_SEMANA.length - 1))
-            }
+            onPress={() => {
+              diaEscolhidoManualmente.current = true;
+              setInicioSemana((prev) => adicionarDias(prev, -7));
+            }}
+            accessibilityLabel="Semana anterior"
           >
             <Ionicons name="chevron-back" size={18} color="#0F172A" />
           </TouchableOpacity>
 
           <View style={estilos.diasSemanaRow}>
-            {DIAS_SEMANA.map((item, idx) => {
+            {diasSemana.map((item, idx) => {
               const isSelected = idx === diaSelecionadoIdx;
+              const temCompromisso = [
+                ...dados.aulasProfessor,
+                ...dados.aulasAluno,
+              ].some((compromisso) => compromisso.dataIso === item.dataIso);
               return (
                 <TouchableOpacity
-                  key={`dia-${idx}`}
+                  key={item.dataIso}
                   style={[estilos.diaCard, isSelected && estilos.diaCardAtivo]}
-                  onPress={() => setDiaSelecionadoIdx(idx)}
+                  onPress={() => {
+                    diaEscolhidoManualmente.current = true;
+                    setDiaSelecionadoIdx(idx);
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text style={[estilos.textoDiaSemana, isSelected && estilos.textoDiaAtivo]}>
@@ -314,8 +459,7 @@ export default function AgendaScreen() {
                   <Text style={[estilos.textoDataMes, isSelected && estilos.textoDiaAtivo]}>
                     {item.dataMes}
                   </Text>
-                  {/* Dot Laranja indicador na Quarta selecionada */}
-                  {isSelected && <View style={estilos.dotDiaAtivo} />}
+                  {temCompromisso && <View style={estilos.dotDiaAtivo} />}
                 </TouchableOpacity>
               );
             })}
@@ -323,9 +467,11 @@ export default function AgendaScreen() {
 
           <TouchableOpacity
             style={estilos.chevronSemana}
-            onPress={() =>
-              setDiaSelecionadoIdx((prev) => (prev < DIAS_SEMANA.length - 1 ? prev + 1 : 0))
-            }
+            onPress={() => {
+              diaEscolhidoManualmente.current = true;
+              setInicioSemana((prev) => adicionarDias(prev, 7));
+            }}
+            accessibilityLabel="Próxima semana"
           >
             <Ionicons name="chevron-forward" size={18} color="#0F172A" />
           </TouchableOpacity>
@@ -334,7 +480,79 @@ export default function AgendaScreen() {
         {/* ============================================================== */}
         {/* 5. CONTEÚDO DA VISÃO DO PROFESSOR                              */}
         {/* ============================================================== */}
-        {perfilAtivo === "PROFESSOR" ? (
+        {carregando ? (
+          <View style={estilos.estadoAgenda}>
+            <ActivityIndicator size="large" color="#FF6B1A" />
+            <Text style={estilos.estadoAgendaTexto}>Carregando sua agenda...</Text>
+          </View>
+        ) : erro ? (
+          <View style={estilos.estadoAgenda}>
+            <Feather name="wifi-off" size={28} color="#DC2626" />
+            <Text style={estilos.erroAgendaTexto}>{erro}</Text>
+            <TouchableOpacity style={estilos.botaoTentarNovamente} onPress={carregarDados}>
+              <Text style={estilos.textoTentarNovamente}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        ) : abaSegmentada === "SECUNDARIA" ? (
+          <View style={estilos.conteudoBloco}>
+            <Text style={estilos.secaoTituloTexto}>
+              {perfilAtivo === "PROFESSOR" ? "Resumo da agenda" : "Histórico de aulas"}
+            </Text>
+            <View style={estilos.resumoCard}>
+              {perfilAtivo === "PROFESSOR" ? (
+                <>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Solicitações pendentes</Text>
+                    <Text style={estilos.resumoValor}>{dados.solicitacoes.length}</Text>
+                  </View>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Aulas agendadas</Text>
+                    <Text style={estilos.resumoValor}>
+                      {dados.aulasProfessor.filter((item) =>
+                        item.dataIso >= dataIso(new Date()) &&
+                        ["CONFIRMADO", "PENDENTE", "EM_ANDAMENTO", "AGUARDANDO_CONFIRMACAO"]
+                          .includes(item.status),
+                      ).length}
+                    </Text>
+                  </View>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Aulas realizadas</Text>
+                    <Text style={estilos.resumoValor}>
+                      {dados.aulasProfessor.filter((item) => item.status === "REALIZADA").length}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Próximas aulas</Text>
+                    <Text style={estilos.resumoValor}>
+                      {dados.aulasAluno.filter((item) =>
+                        item.dataIso >= dataIso(new Date()) &&
+                        ["CONFIRMADO", "PENDENTE", "EM_ANDAMENTO", "AGUARDANDO_CONFIRMACAO"]
+                          .includes(item.status),
+                      ).length}
+                    </Text>
+                  </View>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Aulas realizadas</Text>
+                    <Text style={estilos.resumoValor}>
+                      {dados.aulasAluno.filter((item) => item.status === "REALIZADA").length}
+                    </Text>
+                  </View>
+                  <View style={estilos.resumoLinha}>
+                    <Text style={estilos.resumoRotulo}>Canceladas ou recusadas</Text>
+                    <Text style={estilos.resumoValor}>
+                      {dados.aulasAluno.filter((item) =>
+                        ["CANCELADO", "RECUSADO"].includes(item.status),
+                      ).length}
+                    </Text>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        ) : perfilAtivo === "PROFESSOR" ? (
           <View style={estilos.conteudoBloco}>
             {/* Seção 1: Solicitações de Aula */}
             <View style={estilos.secaoCabecalhoRow}>
@@ -346,22 +564,22 @@ export default function AgendaScreen() {
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push("/todas-mentorias" as any)}>
                 <Text style={estilos.linkVerTodas}>Ver todas →</Text>
               </TouchableOpacity>
             </View>
 
             {/* Lista de Solicitações */}
             <View style={estilos.listaCardsContainer}>
+              {dados.solicitacoes.length === 0 && (
+                <Text style={estilos.estadoListaTexto}>Nenhuma solicitação pendente.</Text>
+              )}
               {dados.solicitacoes.map((sol) => (
                 <View key={`sol-${sol.id}`} style={estilos.cardSolicitacao}>
-                  {/* Avatar com Dot Online */}
                   <View style={estilos.avatarContainer}>
-                    <Image source={{ uri: sol.alunoFoto }} style={estilos.avatarImagem} />
-                    <View style={estilos.dotOnlineVerde} />
+                    <AvatarPerfil nome={sol.alunoNome} tamanho={48} />
                   </View>
 
-                  {/* Informações da Solicitação */}
                   <View style={estilos.solicitacaoInfo}>
                     <Text style={estilos.nomeAluno}>{sol.alunoNome}</Text>
                     <View style={estilos.badgeModalidadeLinha}>
@@ -385,11 +603,11 @@ export default function AgendaScreen() {
                     </View>
                   </View>
 
-                  {/* Botões de Ação Bilaterais [Aceitar] e [Recusar] */}
                   <View style={estilos.acoesBotoesColuna}>
                     <TouchableOpacity
                       style={estilos.botaoAceitar}
                       onPress={() => handleAceitarSolicitacao(sol.id)}
+                      disabled={processandoAcao}
                       activeOpacity={0.8}
                     >
                       <Feather name="check" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
@@ -399,6 +617,7 @@ export default function AgendaScreen() {
                     <TouchableOpacity
                       style={estilos.botaoRecusar}
                       onPress={() => handleRecusarSolicitacao(sol.id)}
+                      disabled={processandoAcao}
                       activeOpacity={0.8}
                     >
                       <Feather name="x" size={14} color="#EA580C" style={{ marginRight: 4 }} />
@@ -412,13 +631,18 @@ export default function AgendaScreen() {
             {/* Seção 2: Minhas Aulas Agendadas */}
             <View style={[estilos.secaoCabecalhoRow, { marginTop: 24 }]}>
               <Text style={estilos.secaoTituloTexto}>Minhas Aulas Agendadas</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push("/todas-mentorias" as any)}>
                 <Text style={estilos.linkVerTodas}>Ver todas →</Text>
               </TouchableOpacity>
             </View>
 
             <View style={estilos.listaCardsContainer}>
-              {dados.aulasProfessor.map((aula) => (
+              {aulasProfessorDoDia.length === 0 && (
+                <Text style={estilos.estadoListaTexto}>
+                  Nenhuma aula agendada para {diaSelecionado?.dataMes ?? "esta data"}.
+                </Text>
+              )}
+              {aulasProfessorDoDia.map((aula) => (
                 <TouchableOpacity
                   key={`aula-${aula.id}`}
                   style={estilos.cardAulaAgendada}
@@ -429,13 +653,17 @@ export default function AgendaScreen() {
                   <View style={estilos.faixaMarcadoraAzul} />
 
                   <View style={estilos.aulaAgendadaCorpo}>
-                    <Image source={{ uri: aula.foto }} style={estilos.avatarPequeno} />
+                    <AvatarPerfil nome={aula.nome} fotoUrl={aula.foto} tamanho={38} />
 
                     <View style={estilos.aulaInfoPrincipal}>
                       <Text style={estilos.nomeAluno}>{aula.nome}</Text>
                       <View style={estilos.metaLinha}>
                         <Feather name="book-open" size={12} color="#64748B" style={{ marginRight: 3 }} />
                         <Text style={estilos.metaTexto}>{aula.materia}</Text>
+                      </View>
+                      <View style={estilos.metaLinha}>
+                        <Feather name="check-circle" size={12} color="#64748B" style={{ marginRight: 3 }} />
+                        <Text style={estilos.metaTexto}>{rotuloStatus(aula.status)}</Text>
                       </View>
                       <View style={estilos.metaLinha}>
                         <Ionicons
@@ -467,16 +695,20 @@ export default function AgendaScreen() {
           <View style={estilos.conteudoBloco}>
             {/* Seção 1: Próximas Aulas */}
             <View style={estilos.secaoCabecalhoRow}>
-              <Text style={estilos.secaoTituloTexto}>Próximas Aulas</Text>
+              <Text style={estilos.secaoTituloTexto}>Aulas do dia</Text>
             </View>
 
             <View style={estilos.listaCardsContainer}>
-              {dados.aulasAluno.map((item) => (
+              {aulasAlunoDoDia.length === 0 && (
+                <Text style={estilos.estadoListaTexto}>
+                  Nenhuma aula para {diaSelecionado?.dataMes ?? "esta data"}.
+                </Text>
+              )}
+              {aulasAlunoDoDia.map((item) => (
                 <View key={`aluno-aula-${item.id}`} style={estilos.cardAlunoAgendamento}>
                   <View style={estilos.cardAlunoTopo}>
                     <View style={estilos.avatarContainer}>
-                      <Image source={{ uri: item.foto }} style={estilos.avatarGrande} />
-                      <View style={estilos.dotOnlineVerde} />
+                      <AvatarPerfil nome={item.nome} fotoUrl={item.foto} tamanho={54} />
                     </View>
 
                     <View style={estilos.alunoInfoTexto}>
@@ -484,7 +716,7 @@ export default function AgendaScreen() {
                         <Text style={estilos.nomeMentor}>{item.nome}</Text>
                         <View style={estilos.tagConfirmada}>
                           <Feather name="check" size={11} color="#C2410C" style={{ marginRight: 3 }} />
-                          <Text style={estilos.textoTagConfirmada}>Confirmada</Text>
+                          <Text style={estilos.textoTagConfirmada}>{rotuloStatus(item.status)}</Text>
                         </View>
                       </View>
 
@@ -499,7 +731,12 @@ export default function AgendaScreen() {
                       </View>
 
                       <View style={estilos.metaLinha}>
-                        <Ionicons name="location-outline" size={13} color="#475569" style={{ marginRight: 3 }} />
+                        <Ionicons
+                          name={item.online ? "videocam-outline" : "location-outline"}
+                          size={13}
+                          color="#475569"
+                          style={{ marginRight: 3 }}
+                        />
                         <Text style={estilos.metaTextoEscuro}>{item.localizacao}</Text>
                       </View>
                     </View>
@@ -510,6 +747,7 @@ export default function AgendaScreen() {
                     <TouchableOpacity
                       style={estilos.botaoRemarcar}
                       onPress={() => handleAbrirRemarcar(item)}
+                      disabled={processandoAcao || item.status !== "CONFIRMADO"}
                       activeOpacity={0.8}
                     >
                       <Feather name="calendar" size={14} color="#0A2540" style={{ marginRight: 6 }} />
@@ -519,70 +757,7 @@ export default function AgendaScreen() {
                     <TouchableOpacity
                       style={estilos.botaoDesistir}
                       onPress={() => handleAbrirDesistir(item)}
-                      activeOpacity={0.8}
-                    >
-                      <Feather name="trash-2" size={14} color="#DC2626" style={{ marginRight: 6 }} />
-                      <Text style={estilos.textoBotaoDesistir}>Desistir</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            {/* Seção 2: Próximas Mentorias */}
-            <View style={[estilos.secaoCabecalhoRow, { marginTop: 24 }]}>
-              <Text style={estilos.secaoTituloTexto}>Próximas Mentorias</Text>
-            </View>
-
-            <View style={estilos.listaCardsContainer}>
-              {dados.mentoriasAluno.map((item) => (
-                <View key={`aluno-mentoria-${item.id}`} style={estilos.cardAlunoAgendamento}>
-                  <View style={estilos.cardAlunoTopo}>
-                    <View style={estilos.avatarContainer}>
-                      <Image source={{ uri: item.foto }} style={estilos.avatarGrande} />
-                      <View style={estilos.dotOnlineVerde} />
-                    </View>
-
-                    <View style={estilos.alunoInfoTexto}>
-                      <View style={estilos.linhaNomeBadge}>
-                        <Text style={estilos.nomeMentor}>{item.nome}</Text>
-                        <View style={estilos.tagConfirmadaAzul}>
-                          <Feather name="check" size={11} color="#0369A1" style={{ marginRight: 3 }} />
-                          <Text style={estilos.textoTagConfirmadaAzul}>Confirmada</Text>
-                        </View>
-                      </View>
-
-                      <View style={estilos.metaLinha}>
-                        <Feather name="compass" size={12} color="#475569" style={{ marginRight: 4 }} />
-                        <Text style={estilos.metaTextoEscuro}>{item.materia}</Text>
-                      </View>
-
-                      <View style={estilos.metaLinha}>
-                        <Feather name="calendar" size={12} color="#475569" style={{ marginRight: 4 }} />
-                        <Text style={estilos.metaTextoEscuro}>{item.horario}</Text>
-                      </View>
-
-                      <View style={estilos.metaLinha}>
-                        <Ionicons name="videocam-outline" size={13} color="#475569" style={{ marginRight: 3 }} />
-                        <Text style={estilos.metaTextoEscuro}>{item.localizacao}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Botões Remarcar e Desistir */}
-                  <View style={estilos.botoesAcaoAlunoRow}>
-                    <TouchableOpacity
-                      style={estilos.botaoRemarcar}
-                      onPress={() => handleAbrirRemarcar(item)}
-                      activeOpacity={0.8}
-                    >
-                      <Feather name="calendar" size={14} color="#0A2540" style={{ marginRight: 6 }} />
-                      <Text style={estilos.textoBotaoRemarcar}>Remarcar</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={estilos.botaoDesistir}
-                      onPress={() => handleAbrirDesistir(item)}
+                      disabled={processandoAcao || ["CANCELADO", "RECUSADO", "REALIZADA"].includes(item.status)}
                       activeOpacity={0.8}
                     >
                       <Feather name="trash-2" size={14} color="#DC2626" style={{ marginRight: 6 }} />
@@ -619,31 +794,46 @@ export default function AgendaScreen() {
               Escolha uma nova data e horário para a aula com {itemSelecionado?.nome}:
             </Text>
 
-            <View style={estilos.modalDatasRow}>
-              {["Qua 26/06", "Qui 27/06", "Sex 28/06"].map((d, i) => (
-                <TouchableOpacity
-                  key={`rem-${i}`}
-                  style={[estilos.modalDataPill, i === 1 && estilos.modalDataPillAtiva]}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[estilos.textoModalPill, i === 1 && estilos.textoModalPillAtiva]}>
-                    {d}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <TextInput
+              style={estilos.inputModal}
+              placeholder="Nova data (AAAA-MM-DD)"
+              placeholderTextColor="#94A3B8"
+              value={novaData}
+              onChangeText={setNovaData}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={estilos.inputModal}
+              placeholder="Novo horário (HH:MM)"
+              placeholderTextColor="#94A3B8"
+              value={novoHorario}
+              onChangeText={setNovoHorario}
+              keyboardType="numbers-and-punctuation"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={estilos.inputModal}
+              placeholder="Motivo (opcional)"
+              placeholderTextColor="#94A3B8"
+              value={motivoRemarcacao}
+              onChangeText={setMotivoRemarcacao}
+            />
 
             <View style={estilos.modalAcoesRow}>
               <TouchableOpacity
                 style={estilos.botaoModalPrimario}
                 onPress={handleConfirmarRemarcacao}
+                disabled={processandoAcao}
                 activeOpacity={0.8}
               >
-                <Text style={estilos.textoBotaoModalPrimario}>Confirmar Remarcação</Text>
+                <Text style={estilos.textoBotaoModalPrimario}>
+                  {processandoAcao ? "Salvando..." : "Confirmar Remarcação"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={estilos.botaoModalSecundario}
                 onPress={() => setModalRemarcar(false)}
+                disabled={processandoAcao}
                 activeOpacity={0.8}
               >
                 <Text style={estilos.textoBotaoModalSecundario}>Voltar</Text>
@@ -669,7 +859,7 @@ export default function AgendaScreen() {
 
             <TextInput
               style={estilos.inputJustificativa}
-              placeholder="Motivo do cancelamento (opcional)..."
+              placeholder="Motivo do cancelamento (obrigatório)..."
               placeholderTextColor="#94A3B8"
               value={motivoCancelamento}
               onChangeText={setMotivoCancelamento}
@@ -680,13 +870,17 @@ export default function AgendaScreen() {
               <TouchableOpacity
                 style={estilos.botaoModalPerigo}
                 onPress={handleConfirmarDesistencia}
+                disabled={processandoAcao}
                 activeOpacity={0.8}
               >
-                <Text style={estilos.textoBotaoModalPerigo}>Confirmar Cancelamento</Text>
+                <Text style={estilos.textoBotaoModalPerigo}>
+                  {processandoAcao ? "Cancelando..." : "Confirmar Cancelamento"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={estilos.botaoModalSecundario}
                 onPress={() => setModalCancelar(false)}
+                disabled={processandoAcao}
                 activeOpacity={0.8}
               >
                 <Text style={estilos.textoBotaoModalSecundario}>Voltar</Text>
@@ -709,7 +903,7 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 4,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
@@ -718,26 +912,9 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  logoIconeBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FF6B1A",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  logoCirculoInterno: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2.5,
-    borderColor: "#FFFFFF",
-  },
-  logoTexto: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0F172A",
+  logoImagem: {
+    width: 56,
+    height: 56,
   },
   headerAcoesDireita: {
     flexDirection: "row",
@@ -882,7 +1059,7 @@ const estilos = StyleSheet.create({
   },
   diaCard: {
     position: "relative",
-    width: 52,
+    width: 34,
     paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: "#F1F5F9",
@@ -893,13 +1070,13 @@ const estilos = StyleSheet.create({
     backgroundColor: "#0A2540",
   },
   textoDiaSemana: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "600",
     color: "#475569",
     marginBottom: 2,
   },
   textoDataMes: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "500",
     color: "#64748B",
   },
@@ -918,6 +1095,64 @@ const estilos = StyleSheet.create({
   // Conteúdo
   conteudoBloco: {
     gap: 12,
+  },
+  estadoAgenda: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  estadoAgendaTexto: {
+    color: "#64748B",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  erroAgendaTexto: {
+    color: "#991B1B",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  botaoTentarNovamente: {
+    backgroundColor: "#0A2540",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 9,
+  },
+  textoTentarNovamente: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  resumoCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 16,
+  },
+  resumoLinha: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  resumoRotulo: {
+    color: "#475569",
+    fontSize: 14,
+  },
+  resumoValor: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  estadoListaTexto: {
+    color: "#64748B",
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 18,
   },
   secaoCabecalhoRow: {
     flexDirection: "row",
@@ -1306,6 +1541,15 @@ const estilos = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: "top",
     marginBottom: 16,
+  },
+  inputModal: {
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#0F172A",
+    marginBottom: 10,
   },
   modalAcoesRow: {
     gap: 8,

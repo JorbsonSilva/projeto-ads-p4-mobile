@@ -611,7 +611,7 @@ export default function ExplorarDisciplinas() {
 
         <TouchableOpacity
           style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
+          onPress={() => router.push("/(tabs)/agenda" as any)}
           activeOpacity={0.8}
           accessibilityLabel="Aba Agenda"
         >

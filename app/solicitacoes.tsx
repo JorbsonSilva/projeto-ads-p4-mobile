@@ -183,7 +183,7 @@ export default function SolicitacoesScreen() {
 
         <TouchableOpacity
           style={estilos.botaoHeaderCircular}
-          onPress={() => router.push("/agenda" as any)}
+          onPress={() => router.push("/(tabs)/agenda" as any)}
           activeOpacity={0.7}
           accessibilityLabel="Ir para Minha Agenda"
         >
@@ -514,7 +514,7 @@ export default function SolicitacoesScreen() {
 
                     <TouchableOpacity
                       style={estilos.botaoVerNaAgenda}
-                      onPress={() => router.push("/agenda" as any)}
+                      onPress={() => router.push("/(tabs)/agenda" as any)}
                     >
                       <Text style={estilos.textoVerNaAgenda}>Ver na agenda &gt;</Text>
                     </TouchableOpacity>
@@ -557,7 +557,7 @@ export default function SolicitacoesScreen() {
 
         <TouchableOpacity
           style={estilos.tabItem}
-          onPress={() => router.push("/agenda" as any)}
+          onPress={() => router.push("/(tabs)/agenda" as any)}
           activeOpacity={0.8}
           accessibilityLabel="Aba Agenda"
         >

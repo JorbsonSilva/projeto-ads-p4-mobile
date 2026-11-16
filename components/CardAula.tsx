@@ -7,7 +7,8 @@
 
 import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import AvatarPerfil from "./AvatarPerfil";
 
 interface CardAulaProps {
   /** ID único do agendamento vindo do banco de dados */
@@ -23,7 +24,7 @@ interface CardAulaProps {
   /** Status atual da aula (PENDENTE, CONFIRMADO, RECUSADO) */
   status: string;
   /** URL da foto de perfil do usuário */
-  foto: string;
+  foto?: string | null;
   /** Callback acionado ao clicar no botão "Aceitar" (injetando o ID) */
   onAceitar: (id: number) => void;
   /** Callback acionado ao clicar no botão "Recusar" (injetando o ID) */
@@ -48,7 +49,9 @@ export default function CardAula({
   return (
     <View style={estilos.aulaListaItem}>
       {/* Coluna 1: Avatar */}
-      <Image source={{ uri: foto }} style={estilos.aulaListaFoto} />
+      <View style={estilos.avatar}>
+        <AvatarPerfil nome={nome} fotoUrl={foto} tamanho={48} />
+      </View>
 
       {/* Coluna 2: Dados Principais e Ações */}
       <View style={estilos.containerDados}>
@@ -139,12 +142,8 @@ const estilos = StyleSheet.create({
     borderBottomColor: "#EEE",
     backgroundColor: "#FFF",
   },
-  aulaListaFoto: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  avatar: {
     marginRight: 12,
-    backgroundColor: "#E1F0FF", // Fallback enquanto a imagem carrega
   },
   containerDados: {
     flex: 1,

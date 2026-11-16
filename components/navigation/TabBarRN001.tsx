@@ -24,7 +24,7 @@
  * - Feedback háptico/tátil e tokens oficiais do Design System Orienta 2.0.
  */
 
-import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
+import { Feather, FontAwesome5 } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
 import {
@@ -137,16 +137,11 @@ export default function TabBarRN001({
             accessibilityLabel="Central de Notificações"
           >
             {abaAtiva === "notificacoes" && <View style={estilos.indicadorAbaAtiva} />}
-            <View style={estilos.iconeComBadge}>
-              <Feather
-                name="bell"
-                size={20}
-                color={abaAtiva === "notificacoes" ? "#FF5A1F" : "#64748B"}
-              />
-              <View style={estilos.badgeDotAlerta}>
-                <Text style={estilos.badgeDotTexto}>3</Text>
-              </View>
-            </View>
+            <Feather
+              name="bell"
+              size={20}
+              color={abaAtiva === "notificacoes" ? "#FF5A1F" : "#64748B"}
+            />
             <Text
               style={[
                 estilos.rotuloAba,
@@ -300,16 +295,11 @@ export default function TabBarRN001({
             accessibilityLabel="Mensagens e Chat"
           >
             {abaAtiva === "chat" && <View style={estilos.indicadorAbaAtiva} />}
-            <View style={estilos.iconeComBadge}>
-              <Feather
-                name="message-square"
-                size={19}
-                color={abaAtiva === "chat" ? "#FF5A1F" : "#64748B"}
-              />
-              <View style={estilos.badgeDotAlerta}>
-                <Text style={estilos.badgeDotTexto}>2</Text>
-              </View>
-            </View>
+            <Feather
+              name="message-square"
+              size={19}
+              color={abaAtiva === "chat" ? "#FF5A1F" : "#64748B"}
+            />
             <Text
               style={[
                 estilos.rotuloAba,

@@ -1,24 +1,15 @@
 /**
  * @file notificacoes.tsx
  * @description Central de Notificações e Alertas do Orienta 2.0 [ORI-016].
- * Construída com estrita fidelidade visual à especificação IMG-006 (Notificações.jpeg).
- * 
- * Funcionalidades:
- * - Cabeçalho com título, contador de não lidas e ação "Marcar todas como lidas"
- * - 5 Chips horizontais de filtragem: Todas, Aulas, Mensagens, Pagamentos e Sistema
- * - Agrupamento temporal das notificações: Hoje, Ontem e Últimos 7 dias
- * - Cards interativos com ícones semânticos circulares e paleta do Design System Orienta
- * - Ponto indicador azul/laranja para notificações não lidas
- * - Navegação contextual direta ao tocar na notificação (Agenda, Chat, Saque, Ganhos)
- * - Serviço híbrido resiliente com fallback offline e badge de modo de simulação
- * - Barra inferior de navegação com 5 abas perfeitamente integrada
+ * Carrega notificações autenticadas, permite marcá-las como lidas e abre a tela relacionada.
  */
 
-import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -30,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
+import { getApiErrorMessage } from "../config/api";
 import {
   CategoriaNotificacao,
   GrupoTemporal,
@@ -50,32 +42,43 @@ const CATEGORIAS_FILTRO: { id: CategoriaNotificacao; rotulo: string; icone?: str
 
 export default function NotificacoesScreen() {
   const insets = useSafeAreaInsets();
-  const { perfilAtivo } = useAuth() as any;
+  const { perfilAtivo, usuarioId } = useAuth();
 
   const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
   const [categoriaAtiva, setCategoriaAtiva] = useState<CategoriaNotificacao>("TODAS");
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [processandoAcao, setProcessandoAcao] = useState<boolean>(false);
   const [totalNaoLidas, setTotalNaoLidas] = useState<number>(0);
 
   const carregarDados = useCallback(async () => {
+    const id = Number(usuarioId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setErro("Entre novamente para consultar suas notificações.");
+      setCarregando(false);
+      setAtualizando(false);
+      return;
+    }
+
     try {
-      const res: ResultadoNotificacoes = await obterNotificacoes(101);
+      const res: ResultadoNotificacoes = await obterNotificacoes(id);
       setNotificacoes(res.notificacoes);
       setTotalNaoLidas(res.totalNaoLidas);
-      setIsSimulado(res.isSimulado);
-    } catch {
-      setIsSimulado(true);
+      setErro(null);
+    } catch (error) {
+      setErro(getApiErrorMessage(error));
+      setNotificacoes([]);
+      setTotalNaoLidas(0);
     } finally {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, []);
+  }, [usuarioId]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     carregarDados();
-  }, [carregarDados]);
+  }, [carregarDados]));
 
   const onRefresh = () => {
     setAtualizando(true);
@@ -83,18 +86,34 @@ export default function NotificacoesScreen() {
   };
 
   const handleMarcarTodasLidas = async () => {
-    await marcarTodasComoLidas(101);
-    setNotificacoes((prev) => prev.map((n) => ({ ...n, lida: true })));
-    setTotalNaoLidas(0);
+    const id = Number(usuarioId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    setProcessandoAcao(true);
+    try {
+      await marcarTodasComoLidas(id);
+      setNotificacoes((prev) => prev.map((n) => ({ ...n, lida: true })));
+      setTotalNaoLidas(0);
+    } catch (error) {
+      Alert.alert("Não foi possível atualizar", getApiErrorMessage(error));
+    } finally {
+      setProcessandoAcao(false);
+    }
   };
 
   const handleTocarNotificacao = async (item: NotificacaoItem) => {
     if (!item.lida) {
-      await marcarComoLida(item.id, 101);
-      setNotificacoes((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, lida: true } : n))
-      );
-      setTotalNaoLidas((prev) => Math.max(0, prev - 1));
+      const id = Number(usuarioId);
+      if (!Number.isInteger(id) || id <= 0) return;
+      try {
+        await marcarComoLida(item.id, id);
+        setNotificacoes((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, lida: true } : n))
+        );
+        setTotalNaoLidas((prev) => Math.max(0, prev - 1));
+      } catch (error) {
+        Alert.alert("Não foi possível marcar como lida", getApiErrorMessage(error));
+        return;
+      }
     }
 
     if (item.rotaDestino) {
@@ -123,18 +142,6 @@ export default function NotificacoesScreen() {
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
-      {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE SIMULAÇÃO OFFLINE                        */}
-      {/* ============================================================== */}
-      {isSimulado && (
-        <View style={estilos.bannerSimulacao}>
-          <Ionicons name="information-circle" size={14} color="#D97706" style={{ marginRight: 6 }} />
-          <Text style={estilos.textoBannerSimulacao}>
-            ⚠️ Modo Simulação: Dados offline em exibição
-          </Text>
-        </View>
-      )}
-
       {/* ============================================================== */}
       {/* 1. HEADER SUPERIOR COM TÍTULO E AÇÃO MARCAR COMO LIDAS (IMG-006)*/}
       {/* ============================================================== */}
@@ -168,6 +175,7 @@ export default function NotificacoesScreen() {
           <TouchableOpacity
             style={estilos.botaoMarcarTodas}
             onPress={handleMarcarTodasLidas}
+            disabled={processandoAcao}
             activeOpacity={0.7}
             accessibilityLabel="Marcar todas como lidas"
           >
@@ -223,7 +231,7 @@ export default function NotificacoesScreen() {
                       isAtivo ? estilos.chipBadgeTextoAtivo : estilos.chipBadgeTextoInativo,
                     ]}
                   >
-                    {count}
+                    {erro ? "-" : count}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -239,6 +247,14 @@ export default function NotificacoesScreen() {
         <View style={estilos.loadingContainer}>
           <ActivityIndicator size="large" color="#FF5A1F" />
           <Text style={estilos.loadingTexto}>Carregando notificações...</Text>
+        </View>
+      ) : erro ? (
+        <View style={estilos.loadingContainer}>
+          <Feather name="wifi-off" size={28} color="#DC2626" />
+          <Text style={estilos.erroTexto}>{erro}</Text>
+          <TouchableOpacity style={estilos.botaoTentarNovamente} onPress={carregarDados}>
+            <Text style={estilos.textoTentarNovamente}>Tentar novamente</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -359,22 +375,6 @@ const estilos = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
-  bannerSimulacao: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
-  },
-  textoBannerSimulacao: {
-    fontSize: 11,
-    color: "#92400E",
-    fontWeight: "600",
-  },
-
   // 1. Header
   header: {
     flexDirection: "row",
@@ -505,6 +505,24 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     color: "#64748B",
     marginTop: 10,
+  },
+  erroTexto: {
+    fontSize: 14,
+    color: "#991B1B",
+    textAlign: "center",
+    marginTop: 10,
+  },
+  botaoTentarNovamente: {
+    backgroundColor: "#0A2540",
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 9,
+    marginTop: 12,
+  },
+  textoTentarNovamente: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   emptyStateContainer: {
     alignItems: "center",
