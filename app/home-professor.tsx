@@ -7,14 +7,13 @@
  * - Header superior com menu hambúrguer, logotipo Orienta e sino de notificações com badge numérico
  * - Alternador de perfil integrado (Aluno / Professor) no topo para testes e alternância de fluxo
  * - Saudação personalizada ao docente com mensagem inspiradora
- * - Card "Resumo geral" com grid 2x2 e percentuais comparativos mensais (+% vs mês anterior)
+ * - Card "Resumo geral" com métricas mensais retornadas pela API
  * - 4 Atalhos rápidos circulares (Minha Agenda, Alunos, Saque / Carteira, Chat / Mensagens)
  * - Banner de chamada 3D para gestão de aulas pagas/gratuitas com CTA "Gerenciar aulas"
- * - Feed de Próximas Aulas do Professor com status semântico, modalidade e acesso direto ao Chat
- * - Serviço híbrido resiliente com fallback offline e badge de modo de simulação
+ * - Feed de próximas aulas reais com status, modalidade e acesso ao chat do agendamento
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -33,23 +32,21 @@ import { CentralNotificacoesModal } from "../components/CentralNotificacoesModal
 import { Assets } from "../constants/assets";
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
+import { getApiErrorMessage } from "../config/api";
 import {
   DadosHomeProfessor,
+  obterContagemNotificacoesNaoLidas,
   obterDadosHomeProfessor,
-  ResultadoHomeProfessor,
 } from "../services/professorHomeService";
 
 const DADOS_HOME_INICIAIS: DadosHomeProfessor = {
-  professorId: 0,
-  professorNome: "",
   metricas: {
-    aulasRealizadas: { valor: 0, label: "Aulas realizadas", variacaoPercentual: "", icone: "calendar", positivo: true },
-    alunosAtendidos: { valor: 0, label: "Alunos atendidos", variacaoPercentual: "", icone: "users", positivo: true },
-    horasMinistradas: { valor: 0, label: "Horas ministradas", variacaoPercentual: "", icone: "clock", positivo: true },
-    ganhosMes: { valor: 0, label: "Ganhos do mês", variacaoPercentual: "", icone: "dollar-sign", positivo: true },
+    aulasRealizadas: { valor: "—", label: "Aulas realizadas no mês", icone: "calendar" },
+    alunosAtendidos: { valor: "—", label: "Alunos atendidos no mês", icone: "users" },
+    aulasPendentes: { valor: "—", label: "Aulas pendentes no mês", icone: "clock" },
+    ganhosMes: { valor: "—", label: "Ganhos brutos no mês", icone: "dollar-sign" },
   },
   proximasAulas: [],
-  solicitacoesPendentesCount: 0,
 };
 
 export default function HomeProfessorScreen({
@@ -58,34 +55,54 @@ export default function HomeProfessorScreen({
   exibirBarraInferior?: boolean;
 } = {}) {
   const insets = useSafeAreaInsets();
-  const { nomeUsuario } = useAuth() as any;
+  const { nomeUsuario, usuarioId } = useAuth();
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
   const [dados, setDados] = useState<DadosHomeProfessor>(DADOS_HOME_INICIAIS);
+  const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
+  const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState<number | null>(null);
   const [modalNotificacoes, setModalNotificacoes] = useState<boolean>(false);
 
   const carregarDashboard = useCallback(async () => {
     try {
-      const res: ResultadoHomeProfessor = await obterDadosHomeProfessor(101);
-      setDados(res.dados);
-      setIsSimulado(res.isSimulado);
-    } catch {
-      setIsSimulado(true);
+      const idProfessor = Number(usuarioId);
+      const resultado = await obterDadosHomeProfessor(idProfessor);
+      setDados(resultado);
+      setErroCarregamento(null);
+    } catch (error) {
+      setDados(DADOS_HOME_INICIAIS);
+      setErroCarregamento(getApiErrorMessage(error));
     } finally {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, []);
+  }, [usuarioId]);
+
+  const carregarContagemNotificacoes = useCallback(async () => {
+    const idUsuario = Number(usuarioId);
+    if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0) {
+      setNotificacoesNaoLidas(null);
+      return;
+    }
+
+    try {
+      setNotificacoesNaoLidas(await obterContagemNotificacoesNaoLidas(idUsuario));
+    } catch (error) {
+      setNotificacoesNaoLidas(null);
+      console.warn("Não foi possível carregar a contagem de notificações:", getApiErrorMessage(error));
+    }
+  }, [usuarioId]);
 
   useEffect(() => {
     carregarDashboard();
-  }, [carregarDashboard]);
+    carregarContagemNotificacoes();
+  }, [carregarDashboard, carregarContagemNotificacoes]);
 
   const onRefresh = () => {
     setAtualizando(true);
     carregarDashboard();
+    carregarContagemNotificacoes();
   };
 
   if (carregando) {
@@ -101,18 +118,6 @@ export default function HomeProfessorScreen({
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
-      {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE SIMULAÇÃO OFFLINE                        */}
-      {/* ============================================================== */}
-      {isSimulado && (
-        <View style={estilos.bannerSimulacao}>
-          <Ionicons name="information-circle" size={14} color="#D97706" style={{ marginRight: 6 }} />
-          <Text style={estilos.textoBannerSimulacao}>
-            ⚠️ Modo Simulação: Dados offline em exibição
-          </Text>
-        </View>
-      )}
-
       {/* ============================================================== */}
       {/* 1. HEADER SUPERIOR COM LOGOTIPO OFICIAL E NOTIFICAÇÕES         */}
       {/* ============================================================== */}
@@ -133,9 +138,9 @@ export default function HomeProfessorScreen({
           accessibilityLabel="Central de Notificações"
         >
           <Feather name="bell" size={20} color="#0F172A" />
-          {dados.solicitacoesPendentesCount > 0 && (
+          {notificacoesNaoLidas !== null && notificacoesNaoLidas > 0 && (
             <View style={estilos.badgeSino}>
-              <Text style={estilos.textoBadgeSino}>{dados.solicitacoesPendentesCount}</Text>
+              <Text style={estilos.textoBadgeSino}>{notificacoesNaoLidas}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -154,12 +159,29 @@ export default function HomeProfessorScreen({
           />
         }
       >
+        {erroCarregamento && (
+          <View style={estilos.erroCarregamento}>
+            <Text style={estilos.textoErroCarregamento}>
+              Não foi possível carregar os dados da Home: {erroCarregamento}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setAtualizando(true);
+                carregarDashboard();
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={estilos.botaoTentarNovamente}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ============================================================== */}
         {/* 2. SAUDAÇÃO PERSONALIZADA (IMG-015)                            */}
         {/* ============================================================== */}
         <View style={estilos.saudacaoContainer}>
           <Text style={estilos.saudacaoTitulo}>
-            Olá, {nomeUsuario || "Prof. Lucas"}! 👋
+            Olá, {nomeUsuario || "Professor"}! 👋
           </Text>
           <Text style={estilos.saudacaoSubtitulo}>
             Gerencie suas aulas, inspire e transforme vidas.
@@ -167,7 +189,7 @@ export default function HomeProfessorScreen({
         </View>
 
         {/* ============================================================== */}
-        {/* 4. CARD RESUMO GERAL (GRID 2x2 COM % COMPARATIVO MENSAL)       */}
+        {/* 4. CARD RESUMO GERAL COM MÉTRICAS MENSAIS DA API              */}
         {/* ============================================================== */}
         <View style={estilos.cardResumoGeral}>
           <View style={estilos.resumoGeralHeader}>
@@ -190,11 +212,6 @@ export default function HomeProfessorScreen({
                 <View style={estilos.iconeMetricaWrapperAzul}>
                   <Feather name="calendar" size={14} color="#0284C7" />
                 </View>
-                <View style={estilos.badgePercentualVerde}>
-                  <Text style={estilos.textoBadgePercentual}>
-                    {metricas.aulasRealizadas.variacaoPercentual}
-                  </Text>
-                </View>
               </View>
               <Text style={estilos.valorMetricaGrande}>
                 {metricas.aulasRealizadas.valor}
@@ -210,11 +227,6 @@ export default function HomeProfessorScreen({
                 <View style={estilos.iconeMetricaWrapperVerde}>
                   <Feather name="users" size={14} color="#10B981" />
                 </View>
-                <View style={estilos.badgePercentualVerde}>
-                  <Text style={estilos.textoBadgePercentual}>
-                    {metricas.alunosAtendidos.variacaoPercentual}
-                  </Text>
-                </View>
               </View>
               <Text style={estilos.valorMetricaGrande}>
                 {metricas.alunosAtendidos.valor}
@@ -224,23 +236,18 @@ export default function HomeProfessorScreen({
               </Text>
             </View>
 
-            {/* 3. Horas ministradas */}
+            {/* 3. Aulas pendentes */}
             <View style={estilos.blocoMetricaItem}>
               <View style={estilos.blocoMetricaCabecalho}>
                 <View style={estilos.iconeMetricaWrapperRoxo}>
                   <Feather name="clock" size={14} color="#8B5CF6" />
                 </View>
-                <View style={estilos.badgePercentualVerde}>
-                  <Text style={estilos.textoBadgePercentual}>
-                    {metricas.horasMinistradas.variacaoPercentual}
-                  </Text>
-                </View>
               </View>
               <Text style={estilos.valorMetricaGrande}>
-                {metricas.horasMinistradas.valor}
+                {metricas.aulasPendentes.valor}
               </Text>
               <Text style={estilos.labelMetrica}>
-                {metricas.horasMinistradas.label}
+                {metricas.aulasPendentes.label}
               </Text>
             </View>
 
@@ -249,11 +256,6 @@ export default function HomeProfessorScreen({
               <View style={estilos.blocoMetricaCabecalho}>
                 <View style={estilos.iconeMetricaWrapperLaranja}>
                   <Feather name="dollar-sign" size={14} color="#FF5A1F" />
-                </View>
-                <View style={estilos.badgePercentualVerde}>
-                  <Text style={estilos.textoBadgePercentual}>
-                    {metricas.ganhosMes.variacaoPercentual}
-                  </Text>
                 </View>
               </View>
               <Text style={estilos.valorMetricaGrandeLaranja}>
@@ -317,7 +319,6 @@ export default function HomeProfessorScreen({
             >
               <View style={[estilos.circuloAtalho, { backgroundColor: "#F5F3FF" }]}>
                 <Ionicons name="chatbubbles" size={24} color="#8B5CF6" />
-                <View style={estilos.dotNotificacaoChat} />
               </View>
               <Text style={estilos.labelAtalhoCircular}>Mensagens</Text>
             </TouchableOpacity>
@@ -342,7 +343,7 @@ export default function HomeProfessorScreen({
 
             <TouchableOpacity
               style={estilos.botaoGerenciarAulas}
-              onPress={() => router.push("/perfil-professor" as any)}
+              onPress={() => router.push("/(tabs)/perfil?persona=professor" as any)}
               activeOpacity={0.85}
             >
               <Text style={estilos.textoBotaoGerenciarAulas}>Gerenciar aulas →</Text>
@@ -373,7 +374,7 @@ export default function HomeProfessorScreen({
               <TouchableOpacity
                 key={`aula-${aula.id}`}
                 style={estilos.cardAulaItem}
-                onPress={() => router.push("/chat" as any)}
+                onPress={() => router.push(`/chat/${aula.id}` as any)}
                 activeOpacity={0.85}
               >
                 {/* Faixa Marcadora Laranja Lateral */}
@@ -381,8 +382,7 @@ export default function HomeProfessorScreen({
 
                 <View style={estilos.corpoCardAula}>
                   <View style={estilos.avatarContainer}>
-                    <Image source={{ uri: aula.alunoFoto }} style={estilos.avatarAluno} />
-                    <View style={estilos.dotOnline} />
+                    <Feather name="user" size={22} color="#64748B" />
                   </View>
 
                   <View style={estilos.infoAlunoColuna}>
@@ -391,20 +391,20 @@ export default function HomeProfessorScreen({
                       <View
                         style={[
                           estilos.badgeStatusAula,
-                          aula.status === "CONFIRMADO"
-                            ? estilos.badgeConfirmado
-                            : estilos.badgePendente,
+                          aula.status === "PENDENTE" ? estilos.badgePendente : estilos.badgeConfirmado,
                         ]}
                       >
                         <Text
                           style={[
                             estilos.textoStatusAula,
-                            aula.status === "CONFIRMADO"
-                              ? estilos.textoConfirmado
-                              : estilos.textoPendente,
+                            aula.status === "PENDENTE" ? estilos.textoPendente : estilos.textoConfirmado,
                           ]}
                         >
-                          {aula.status === "CONFIRMADO" ? "Confirmada" : "Pendente"}
+                          {aula.status === "PENDENTE"
+                            ? "Pendente"
+                            : aula.status === "EM_ANDAMENTO"
+                              ? "Em andamento"
+                              : "Confirmada"}
                         </Text>
                       </View>
                     </View>
@@ -420,7 +420,7 @@ export default function HomeProfessorScreen({
                         style={{ marginRight: 4 }}
                       />
                       <Text style={estilos.metaTexto}>
-                        {aula.modalidade} {aula.local ? `(${aula.local})` : ""}
+                        {aula.modalidade}
                       </Text>
                     </View>
 
@@ -437,6 +437,9 @@ export default function HomeProfessorScreen({
                 </View>
               </TouchableOpacity>
             ))}
+            {proximasAulas.length === 0 && !erroCarregamento && (
+              <Text style={estilos.semAulasTexto}>Nenhuma aula próxima agendada.</Text>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -452,7 +455,8 @@ export default function HomeProfessorScreen({
       <CentralNotificacoesModal
         visible={modalNotificacoes}
         onClose={() => setModalNotificacoes(false)}
-        usuarioId={101}
+        usuarioId={Number(usuarioId)}
+        onNotificacaoLida={carregarContagemNotificacoes}
       />
     </View>
   );
@@ -475,22 +479,6 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     fontWeight: "500",
   },
-  bannerSimulacao: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
-  },
-  textoBannerSimulacao: {
-    fontSize: 11,
-    color: "#92400E",
-    fontWeight: "600",
-  },
-
   // 1. Header
   header: {
     flexDirection: "row",
@@ -535,6 +523,23 @@ const estilos = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: "#FFFFFF",
+  },
+  erroCarregamento: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+  textoErroCarregamento: {
+    color: "#991B1B",
+    fontSize: 13,
+  },
+  botaoTentarNovamente: {
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   scrollContent: {
@@ -638,17 +643,6 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgePercentualVerde: {
-    backgroundColor: "#DCFCE7",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  textoBadgePercentual: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#15803D",
-  },
   valorMetricaGrande: {
     fontSize: 20,
     fontWeight: "800",
@@ -691,17 +685,6 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 6,
     position: "relative",
-  },
-  dotNotificacaoChat: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#FF5A1F",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   labelAtalhoCircular: {
     fontSize: 11,
@@ -786,6 +769,15 @@ const estilos = StyleSheet.create({
   listaAulasCards: {
     gap: 12,
   },
+  semAulasTexto: {
+    color: "#64748B",
+    fontSize: 13,
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
   cardAulaItem: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
@@ -805,25 +797,13 @@ const estilos = StyleSheet.create({
     alignItems: "center",
   },
   avatarContainer: {
-    position: "relative",
-    marginRight: 12,
-  },
-  avatarAluno: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: "#E2E8F0",
-  },
-  dotOnline: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#10B981",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   infoAlunoColuna: {
     flex: 1,
