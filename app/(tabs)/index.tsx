@@ -405,32 +405,28 @@ function HomeAluno({ nome }: { nome: string }) {
             {/* Lado Esquerdo: Textos Institucionais e Botão CTA */}
             <View style={estilos.bannerHeroTextoArea}>
               <Text style={estilos.bannerHeroTitulo}>
-                Aprenda com quem{"\n"}
+                Conheça o Tutor{"\n"}
                 <Text style={estilos.bannerHeroTituloDestaque}>
-                  entende do assunto.
+                  Virtual Orienta.
                 </Text>
               </Text>
 
               <Text style={estilos.bannerHeroSubtitulo}>
-                Mentorias personalizadas para te ajudar a chegar mais longe.
+                Tire dúvidas, receba dicas de estudo e encontre apoio para avançar.
               </Text>
 
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={() => router.push("/busca-professores")}
+                onPress={() => router.push("/assistente")}
                 style={estilos.botaoHeroExplorar}
+                accessibilityRole="button"
+                accessibilityLabel="Conversar com o Tutor Virtual Orienta"
               >
                 <Text style={estilos.textoBotaoHeroExplorar}>
-                  Explorar professores
+                  Conversar com o tutor
                 </Text>
               </TouchableOpacity>
 
-              {/* Indicador de Paginação Carrossel (3 Pontos) */}
-              <View style={estilos.paginacaoHeroContainer}>
-                <View style={[estilos.pontoPaginacao, estilos.pontoPaginacaoAtivo]} />
-                <View style={estilos.pontoPaginacao} />
-                <View style={estilos.pontoPaginacao} />
-              </View>
             </View>
 
             {/* Lado Direito: Ilustração 3D com Estudante e Ícones Flutuantes */}
@@ -1140,22 +1136,6 @@ const estilos = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 12,
-  },
-  paginacaoHeroContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 18,
-  },
-  pontoPaginacao: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#CBD5E1",
-  },
-  pontoPaginacaoAtivo: {
-    backgroundColor: "#94A3B8",
-    width: 14,
   },
   bannerHeroImagemArea: {
     flex: 0.95,
