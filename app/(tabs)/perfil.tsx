@@ -604,15 +604,6 @@ export default function PerfilScreen() {
               </View>
             </View>
 
-            {/* BOTÃO PRIMÁRIO ALUNO */}
-            <TouchableOpacity
-              style={estilos.botaoEditarPerfilLaranja}
-              onPress={() => setModalEditarAluno(true)}
-              activeOpacity={0.85}
-            >
-              <Feather name="edit-3" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={estilos.textoBotaoEditarPerfil}>Editar perfil do aluno</Text>
-            </TouchableOpacity>
           </>
         )}
 
