@@ -12,6 +12,7 @@ import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   RefreshControl,
   ScrollView,
@@ -29,12 +30,14 @@ import {
   ResultadoCatalogo,
   SaberItem,
 } from "../services/disciplinasService";
+import { getApiErrorMessage } from "../config/api";
 
 export default function ExplorarDisciplinas() {
   const insets = useSafeAreaInsets();
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
+  const [erroCatalogo, setErroCatalogo] = useState<boolean>(false);
   const [catalogo, setCatalogo] = useState<ResultadoCatalogo>({
     categorias: [],
     todasDisciplinas: [],
@@ -44,7 +47,6 @@ export default function ExplorarDisciplinas() {
       totalProfessores: 0,
       disciplinasEmAlta: [],
     },
-    isSimulado: true,
   });
 
   const [busca, setBusca] = useState<string>("");
@@ -62,8 +64,10 @@ export default function ExplorarDisciplinas() {
     try {
       const resultado = await obterCatalogoDisciplinas();
       setCatalogo(resultado);
+      setErroCatalogo(false);
     } catch (err) {
-      console.warn("Erro ao buscar catálogo de saberes:", err);
+      setErroCatalogo(true);
+      Alert.alert("Não foi possível carregar o catálogo", getApiErrorMessage(err));
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -183,28 +187,6 @@ export default function ExplorarDisciplinas() {
       </View>
 
       {/* ============================================================== */}
-      {/* 2. BADGE DE RESILIÊNCIA / MODO SIMULAÇÃO                       */}
-      {/* ============================================================== */}
-      <View style={estilos.faixaModoSimulacao}>
-        <Ionicons
-          name={catalogo.isSimulado ? "information-circle-outline" : "checkmark-circle-outline"}
-          size={14}
-          color={catalogo.isSimulado ? "#D97706" : "#059669"}
-          style={{ marginRight: 6 }}
-        />
-        <Text
-          style={[
-            estilos.textoModoSimulacao,
-            { color: catalogo.isSimulado ? "#92400E" : "#065F46" },
-          ]}
-        >
-          {catalogo.isSimulado
-            ? "⚠️ Modo Simulação: Dados offline em exibição (ORI-022)"
-            : "✅ Catálogo sincronizado em tempo real com a API"}
-        </Text>
-      </View>
-
-      {/* ============================================================== */}
       {/* 3. CONTEÚDO PRINCIPAL SCROLLÁVEL                               */}
       {/* ============================================================== */}
       {carregando ? (
@@ -229,6 +211,33 @@ export default function ExplorarDisciplinas() {
             />
           }
         >
+          <View
+            style={[
+              estilos.faixaModoSimulacao,
+              {
+                backgroundColor: erroCatalogo ? "#FEF3C7" : "#ECFDF5",
+                borderBottomColor: erroCatalogo ? "#FDE68A" : "#A7F3D0",
+              },
+            ]}
+          >
+            <Ionicons
+              name={erroCatalogo ? "alert-circle-outline" : "checkmark-circle-outline"}
+              size={14}
+              color={erroCatalogo ? "#D97706" : "#059669"}
+              style={{ marginRight: 6 }}
+            />
+            <Text
+              style={[
+                estilos.textoModoSimulacao,
+                { color: erroCatalogo ? "#92400E" : "#065F46" },
+              ]}
+            >
+              {erroCatalogo
+                ? "Não foi possível atualizar o catálogo do servidor"
+                : "Catálogo carregado do servidor"}
+            </Text>
+          </View>
+
           {/* CARDS DE RESUMO DO CATÁLOGO (3 COLUNAS) */}
           <View style={estilos.gridMetricasCatalogo}>
             <View style={estilos.cardMetricaCatalogo}>

@@ -9,28 +9,29 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Send,
   RotateCcw,
-  Sparkles,
   User,
   Bot,
   ChevronLeft,
   Paperclip,
   Star,
-  BookOpen,
-  HelpCircle,
-  Lightbulb,
-  CheckCircle,
-  Clock,
-  ArrowRight,
 } from 'lucide-react-native';
 import { RuleIndicatorBadge } from '../components/RuleIndicatorBadge';
 import { AssistantSummaryCard } from '../components/AssistantSummaryCard';
 import { ModalAvaliacao, DadosAvaliacao } from '../components/ModalAvaliacao';
 import TabBarRN001 from '../components/navigation/TabBarRN001';
+import {
+  AulaPendenteAvaliacao,
+  enviarAvaliacaoAula,
+  listarAulasPendentesAvaliacao,
+} from '../services/avaliacaoService';
+import { getApiErrorMessage } from '../config/api';
 import {
   enviarPassoTriagem,
   perguntarAssistente,
@@ -74,14 +75,16 @@ export default function AssistenteScreen() {
   const [quickOptions, setQuickOptions] = useState<QuickOption[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isOfflineSimulation, setIsOfflineSimulation] = useState<boolean>(false);
+  const [carregandoAvaliacoes, setCarregandoAvaliacoes] = useState<boolean>(false);
+  const [aulasPendentesAvaliacao, setAulasPendentesAvaliacao] = useState<AulaPendenteAvaliacao[]>([]);
+  const [aulaSelecionada, setAulaSelecionada] = useState<AulaPendenteAvaliacao | null>(null);
+  const [modalSelecaoAulaVisivel, setModalSelecaoAulaVisivel] = useState<boolean>(false);
   const [modalAvaliacaoVisivel, setModalAvaliacaoVisivel] = useState<boolean>(false);
-  const [alertaAvaliacaoSucesso, setAlertaAvaliacaoSucesso] = useState<string | null>(null);
 
   // Estados acumulados da triagem
-  const [disciplinaNome, setDisciplinaNome] = useState<string>('Cálculo I');
-  const [assuntoNome, setAssuntoNome] = useState<string>('Integrais e Derivadas');
-  const [modalidade, setModalidade] = useState<string>('Online');
+  const [disciplinaNome, setDisciplinaNome] = useState<string>('');
+  const [assuntoNome, setAssuntoNome] = useState<string>('');
+  const [modalidade, setModalidade] = useState<string>('');
 
   useEffect(() => {
     iniciarConversaInicial();
@@ -91,34 +94,18 @@ export default function AssistenteScreen() {
     setIsLoading(true);
     try {
       const response = await enviarPassoTriagem({ currentStep: 'INITIAL' });
-      setCurrentStep(response.nextStep || 'SUBJECT_SELECTION');
-      setQuickOptions(
-        response.quickOptions && response.quickOptions.length > 0
-          ? response.quickOptions
-          : [
-              { id: '1', label: 'Cálculo I', payload: 'Cálculo I', description: 'Limites, Derivadas e Integrais' },
-              { id: '2', label: 'Estrutura de Dados', payload: 'Estrutura de Dados', description: 'Vetores, Listas, Árvores' },
-              { id: '3', label: 'Banco de Dados', payload: 'Banco de Dados', description: 'SQL, Normalização' },
-              { id: '4', label: 'Física Geral', payload: 'Física Geral', description: 'Cinemática e Dinâmica' },
-            ]
-      );
-
+      setCurrentStep(response.nextStep);
+      setQuickOptions(response.quickOptions);
       setMessages([
         {
           id: 'msg-init',
           sender: 'assistant',
-          text: 'Olá! Sou o Tutor Virtual de Estudos do Orienta 2.0 🎓\n\nEstou aqui para tirar dúvidas conceituais, explicar exercícios passo a passo e conectar você aos melhores mentores da plataforma. Como posso te orientar hoje?',
+          text: response.assistantMessage,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          bulletPoints: [
-            'Resolução detalhada de exercícios de Exatas e Tecnologia',
-            'Resumos teóricos estruturados para revisões de prova',
-            'Sugestão personalizada de professores para agendamento seguro',
-          ],
         },
       ]);
     } catch (error) {
-      console.warn('Erro ao inicializar assistente:', error);
-      setIsOfflineSimulation(true);
+      Alert.alert('Não foi possível carregar', error instanceof Error ? error.message : 'Tente novamente mais tarde.');
     } finally {
       setIsLoading(false);
     }
@@ -146,32 +133,26 @@ export default function AssistenteScreen() {
 
       const response: TriageResponse = await enviarPassoTriagem(req);
 
-      setCurrentStep(response.nextStep || 'COMPLETED');
+      setCurrentStep(response.nextStep);
       setDisciplinaNome(option.payload);
+      if (response.actionCard) {
+        setAssuntoNome(response.actionCard.assuntoNome);
+        setModalidade(response.actionCard.modalidade);
+      }
 
       const assistMsg: ChatMessage = {
         id: `asst-${Date.now()}`,
         sender: 'assistant',
-        text: `Excelente escolha! Para ${option.payload}, temos docentes especializados com disponibilidade imediata para mentoria individual online ou presencial.`,
+        text: response.assistantMessage,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionCard: response.actionCard || {
-          professorId: 1,
-          professorNome: 'Prof. Lucas Rocha',
-          disciplinaNome: option.payload,
-          assuntoNome: 'Revisão e Resolução de Listas',
-          modalidade: 'Online (Google Meet)',
-          valorHora: 60.0,
-        },
-        bulletPoints: [
-          'Professores verificados com nota média 4.9/5.0',
-          'Sala de aula com temporizador bilateral e lousa integrada',
-          'Garantia de segurança acadêmica Orienta 2.0',
-        ],
+        actionCard: response.actionCard,
+        bulletPoints: response.bulletPoints,
       };
 
       setMessages((prev) => [...prev, assistMsg]);
+      setQuickOptions(response.quickOptions);
     } catch (error) {
-      console.error('Erro ao enviar opção rápida:', error);
+      Alert.alert('Não foi possível enviar', error instanceof Error ? error.message : 'Tente novamente mais tarde.');
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
@@ -221,7 +202,7 @@ export default function AssistenteScreen() {
         setQuickOptions(response.quickOptions);
       }
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
+      Alert.alert('Não foi possível enviar', error instanceof Error ? error.message : 'Tente novamente mais tarde.');
     } finally {
       setIsLoading(false);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
@@ -235,14 +216,41 @@ export default function AssistenteScreen() {
     });
   };
 
-  const handleConfirmarAvaliacao = (dados: DadosAvaliacao) => {
-    setAlertaAvaliacaoSucesso(
-      `Avaliação registrada com nota ${dados.notaGeral} estrelas e ${dados.tagsSelecionadas.length} elogios!`
-    );
-    setTimeout(() => {
-      setAlertaAvaliacaoSucesso(null);
-    }, 4500);
+  const iniciarAvaliacao = async () => {
+    if (carregandoAvaliacoes) return;
+    setCarregandoAvaliacoes(true);
+    try {
+      const aulas = await listarAulasPendentesAvaliacao();
+      if (aulas.length === 0) {
+        Alert.alert('Nenhuma aula para avaliar', 'As avaliações ficam disponíveis após a conclusão de uma aula.');
+      } else if (aulas.length === 1) {
+        setAulaSelecionada(aulas[0]);
+        setModalAvaliacaoVisivel(true);
+      } else {
+        setAulasPendentesAvaliacao(aulas);
+        setModalSelecaoAulaVisivel(true);
+      }
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível carregar as aulas',
+        getApiErrorMessage(error)
+      );
+    } finally {
+      setCarregandoAvaliacoes(false);
+    }
   };
+
+  const enviarAvaliacao = async (dados: DadosAvaliacao) => {
+    if (!aulaSelecionada) {
+      throw new Error('Selecione uma aula concluída antes de enviar a avaliação.');
+    }
+    await enviarAvaliacaoAula(aulaSelecionada.agendamentoId, dados);
+    setAulaSelecionada(null);
+    Alert.alert('Avaliação registrada', 'Sua avaliação foi salva com sucesso.');
+  };
+
+  const formatarDataAula = (aula: AulaPendenteAvaliacao) =>
+    `${aula.data.split('-').reverse().join('/')} • ${aula.hora.slice(0, 5)}`;
 
   return (
     <KeyboardAvoidingView
@@ -276,11 +284,14 @@ export default function AssistenteScreen() {
 
         <View style={styles.headerActions}>
           <TouchableOpacity
-            style={styles.headerActionButton}
-            onPress={() => setModalAvaliacaoVisivel(true)}
-            accessibilityLabel="Avaliar Mentoria"
+            style={[styles.headerActionButton, carregandoAvaliacoes && styles.headerActionButtonDisabled]}
+            onPress={iniciarAvaliacao}
+            disabled={carregandoAvaliacoes}
+            accessibilityLabel="Avaliar uma aula concluída"
           >
-            <Star size={17} color="#D97706" />
+            {carregandoAvaliacoes
+              ? <ActivityIndicator size="small" color="#D97706" />
+              : <Star size={17} color="#D97706" />}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -297,14 +308,6 @@ export default function AssistenteScreen() {
 
       {/* Selo Obrigatório de Regras Determinísticas e Transparência */}
       <RuleIndicatorBadge />
-
-      {/* Alerta de Feedback de Avaliação */}
-      {alertaAvaliacaoSucesso && (
-        <View style={styles.alertaSucessoBox}>
-          <CheckCircle size={16} color="#059669" />
-          <Text style={styles.alertaSucessoTexto}>{alertaAvaliacaoSucesso}</Text>
-        </View>
-      )}
 
       {/* Área Principal de Conversa */}
       <ScrollView
@@ -490,13 +493,57 @@ export default function AssistenteScreen() {
       {/* Barra Inferior Canônica de 5 Abas do Aluno (RN-001) */}
       <TabBarRN001 abaAtiva="chat" perfilForcado="Aluno" />
 
-      {/* Modal Reutilizável de Avaliação Pós-Aula */}
+      <Modal
+        visible={modalSelecaoAulaVisivel}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalSelecaoAulaVisivel(false)}
+      >
+        <View style={styles.ratingPickerOverlay}>
+          <View style={styles.ratingPickerCard}>
+            <View style={styles.ratingPickerHeader}>
+              <Text style={styles.ratingPickerTitle}>Selecione a aula</Text>
+              <TouchableOpacity
+                onPress={() => setModalSelecaoAulaVisivel(false)}
+                accessibilityLabel="Fechar seleção de aula"
+              >
+                <Text style={styles.ratingPickerClose}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.ratingPickerSubtitle}>Somente aulas concluídas e ainda não avaliadas.</Text>
+            <ScrollView>
+              {aulasPendentesAvaliacao.map((aula) => (
+                <TouchableOpacity
+                  key={aula.agendamentoId}
+                  style={styles.ratingPickerItem}
+                  onPress={() => {
+                    setAulaSelecionada(aula);
+                    setModalSelecaoAulaVisivel(false);
+                    setModalAvaliacaoVisivel(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.ratingPickerProfessor}>{aula.professorNome}</Text>
+                  <Text style={styles.ratingPickerDiscipline}>
+                    {aula.disciplinaNome || aula.assunto || 'Mentoria'}
+                  </Text>
+                  <Text style={styles.ratingPickerDate}>{formatarDataAula(aula)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <ModalAvaliacao
-        visible={modalAvaliacaoVisivel}
+        visible={modalAvaliacaoVisivel && aulaSelecionada !== null}
         onClose={() => setModalAvaliacaoVisivel(false)}
-        onSubmit={handleConfirmarAvaliacao}
-        professorNome="Prof. Lucas Rocha"
-        disciplinaNome={disciplinaNome}
+        onSubmit={enviarAvaliacao}
+        professorNome={aulaSelecionada?.professorNome ?? ''}
+        disciplinaNome={
+          aulaSelecionada?.disciplinaNome || aulaSelecionada?.assunto || 'Mentoria'
+        }
+        dataAula={aulaSelecionada ? formatarDataAula(aulaSelecionada) : ''}
       />
     </KeyboardAvoidingView>
   );
@@ -574,6 +621,62 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerActionButtonDisabled: {
+    opacity: 0.65,
+  },
+  ratingPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  ratingPickerCard: {
+    maxHeight: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+  },
+  ratingPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  ratingPickerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  ratingPickerClose: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  ratingPickerSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  ratingPickerItem: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  ratingPickerProfessor: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  ratingPickerDiscipline: {
+    fontSize: 13,
+    color: '#334155',
+    marginTop: 3,
+  },
+  ratingPickerDate: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
   },
   bannerSimulacao: {
     flexDirection: 'row',

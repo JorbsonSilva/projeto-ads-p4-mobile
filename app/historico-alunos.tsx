@@ -3,7 +3,7 @@
  * @description Gestão de Alunos Atendidos pelo Professor ("Meus Alunos") [ORI-021].
  * Interface moderna e responsiva alinhada ao Design System Orienta 2.0 com:
  * 1. Header superior com botão voltar para a Home do Professor (/home-professor) e atualização.
- * 2. Badge semântico de resiliência e modo simulação offline.
+ * 2. Indicador semântico do estado dos dados consultados no servidor.
  * 3. Cards de métricas rápidas no topo (Total de Alunos, Aulas Concluídas, Taxa de Recorrência).
  * 4. Barra de pesquisa em tempo real com contador dinâmico de estudantes.
  * 5. Chips horizontais de filtragem por formato (Todos, Ativos, Presencial, Online, Recorrentes).
@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -35,8 +36,8 @@ import {
   AlunoHistorico,
   obterHistoricoAlunos,
   ResultadoHistoricoAlunos,
-  MOCK_ALUNOS_OFICIAIS,
 } from "../services/historicoAlunosService";
+import { getApiErrorMessage } from "../config/api";
 
 export default function HistoricoAlunosScreen() {
   const insets = useSafeAreaInsets();
@@ -44,17 +45,17 @@ export default function HistoricoAlunosScreen() {
 
   // Estados de dados e carregamento
   const [dados, setDados] = useState<ResultadoHistoricoAlunos>({
-    alunos: MOCK_ALUNOS_OFICIAIS,
+    alunos: [],
     resumo: {
-      totalAlunos: 38,
-      aulasConcluidas: 24,
-      taxaRecorrencia: 72,
-      novosMes: 6,
+      totalAlunos: 0,
+      aulasConcluidas: 0,
+      taxaRecorrencia: 0,
+      novosMes: 0,
     },
-    isSimulado: true,
   });
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
+  const [erroHistorico, setErroHistorico] = useState(false);
 
   // Estados de pesquisa e filtros
   const [busca, setBusca] = useState("");
@@ -75,10 +76,15 @@ export default function HistoricoAlunosScreen() {
     }
 
     try {
-      const res = await obterHistoricoAlunos(usuarioId ? Number(usuarioId) : undefined);
+      if (!usuarioId || !Number.isFinite(Number(usuarioId))) {
+        throw new Error("Sua sessão não contém um usuário válido. Entre novamente.");
+      }
+      const res = await obterHistoricoAlunos(Number(usuarioId));
       setDados(res);
-    } catch {
-      // Fallback gracioso
+      setErroHistorico(false);
+    } catch (error) {
+      setErroHistorico(true);
+      Alert.alert("Não foi possível carregar os alunos", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -174,23 +180,6 @@ export default function HistoricoAlunosScreen() {
       </View>
 
       {/* ============================================================== */}
-      {/* 2. BADGE DE RESILIÊNCIA / MODO SIMULAÇÃO                       */}
-      {/* ============================================================== */}
-      <View style={estilos.faixaModoSimulacao}>
-        <Ionicons
-          name={dados.isSimulado ? "information-circle-outline" : "checkmark-circle-outline"}
-          size={14}
-          color={dados.isSimulado ? "#D97706" : "#059669"}
-          style={{ marginRight: 6 }}
-        />
-        <Text style={[estilos.textoModoSimulacao, { color: dados.isSimulado ? "#92400E" : "#065F46" }]}>
-          {dados.isSimulado
-            ? "⚠️ Modo Simulação: Dados offline em exibição (ORI-021)"
-            : "✅ Alunos sincronizados em tempo real com a API"}
-        </Text>
-      </View>
-
-      {/* ============================================================== */}
       {/* 3. CONTEÚDO SCROLLÁVEL: MÉTRICAS, BUSCA, FILTROS E ALUNOS      */}
       {/* ============================================================== */}
       <ScrollView
@@ -209,6 +198,33 @@ export default function HistoricoAlunosScreen() {
           />
         }
       >
+        <View
+          style={[
+            estilos.faixaModoSimulacao,
+            {
+              backgroundColor: erroHistorico ? "#FEF3C7" : "#ECFDF5",
+              borderBottomColor: erroHistorico ? "#FDE68A" : "#A7F3D0",
+            },
+          ]}
+        >
+          <Ionicons
+            name={erroHistorico ? "alert-circle-outline" : "checkmark-circle-outline"}
+            size={14}
+            color={erroHistorico ? "#D97706" : "#059669"}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              estilos.textoModoSimulacao,
+              { color: erroHistorico ? "#92400E" : "#065F46" },
+            ]}
+          >
+            {erroHistorico
+              ? "Não foi possível atualizar os dados do servidor"
+              : "Dados dos alunos carregados do servidor"}
+          </Text>
+        </View>
+
         {/* CARDS DE RESUMO DE ATENDIMENTO (3 COLUNAS) */}
         <View style={estilos.gridMetricasAlunos}>
           {/* Card 1: Total de Alunos */}

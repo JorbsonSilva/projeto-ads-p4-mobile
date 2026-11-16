@@ -8,30 +8,31 @@
  * - POST /api/v1/suporte/denuncias
  */
 
-import { API_URL } from "../config/api";
+import { agendamentoApi, chatApi, suporteApi } from "../config/api";
+import type { StatusAgendamento } from "../types/agendamento";
 
 export interface InterlocutorChat {
   id: string | number;
   nome: string;
   papel: "PROFESSOR" | "ALUNO";
-  avatar: string;
-  verificado: boolean;
-  online: boolean;
+  avatar?: string;
+  verificado?: boolean;
+  online?: boolean;
   disciplina: string;
-  avaliacao: number;
-  totalAvaliacoes: number;
+  avaliacao?: number;
+  totalAvaliacoes?: number;
 }
 
 export interface ContextoAulaChat {
   agendamentoId: number;
   disciplina: string;
-  status: "CONFIRMADA" | "PENDENTE" | "EM_ANDAMENTO" | "CONCLUIDA" | "CANCELADA";
+  status: StatusAgendamento;
   dataTexto: string;
   horarioTexto: string;
-  modalidade: "PRESENCIAL" | "ONLINE";
+  modalidade?: "PRESENCIAL" | "ONLINE";
   localizacao?: string;
   linkMeet?: string;
-  valor: number;
+  valor?: number;
 }
 
 export interface MensagemChat {
@@ -60,117 +61,135 @@ export interface ConversaCompleta {
   mensagens: MensagemChat[];
 }
 
-export interface ResultadoConversa {
-  conversa: ConversaCompleta;
-  isSimulado: boolean;
+export interface ConversaInboxItem {
+  conversaId: number;
+  agendamentoId: number;
+  interlocutor: Pick<InterlocutorChat, "id" | "nome" | "papel" | "avatar">;
+  disciplina?: string;
+  ultimaMensagem?: string;
+  dataHoraUltimaMensagem?: string;
+  mensagensNaoLidas: number;
+}
+
+export async function listarConversasChat(usuarioId: number): Promise<ConversaInboxItem[]> {
+  const resposta = await chatApi.listarConversas(usuarioId);
+  if (!resposta.success || !Array.isArray(resposta.data)) {
+    throw new Error(resposta.message || "Não foi possível carregar a caixa de entrada.");
+  }
+
+  return resposta.data.map((item: any) => {
+    const interlocutorValido =
+      (item.papelInterlocutor === "ALUNO" || item.papelInterlocutor === "PROFESSOR") &&
+      item.interlocutorId &&
+      item.nomeInterlocutor;
+    if (
+      !Number.isSafeInteger(item.id) ||
+      !Number.isSafeInteger(item.agendamentoId) ||
+      !interlocutorValido
+    ) {
+      throw new Error("A API retornou uma conversa sem os dados necessários.");
+    }
+
+    return {
+      conversaId: item.id,
+      agendamentoId: item.agendamentoId,
+      interlocutor: {
+        id: item.interlocutorId,
+        nome: item.nomeInterlocutor,
+        papel: item.papelInterlocutor,
+        avatar: item.fotoUrlInterlocutor || undefined,
+      },
+      disciplina: item.disciplinaNome || undefined,
+      ultimaMensagem: item.ultimaMensagem || undefined,
+      dataHoraUltimaMensagem: item.dataHoraUltimaMensagem || undefined,
+      mensagensNaoLidas: Number.isSafeInteger(item.mensagensNaoLidas)
+        ? item.mensagensNaoLidas
+        : 0,
+    };
+  });
 }
 
 /**
  * Consulta a conversa e mensagens reais persistidas no banco PostgreSQL
  */
-export async function obterConversaChat(agendamentoId: number = 1001): Promise<ResultadoConversa> {
-  const fallbackVazio: ConversaCompleta = {
-    conversaId: agendamentoId,
-    agendamentoId: agendamentoId,
-    interlocutor: {
-      id: "1002",
-      nome: "Prof. Dr. Carlos Eduardo",
-      papel: "PROFESSOR",
-      avatar: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200",
-      verificado: true,
-      online: true,
-      disciplina: "Banco de Dados Relacional e SQL",
-      avaliacao: 4.9,
-      totalAvaliacoes: 38,
-    },
-    contextoAula: {
-      agendamentoId: agendamentoId,
-      disciplina: "Banco de Dados Relacional",
-      status: "CONFIRMADA",
-      dataTexto: "26/06/2026 (Qui)",
-      horarioTexto: "14:00 – 15:00",
-      modalidade: "ONLINE",
-      localizacao: "Online via Orienta Meet",
-      valor: 70.0,
-    },
-    mensagens: [],
-  };
+export async function obterConversaChat(
+  agendamentoId: number,
+  usuarioId: number
+): Promise<ConversaCompleta> {
+  const [conversaResposta, mensagensResposta, agendamentoResposta] = await Promise.all([
+    chatApi.obterConversa(agendamentoId, usuarioId),
+    chatApi.listarMensagens(agendamentoId, usuarioId),
+    agendamentoApi.buscarPorId(agendamentoId),
+  ]);
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-
-    const [resConversa, resMensagens] = await Promise.all([
-      fetch(`${API_URL}/api/v1/chat/agendamento/${agendamentoId}`, {
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      }),
-      fetch(`${API_URL}/api/v1/chat/agendamento/${agendamentoId}/mensagens`, {
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      }),
-    ]);
-    clearTimeout(timeout);
-
-    if (resConversa.ok) {
-      const jsonConversa = await resConversa.json();
-      const conversaDto = jsonConversa.data || jsonConversa.dados || jsonConversa;
-
-      let mensagensApi: MensagemChat[] = [];
-      if (resMensagens.ok) {
-        const jsonMsg = await resMensagens.json();
-        const listaBruta = jsonMsg.data || jsonMsg.dados || (Array.isArray(jsonMsg) ? jsonMsg : []);
-        if (Array.isArray(listaBruta)) {
-          mensagensApi = listaBruta.map((m: any) => ({
-            id: m.id,
-            remetenteId: m.remetenteId,
-            remetenteNome: m.remetenteNome || (m.remetenteId === 1001 ? "Gabriel Aluno" : "Professor"),
-            remetentePapel: m.remetentePapel || (m.remetenteId === 1001 ? "ALUNO" : "PROFESSOR"),
-            avatar: m.remetenteFoto || (m.remetenteId === 1001 ? "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100" : "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=100"),
-            conteudo: m.conteudo,
-            tipo: (m.tipo || "TEXTO") as any,
-            enviadaEm: m.enviadaEm ? m.enviadaEm.substring(11, 16) : "14:00",
-            dataDivisor: "Hoje",
-            lida: m.lida ?? true,
-          }));
-        }
-      }
-
-      return {
-        conversa: {
-          conversaId: conversaDto.id || agendamentoId,
-          agendamentoId,
-          interlocutor: {
-            id: conversaDto.professorId || 1002,
-            nome: conversaDto.professorNome || "Prof. Dr. Carlos Eduardo",
-            papel: "PROFESSOR",
-            avatar: conversaDto.professorFoto || "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200",
-            verificado: true,
-            online: true,
-            disciplina: conversaDto.disciplinaNome || "Banco de Dados",
-            avaliacao: 4.9,
-            totalAvaliacoes: 38,
-          },
-          contextoAula: {
-            agendamentoId,
-            disciplina: conversaDto.disciplinaNome || "Banco de Dados Relacional",
-            status: "CONFIRMADA",
-            dataTexto: conversaDto.data || "Hoje",
-            horarioTexto: conversaDto.hora ? `${conversaDto.hora} – 15:00` : "14:00 – 15:00",
-            modalidade: (conversaDto.modalidade === "PRESENCIAL" ? "PRESENCIAL" : "ONLINE") as any,
-            localizacao: conversaDto.localizacao || "Online via Orienta Meet",
-            valor: conversaDto.valor || 70.0,
-          },
-          mensagens: mensagensApi,
-        },
-        isSimulado: false,
-      };
-    }
-  } catch (err) {
-    console.warn("Falha ao obter conversa de chat da API:", err);
+  if (!conversaResposta.success || !conversaResposta.data) {
+    throw new Error(conversaResposta.message || "Não foi possível carregar a conversa.");
+  }
+  if (!mensagensResposta.success || !Array.isArray(mensagensResposta.data)) {
+    throw new Error(mensagensResposta.message || "A API retornou um formato inválido para as mensagens.");
+  }
+  if (!agendamentoResposta.success || !agendamentoResposta.data) {
+    throw new Error(agendamentoResposta.message || "Não foi possível carregar o agendamento.");
   }
 
-  return { conversa: fallbackVazio, isSimulado: false };
+  const conversaDto = conversaResposta.data;
+  const agendamento = agendamentoResposta.data;
+  const usuarioEhProfessor = agendamento.professorId === usuarioId;
+  const interlocutorNome = conversaDto.nomeInterlocutor ||
+    (usuarioEhProfessor ? agendamento.alunoNome : agendamento.professorNome);
+  const interlocutorId = conversaDto.interlocutorId ??
+    (usuarioEhProfessor ? agendamento.alunoId : agendamento.professorId);
+  if (!conversaDto.id || !interlocutorId || !interlocutorNome) {
+    throw new Error("A API não retornou os dados necessários para identificar esta conversa.");
+  }
+  const disciplina = agendamento.saberNome || agendamento.assunto || "";
+  const [ano, mes, dia] = agendamento.data.split("-");
+  const dataTexto = ano && mes && dia ? `${dia}/${mes}/${ano}` : agendamento.data;
+
+  return {
+    conversaId: conversaDto.id,
+    agendamentoId,
+    interlocutor: {
+      id: interlocutorId,
+      nome: interlocutorNome,
+      papel: usuarioEhProfessor ? "ALUNO" : "PROFESSOR",
+      avatar: conversaDto.fotoUrlInterlocutor || undefined,
+      disciplina,
+    },
+    contextoAula: {
+      agendamentoId,
+      disciplina,
+      status: agendamento.status,
+      dataTexto,
+      horarioTexto: agendamento.hora.slice(0, 5),
+      modalidade: agendamento.modalidade === "ONLINE" || agendamento.modalidade === "PRESENCIAL"
+        ? agendamento.modalidade
+        : undefined,
+      valor: agendamento.valorAplicado,
+    },
+    mensagens: mensagensResposta.data.map((mensagem: any) => ({
+      id: mensagem.id,
+      remetenteId: mensagem.remetenteId,
+      remetenteNome: mensagem.remetenteNome || "Participante",
+      remetentePapel: mensagem.remetentePapel === "ALUNO" || mensagem.remetentePapel === "PROFESSOR"
+        ? mensagem.remetentePapel
+        : "SISTEMA",
+      avatar: mensagem.remetenteFotoUrl || undefined,
+      conteudo: mensagem.conteudo,
+      tipo: ["TEXTO", "SISTEMA", "ARQUIVO", "LINK", "IMAGEM"].includes(mensagem.tipo)
+        ? mensagem.tipo
+        : "TEXTO",
+      enviadaEm: mensagem.enviadaEm || "",
+      lida: Boolean(mensagem.lida),
+      metaAnexo: mensagem.anexoUrl
+        ? {
+            nomeArquivo: mensagem.nomeArquivo,
+            tamanho: mensagem.tamanhoArquivo,
+            url: mensagem.anexoUrl,
+          }
+        : undefined,
+    })),
+  };
 }
 
 /**
@@ -178,67 +197,32 @@ export async function obterConversaChat(agendamentoId: number = 1001): Promise<R
  */
 export async function enviarMensagemChat(
   agendamentoId: number,
-  remetenteId: number | string = 1001,
+  remetenteId: number,
   conteudo: string,
   tipo: "TEXTO" | "ARQUIVO" | "LINK" | "IMAGEM" = "TEXTO",
   metaAnexo?: { nomeArquivo?: string; tamanho?: string; url?: string }
-): Promise<{ mensagem: MensagemChat; isSimulado: boolean }> {
-  const agora = new Date();
-  const enviadaEm = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-
-  try {
-    const payloadBackend = {
-      remetenteId: typeof remetenteId === "number" ? remetenteId : 1001,
-      conteudo,
-    };
-
-    const res = await fetch(`${API_URL}/api/v1/chat/agendamento/${agendamentoId}/mensagens`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payloadBackend),
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      const salvo = json.data || json.dados || json;
-
-      return {
-        mensagem: {
-          id: salvo.id || Date.now(),
-          remetenteId: salvo.remetenteId || remetenteId,
-          remetenteNome: "Você",
-          remetentePapel: "ALUNO",
-          avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100",
-          conteudo: salvo.conteudo || conteudo,
-          tipo,
-          enviadaEm,
-          lida: false,
-          metaAnexo,
-        },
-        isSimulado: false,
-      };
-    }
-  } catch (err) {
-    console.warn("Falha ao enviar mensagem de chat para a API:", err);
+): Promise<MensagemChat> {
+  if (tipo !== "TEXTO" || metaAnexo) {
+    throw new Error("O backend ainda não oferece envio de anexos.");
   }
 
+  const resposta = await chatApi.enviarMensagem(agendamentoId, remetenteId, conteudo);
+  if (!resposta.success || !resposta.data) {
+    throw new Error(resposta.message || "A API não confirmou o envio da mensagem.");
+  }
+  const mensagem = resposta.data;
   return {
-    mensagem: {
-      id: `local-${Date.now()}`,
-      remetenteId,
-      remetenteNome: "Você",
-      remetentePapel: "ALUNO",
-      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100",
-      conteudo,
-      tipo,
-      enviadaEm,
-      lida: false,
-      metaAnexo,
-    },
-    isSimulado: false,
+    id: mensagem.id,
+    remetenteId: mensagem.remetenteId,
+    remetenteNome: mensagem.remetenteNome || "Você",
+    remetentePapel: mensagem.remetentePapel === "ALUNO" || mensagem.remetentePapel === "PROFESSOR"
+      ? mensagem.remetentePapel
+      : "SISTEMA",
+    avatar: mensagem.remetenteFotoUrl || undefined,
+    conteudo: mensagem.conteudo,
+    tipo: mensagem.tipo === "TEXTO" ? "TEXTO" : "SISTEMA",
+    enviadaEm: mensagem.enviadaEm || "",
+    lida: Boolean(mensagem.lida),
   };
 }
 
@@ -247,35 +231,22 @@ export async function enviarMensagemChat(
  */
 export async function registrarDenunciaChat(
   agendamentoId: number,
-  denunciadoId: number | string,
+  denuncianteId: number,
+  denunciadoId: number,
   motivo: string,
   descricao: string
-): Promise<{ sucesso: boolean; mensagem: string; isSimulado: boolean }> {
-  try {
-    const res = await fetch(`${API_URL}/api/v1/suporte/denuncias`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        agendamentoId,
-        denunciadoId: typeof denunciadoId === "number" ? denunciadoId : 1002,
-        motivo,
-        descricao,
-      }),
-    });
-
-    if (res.ok) {
-      return { sucesso: true, mensagem: "Denúncia registrada com protocolo no banco de dados.", isSimulado: false };
-    }
-  } catch (err) {
-    console.warn("Falha ao registrar denúncia na API:", err);
+): Promise<{ sucesso: true; mensagem: string }> {
+  const resposta = await suporteApi.enviarDenuncia(denuncianteId, {
+    denunciadoId,
+    agendamentoId,
+    motivo,
+    descricao,
+  });
+  if (!resposta.success || !resposta.data?.protocolo) {
+    throw new Error(resposta.message || "A API não retornou o protocolo da denúncia.");
   }
-
   return {
-    sucesso: false,
-    mensagem: "Falha ao registrar denúncia no servidor.",
-    isSimulado: false,
+    sucesso: true,
+    mensagem: `Denúncia registrada. Protocolo: ${resposta.data.protocolo}`,
   };
 }

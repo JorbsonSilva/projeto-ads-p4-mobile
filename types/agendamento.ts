@@ -25,6 +25,8 @@ export interface Agendamento {
   justificativaCancelamento?: string;
   modalidade?: string;
   assunto?: string;
+  saberNome?: string;
+  valorAplicado?: number;
 }
 
 export interface AgendamentoRequest {

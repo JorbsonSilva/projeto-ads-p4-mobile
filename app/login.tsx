@@ -17,7 +17,7 @@
  * - Integração real com POST /api/v1/auth/login e aviso contextual em caso de indisponibilidade da API
  */
 
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useState } from "react";
@@ -39,24 +39,18 @@ import { API_URL, emitHttpLogToParent } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 import { Input, formatCPF } from "../components/ui";
 import { Assets } from "../constants/assets";
-import { Theme } from "../constants/theme";
 
 export default function LoginScreen() {
   const { loginGlobal } = useAuth() as any;
   const [emailOrCpf, setEmailOrCpf] = useState("");
   const [senha, setSenha] = useState("");
   const [carregando, setCarregando] = useState(false);
-  const [erroConexao, setErroConexao] = useState<string | null>(null);
+  const [erroLogin, setErroLogin] = useState<string | null>(null);
   const [erroEmailOrCpf, setErroEmailOrCpf] = useState<string | undefined>(undefined);
   const [erroSenha, setErroSenha] = useState<string | undefined>(undefined);
 
-  const isDemo =
-    typeof window !== "undefined" &&
-    (window.location.search.includes("demo=true") ||
-      window.location.search.includes("preview=true"));
-
   const executarLogin = async () => {
-    setErroConexao(null);
+    setErroLogin(null);
     let temErro = false;
 
     if (!emailOrCpf.trim()) {
@@ -104,8 +98,11 @@ export default function LoginScreen() {
         const token = payload.token || payload.accessToken;
         const refreshToken = payload.refreshToken;
         const usuarioId = usuario.id || usuario.usuarioId;
-        const perfil = usuario.tipo || usuario.perfil || "ALUNO";
-        const nome = usuario.nome || "";
+        const perfil = usuario.tipo || usuario.perfil;
+        const nome = usuario.nome;
+        if (!usuarioId || !perfil || !token) {
+          throw new Error("A resposta do servidor não contém os dados necessários para autenticação.");
+        }
 
         emitHttpLogToParent({
           method: "POST",
@@ -116,7 +113,7 @@ export default function LoginScreen() {
         });
 
         if (loginGlobal) {
-          await loginGlobal(usuarioId, perfil, nome, token, refreshToken);
+          await loginGlobal(String(usuarioId), String(perfil), String(nome ?? ""), token, refreshToken);
         }
         router.replace("/(tabs)");
       } else {
@@ -136,7 +133,7 @@ export default function LoginScreen() {
           error: mensagemErro,
         });
 
-        Alert.alert("Erro de autenticação", mensagemErro);
+        setErroLogin(mensagemErro);
       }
     } catch (err: any) {
       const duracao = Date.now() - t0;
@@ -150,25 +147,8 @@ export default function LoginScreen() {
       });
 
       // Em modo de demonstração no preview, permite entrada suave para inspeção visual
-      if (isDemo) {
-        const isProf = identificador.toLowerCase().includes("prof");
-        if (loginGlobal) {
-          await loginGlobal(
-            isProf ? "1" : "2",
-            isProf ? "Professor" : "Aluno",
-            isProf ? "Prof. Lucas Rocha" : "Gabriel Silva"
-          );
-        }
-        router.replace("/(tabs)");
-        return;
-      }
-
-      setErroConexao(
-        "Servidor Spring Boot indisponível (http://localhost:8080). Nenhuma conta real foi autenticada."
-      );
-      Alert.alert(
-        "API Indisponível",
-        "Não foi possível conectar ao servidor Spring Boot em http://localhost:8080. Para visualizar as telas sem backend, utilize o Modo de Visualização no Dashboard."
+      setErroLogin(
+        "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."
       );
     } finally {
       setCarregando(false);
@@ -217,6 +197,7 @@ export default function LoginScreen() {
                 value={emailOrCpf}
                 onChangeText={(texto) => {
                   setErroEmailOrCpf(undefined);
+                  setErroLogin(null);
                   const apenasDigitos = texto.replace(/\D/g, "");
                   if (apenasDigitos.length > 0 && !texto.includes("@") && !/[a-zA-Z]/.test(texto)) {
                     setEmailOrCpf(formatCPF(texto));
@@ -241,6 +222,7 @@ export default function LoginScreen() {
                 onChangeText={(texto) => {
                   setSenha(texto);
                   setErroSenha(undefined);
+                  setErroLogin(null);
                 }}
                 isPassword
                 leftIcon={<Feather name="lock" size={17} color="#64748B" />}
@@ -260,20 +242,15 @@ export default function LoginScreen() {
               </TouchableOpacity>
 
               {/* Aviso visual de API Offline */}
-              {erroConexao && (
-                <View style={estilos.avisoConexao}>
+              {erroLogin && (
+                <View
+                  style={estilos.avisoConexao}
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                  testID="login-error-message"
+                >
                   <Feather name="alert-triangle" size={16} color="#DC2626" style={estilos.iconeAviso} />
-                  <Text style={estilos.txtAvisoConexao}>{erroConexao}</Text>
-                </View>
-              )}
-
-              {/* Identificador de Modo Demonstração */}
-              {isDemo && (
-                <View style={estilos.avisoDemo}>
-                  <Feather name="info" size={15} color="#047857" style={estilos.iconeAviso} />
-                  <Text style={estilos.txtAvisoDemo}>
-                    Modo de Demonstração Ativo (Visualização Sem API)
-                  </Text>
+                  <Text style={estilos.txtAvisoConexao}>{erroLogin}</Text>
                 </View>
               )}
 
@@ -448,23 +425,6 @@ const estilos = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     lineHeight: 16,
-  },
-  avisoDemo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 14,
-  },
-  txtAvisoDemo: {
-    flex: 1,
-    color: "#047857",
-    fontSize: 11,
-    fontWeight: "600",
-    textAlign: "center",
   },
   iconeAviso: {
     marginRight: 8,

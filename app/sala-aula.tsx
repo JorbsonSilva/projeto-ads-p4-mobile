@@ -13,8 +13,9 @@
  * - Barra de navegação inferior canônica dockada (TabBarRN001 - RN-001).
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -23,7 +24,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { 
   Feather, 
@@ -34,34 +35,98 @@ import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import CronometroAula from "../components/CronometroAula";
 import ChatModal from "../components/ChatModal";
+import { getApiErrorMessage, agendamentoApi } from "../config/api";
+import { Agendamento } from "../types/agendamento";
 
 export default function SalaAulaScreen() {
   const { perfilAtivo, usuarioId } = useAuth();
   const isProfessor = perfilAtivo === "Professor";
+  const params = useLocalSearchParams<{ agendamentoId?: string | string[]; id?: string | string[] }>();
+  const rawId = params.agendamentoId ?? params.id;
+  const agendamentoId = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+  const idValido = Number.isSafeInteger(agendamentoId) && agendamentoId > 0;
 
   const [abaRecursos, setAbaRecursos] = useState<"pauta" | "materiais" | "anotacoes">("pauta");
-  const [copiado, setCopiado] = useState<boolean>(false);
-  const [audioMutado, setAudioMutado] = useState<boolean>(false);
-  const [cameraLigada, setCameraLigada] = useState<boolean>(true);
   const [chatModalAberto, setChatModalAberto] = useState<boolean>(false);
+  const [agendamento, setAgendamento] = useState<Agendamento | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [tentativa, setTentativa] = useState(0);
 
-  const linkSalaVirtual = "https://meet.google.com/ori-calc-2026";
+  useEffect(() => {
+    let ativo = true;
 
-  const handleCopiarLink = () => {
-    setCopiado(true);
-    setTimeout(() => setCopiado(false), 3000);
-    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(linkSalaVirtual);
-    }
-  };
+    const carregarAgendamento = async () => {
+      setAgendamento(null);
+      setErro(null);
+      if (!idValido) {
+        setErro("Abra a sala a partir de um agendamento válido.");
+        setCarregando(false);
+        return;
+      }
 
-  const handleAbrirMeet = () => {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.open(linkSalaVirtual, "_blank");
-    } else {
-      Alert.alert("Sala Virtual", `Abrir link no navegador:\n${linkSalaVirtual}`);
-    }
-  };
+      try {
+        const resposta = await agendamentoApi.buscarPorId(agendamentoId);
+        if (!resposta.success || !resposta.data) {
+          throw new Error(resposta.message || "A API não retornou os dados do agendamento.");
+        }
+        if (ativo) {
+          setAgendamento(resposta.data);
+          setErro(null);
+        }
+      } catch (error) {
+        if (ativo) setErro(getApiErrorMessage(error));
+      } finally {
+        if (ativo) setCarregando(false);
+      }
+    };
+
+    setCarregando(true);
+    carregarAgendamento();
+    return () => {
+      ativo = false;
+    };
+  }, [agendamentoId, idValido, tentativa]);
+
+  const nomeProfessor = agendamento?.professorNome || "";
+  const nomeAluno = agendamento?.alunoNome || "";
+  const nomeOutroParticipante = isProfessor ? nomeAluno : nomeProfessor;
+  const idOutroParticipante = isProfessor ? agendamento?.alunoId : agendamento?.professorId;
+  const usuarioIdValido = Number.isSafeInteger(Number(usuarioId)) && Number(usuarioId) > 0;
+  const nomeDisciplina = agendamento?.saberNome || agendamento?.assunto || "Aula";
+  const dataHora = agendamento
+    ? `${agendamento.data} • ${agendamento.hora.slice(0, 5)}`
+    : "";
+  const iniciais = (nome: string) =>
+    nome.trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || "").join("").toUpperCase();
+
+  if (carregando) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <View style={styles.estadoContainer}>
+          <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <Text style={styles.estadoTexto}>Carregando dados da aula...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!agendamento || !usuarioIdValido || !idOutroParticipante) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={["top"]}>
+        <View style={styles.estadoContainer}>
+          <Feather name="alert-circle" size={32} color="#DC2626" />
+          <Text style={styles.estadoTexto}>{erro || "Não foi possível carregar os dados desta aula."}</Text>
+          <TouchableOpacity style={styles.botaoVoltarErro} onPress={() => setTentativa((valor) => valor + 1)}>
+            <Text style={styles.botaoVoltarErroTexto}>Tentar novamente</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.botaoVoltarErro} onPress={() => router.back()}>
+            <Text style={styles.botaoVoltarErroTexto}>Voltar</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -77,11 +142,13 @@ export default function SalaAulaScreen() {
 
         <View style={styles.headerCentro}>
           <View style={styles.aoVivoBadge}>
-            <View style={styles.pontoAoVivo} />
-            <Text style={styles.aoVivoTexto}>AO VIVO</Text>
+            <View style={[styles.pontoAoVivo, agendamento.status !== "EM_ANDAMENTO" && styles.pontoNaoAoVivo]} />
+            <Text style={[styles.aoVivoTexto, agendamento.status !== "EM_ANDAMENTO" && styles.textoNaoAoVivo]}>
+              {agendamento.status === "EM_ANDAMENTO" ? "AO VIVO" : "AULA"}
+            </Text>
           </View>
           <Text style={styles.headerTitulo} numberOfLines={1}>
-            Cálculo Diferencial e Integral I
+            {nomeDisciplina}
           </Text>
         </View>
 
@@ -91,7 +158,6 @@ export default function SalaAulaScreen() {
           activeOpacity={0.7}
         >
           <Feather name="message-circle" size={18} color={Theme.colors.primary} />
-          <View style={styles.badgeMensagemPonto} />
         </TouchableOpacity>
       </View>
 
@@ -107,56 +173,37 @@ export default function SalaAulaScreen() {
               <FontAwesome5 name="video" size={15} color="#2563EB" />
             </View>
             <View style={styles.meetInfo}>
-              <Text style={styles.meetTitulo}>Sala de Videoconferência Google Meet</Text>
-              <Text style={styles.meetSubtitulo}>Sessão criptografada ponta a ponta</Text>
+              <Text style={styles.meetTitulo}>Videoconferência</Text>
+              <Text style={styles.meetSubtitulo}>{dataHora}</Text>
             </View>
             <View style={styles.meetBadgeStatus}>
-              <Text style={styles.meetBadgeStatusTexto}>Conectada</Text>
+              <Text style={styles.meetBadgeStatusTexto}>Indisponível</Text>
             </View>
           </View>
 
           <View style={styles.meetLinkRow}>
-            <Text style={styles.meetLinkTexto} numberOfLines={1}>
-              {linkSalaVirtual}
+            <Text style={styles.meetLinkTexto} numberOfLines={2}>
+              A API ainda não disponibiliza um link de videoconferência para esta aula.
             </Text>
-            <TouchableOpacity 
-              style={styles.botaoCopiarLink} 
-              onPress={handleCopiarLink}
-              activeOpacity={0.7}
-            >
-              <Feather name={copiado ? "check" : "copy"} size={14} color={copiado ? "#059669" : Theme.colors.primary} />
-              <Text style={[styles.botaoCopiarTexto, copiado && { color: "#059669" }]}>
-                {copiado ? "Copiado!" : "Copiar"}
-              </Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.meetAcoesRow}>
             <TouchableOpacity 
-              style={styles.botaoEntrarMeet} 
-              onPress={handleAbrirMeet}
-              activeOpacity={0.85}
+              style={[styles.botaoEntrarMeet, styles.botaoDesabilitado]}
+              disabled
             >
               <FontAwesome5 name="external-link-alt" size={13} color="#FFFFFF" />
-              <Text style={styles.botaoEntrarMeetTexto}>Abrir no Google Meet</Text>
+              <Text style={styles.botaoEntrarMeetTexto}>Link não configurado</Text>
             </TouchableOpacity>
 
             <View style={styles.controlesMidiaRow}>
-              <TouchableOpacity 
-                style={[styles.botaoMidia, audioMutado && styles.botaoMidiaDesativado]}
-                onPress={() => setAudioMutado(!audioMutado)}
-                activeOpacity={0.7}
-              >
-                <Feather name={audioMutado ? "mic-off" : "mic"} size={16} color={audioMutado ? "#DC2626" : "#334155"} />
-              </TouchableOpacity>
+              <View style={[styles.botaoMidia, styles.botaoDesabilitado]}>
+                <Feather name="mic-off" size={16} color="#64748B" />
+              </View>
 
-              <TouchableOpacity 
-                style={[styles.botaoMidia, !cameraLigada && styles.botaoMidiaDesativado]}
-                onPress={() => setCameraLigada(!cameraLigada)}
-                activeOpacity={0.7}
-              >
-                <Feather name={cameraLigada ? "video" : "video-off"} size={16} color={!cameraLigada ? "#DC2626" : "#334155"} />
-              </TouchableOpacity>
+              <View style={[styles.botaoMidia, styles.botaoDesabilitado]}>
+                <Feather name="video-off" size={16} color="#64748B" />
+              </View>
             </View>
           </View>
         </View>
@@ -166,52 +213,45 @@ export default function SalaAulaScreen() {
           {/* Card Professor */}
           <View style={styles.cardParticipante}>
             <View style={styles.avatarParticipanteProf}>
-              <Text style={styles.avatarTextoProf}>RS</Text>
-              <View style={styles.pontoOnline} />
+            <Text style={styles.avatarTextoProf}>{iniciais(nomeProfessor)}</Text>
             </View>
             <View style={styles.participanteInfo}>
               <View style={styles.participanteTagRow}>
-                <Text style={styles.participanteNome}>Prof. Ricardo Santos</Text>
+                <Text style={styles.participanteNome}>{nomeProfessor}</Text>
                 <View style={styles.badgeProfessorTag}>
                   <Text style={styles.badgeProfessorTagTexto}>Docente</Text>
                 </View>
               </View>
-              <Text style={styles.participanteDetalhe}>Doutor em Eng. Mecânica (USP)</Text>
+              <Text style={styles.participanteDetalhe}>Professor da aula</Text>
             </View>
-            <Feather name="mic" size={15} color="#059669" />
           </View>
 
           {/* Card Aluno */}
           <View style={styles.cardParticipante}>
             <View style={styles.avatarParticipanteAluno}>
-              <Text style={styles.avatarTextoAluno}>LS</Text>
-              <View style={styles.pontoOnline} />
+              <Text style={styles.avatarTextoAluno}>{iniciais(nomeAluno)}</Text>
             </View>
             <View style={styles.participanteInfo}>
               <View style={styles.participanteTagRow}>
-                <Text style={styles.participanteNome}>Lucas Silveira</Text>
+                <Text style={styles.participanteNome}>{nomeAluno}</Text>
                 <View style={styles.badgeAlunoTag}>
                   <Text style={styles.badgeAlunoTagTexto}>Aluno</Text>
                 </View>
               </View>
-              <Text style={styles.participanteDetalhe}>Engenharia Mecânica - 4º Semestre</Text>
+              <Text style={styles.participanteDetalhe}>Aluno da aula</Text>
             </View>
-            <Feather name="mic" size={15} color="#059669" />
           </View>
         </View>
 
         {/* COMPONENTE PRINCIPAL: CRONÔMETRO OFICIAL DE AULA (ORI-026 - LIGHT THEME) */}
         <CronometroAula
-          agendamentoId={2026}
-          usuarioId={usuarioId ? Number(usuarioId) : 1}
+          agendamentoId={agendamento.id}
+          usuarioId={Number(usuarioId)}
           isProfessor={isProfessor}
           duracaoTotalMinutos={60}
-          tituloAula="Cálculo Diferencial e Integral I"
+          tituloAula={nomeDisciplina}
           onAulaConcluida={() => {
-            Alert.alert("Parabéns!", "A mentoria foi finalizada e arquivada com sucesso.");
-          }}
-          onReportarProblema={(motivo) => {
-            Alert.alert("Suporte Notificado", `Seu chamado para '${motivo}' foi aberto na Central Orienta.`);
+            Alert.alert("Aula concluída", "O servidor confirmou a conclusão da aula.");
           }}
         />
 
@@ -236,7 +276,7 @@ export default function SalaAulaScreen() {
             >
               <Feather name="folder" size={13} color={abaRecursos === "materiais" ? Theme.colors.primary : "#64748B"} />
               <Text style={[styles.segmentTexto, abaRecursos === "materiais" && styles.segmentTextoAtivo]}>
-                Materiais (3)
+                Materiais (0)
               </Text>
             </TouchableOpacity>
 
@@ -256,27 +296,9 @@ export default function SalaAulaScreen() {
           {abaRecursos === "pauta" && (
             <View style={styles.conteudoAba}>
               <View style={styles.itemPauta}>
-                <View style={styles.checkPautaOK}>
-                  <Feather name="check" size={12} color="#059669" />
-                </View>
-                <Text style={styles.itemPautaTextoConcluido}>
-                  1. Revisão do Teorema do Valor Médio e Derivadas Fundamentais
-                </Text>
-              </View>
-
-              <View style={styles.itemPauta}>
-                <View style={styles.checkPautaAtivo}>
-                  <View style={styles.pontoLaranja} />
-                </View>
-                <Text style={styles.itemPautaTextoAtivo}>
-                  2. Regra da Cadeia aplicada a Funções Multivariáveis
-                </Text>
-              </View>
-
-              <View style={styles.itemPauta}>
-                <View style={styles.checkPautaPendente} />
+                <Feather name="book-open" size={14} color="#64748B" />
                 <Text style={styles.itemPautaTextoPendente}>
-                  3. Resolução da Lista 04 de Otimização e Máximos/Mínimos
+                  {agendamento.assunto || "Nenhuma pauta foi cadastrada para esta aula."}
                 </Text>
               </View>
             </View>
@@ -285,27 +307,9 @@ export default function SalaAulaScreen() {
           {/* Conteúdo da Aba Materiais */}
           {abaRecursos === "materiais" && (
             <View style={styles.conteudoAba}>
-              {[
-                { nome: "Lista_04_Derivadas_Parciais.pdf", tamanho: "2.4 MB", icone: "file-text" },
-                { nome: "Formulario_Resumido_Calculo1.pdf", tamanho: "850 KB", icone: "book-open" },
-                { nome: "Exercicios_Gabaritados_Otimizacao.pdf", tamanho: "1.8 MB", icone: "check-square" },
-              ].map((arq, idx) => (
-                <View key={idx} style={styles.itemMaterial}>
-                  <View style={styles.itemMaterialIcone}>
-                    <Feather name={arq.icone as any} size={15} color={Theme.colors.primary} />
-                  </View>
-                  <View style={styles.itemMaterialInfo}>
-                    <Text style={styles.itemMaterialNome}>{arq.nome}</Text>
-                    <Text style={styles.itemMaterialTamanho}>{arq.tamanho} • PDF</Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.botaoDownloadMaterial}
-                    onPress={() => Alert.alert("Download", `Baixando arquivo ${arq.nome}`)}
-                  >
-                    <Feather name="download" size={14} color="#64748B" />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              <Text style={styles.itemPautaTextoPendente}>
+                Nenhum material foi cadastrado para esta aula.
+              </Text>
             </View>
           )}
 
@@ -315,9 +319,7 @@ export default function SalaAulaScreen() {
               <View style={styles.blocoAnotacao}>
                 <Text style={styles.blocoAnotacaoTitulo}>📌 Anotações da Mentoria:</Text>
                 <Text style={styles.blocoAnotacaoTexto}>
-                  • Lembrar de revisar o conceito de Jacobiano na próxima aula.{"\n"}
-                  • Exercício 7 da Lista 04: atentar para as restrições de domínio nas variáveis x e y.{"\n"}
-                  • Próxima mentoria sugerida: Terça-feira às 19h00.
+                  Nenhuma anotação foi cadastrada para esta aula.
                 </Text>
               </View>
             </View>
@@ -332,13 +334,13 @@ export default function SalaAulaScreen() {
       <ChatModal
         visible={chatModalAberto}
         onClose={() => setChatModalAberto(false)}
-        agendamentoId={2026}
-        usuarioId={usuarioId ? Number(usuarioId) : 1}
-        outroUsuarioId={isProfessor ? 10 : 2}
-        outroUsuarioNome={isProfessor ? "Lucas Silveira" : "Prof. Dr. Ricardo Santos"}
-        disciplinaNome="Cálculo Diferencial e Integral I"
-        agendamentoStatus="Ao Vivo"
-        avatarIniciais={isProfessor ? "LS" : "RS"}
+        agendamentoId={agendamento.id}
+        usuarioId={Number(usuarioId)}
+        outroUsuarioId={idOutroParticipante}
+        outroUsuarioNome={nomeOutroParticipante}
+        disciplinaNome={nomeDisciplina}
+        agendamentoStatus={agendamento.status}
+        avatarIniciais={iniciais(nomeOutroParticipante)}
       />
 
       {/* BARRA INFERIOR DE 5 ABAS FIXA (RN-001) */}
@@ -351,6 +353,29 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#F8FAFC",
+  },
+  estadoContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    padding: 24,
+  },
+  estadoTexto: {
+    color: "#475569",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  botaoVoltarErro: {
+    marginTop: 8,
+    borderRadius: 10,
+    backgroundColor: Theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+  },
+  botaoVoltarErroTexto: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   header: {
     flexDirection: "row",
@@ -393,11 +418,17 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: "#DC2626",
   },
+  pontoNaoAoVivo: {
+    backgroundColor: "#64748B",
+  },
   aoVivoTexto: {
     color: "#DC2626",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.5,
+  },
+  textoNaoAoVivo: {
+    color: "#64748B",
   },
   headerTitulo: {
     color: "#0F172A",
@@ -478,15 +509,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   meetBadgeStatus: {
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "#F1F5F9",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#A7F3D0",
+    borderColor: "#CBD5E1",
   },
   meetBadgeStatusTexto: {
-    color: "#059669",
+    color: "#64748B",
     fontSize: 10,
     fontWeight: "700",
   },
@@ -533,6 +564,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 10,
     gap: 6,
+  },
+  botaoDesabilitado: {
+    opacity: 0.55,
   },
   botaoEntrarMeetTexto: {
     color: "#FFFFFF",

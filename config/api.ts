@@ -21,6 +21,85 @@ export const API_V1_URL = `${API_URL}/api/v1`;
 
 export type DataSourceMode = 'real';
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = await AsyncStorage.getItem("@orienta_token");
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, headers });
+  } catch (error) {
+    const message = error instanceof Error && error.name === "AbortError"
+      ? "A solicitação demorou demais. Tente novamente."
+      : "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.";
+    throw new ApiRequestError(message);
+  }
+
+  if (!response.ok) {
+    let message = `Não foi possível concluir a solicitação (HTTP ${response.status}).`;
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.message === "string" && payload.message.trim()) {
+        message = payload.message;
+      } else if (typeof payload?.error === "string" && payload.error.trim()) {
+        message = payload.error;
+      }
+    } catch {
+      // The response body may not contain JSON.
+    }
+    throw new ApiRequestError(message, response.status);
+  }
+
+  return response;
+}
+
+export function getApiErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status !== undefined && error.status >= 500) {
+      return "O serviço está temporariamente indisponível. Tente novamente mais tarde.";
+    }
+    return error.message;
+  }
+
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const payload = error.response?.data;
+    const backendMessage =
+      payload && typeof payload === "object" && "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : null;
+
+    if (status !== undefined && status >= 500) {
+      return "O serviço está temporariamente indisponível. Tente novamente mais tarde.";
+    }
+    if (status === 401) return "Sua sessão expirou. Entre novamente.";
+    if (status === 403) return "Você não tem permissão para realizar esta ação.";
+    if (backendMessage) return backendMessage;
+    if (!error.response) {
+      return "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.";
+    }
+  }
+
+  if (error instanceof Error) return error.message;
+  return "Ocorreu um erro inesperado. Tente novamente.";
+}
+
 /**
  * Obtém o modo de fonte de dados ativo (Full-Stack Real: Spring Boot 3 + PostgreSQL).
  */
@@ -346,6 +425,10 @@ export const agendamentoApi = {
     const res = await api.get<ApiResponse<Agendamento[]>>(`/agendamentos/professor/${professorId}`);
     return res.data;
   },
+  buscarPorId: async (id: number) => {
+    const res = await api.get<ApiResponse<Agendamento>>(`/agendamentos/${id}`);
+    return res.data;
+  },
   aceitar: async (id: number) => {
     const res = await api.put<ApiResponse<Agendamento>>(`/agendamentos/${id}/aceitar`);
     return res.data;
@@ -372,6 +455,10 @@ export const usuarioApi = {
 };
 
 export const chatApi = {
+  listarConversas: async (usuarioId: number) => {
+    const res = await api.get<ApiResponse<any[]>>(`/chat/conversas?usuarioId=${usuarioId}`);
+    return res.data;
+  },
   obterConversa: async (agendamentoId: number, usuarioId: number) => {
     const res = await api.get<ApiResponse<any>>(`/chat/agendamento/${agendamentoId}?usuarioId=${usuarioId}`);
     return res.data;

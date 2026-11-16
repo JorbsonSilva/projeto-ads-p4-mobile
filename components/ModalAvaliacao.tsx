@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,19 @@ import {
   TouchableOpacity,
   TextInput,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { FontAwesome5, Feather } from '@expo/vector-icons';
+import { getApiErrorMessage } from '../config/api';
 
 export interface ModalAvaliacaoProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (avaliacao: DadosAvaliacao) => void;
-  professorNome?: string;
-  disciplinaNome?: string;
-  dataAula?: string;
+  onSubmit: (avaliacao: DadosAvaliacao) => Promise<void>;
+  professorNome: string;
+  disciplinaNome: string;
+  dataAula: string;
 }
 
 export interface DadosAvaliacao {
@@ -52,20 +55,28 @@ export const ModalAvaliacao: React.FC<ModalAvaliacaoProps> = ({
   visible,
   onClose,
   onSubmit,
-  professorNome = 'Prof. Lucas Rocha',
-  disciplinaNome = 'Cálculo I',
-  dataAula = 'Hoje, 14:00',
+  professorNome,
+  disciplinaNome,
+  dataAula,
 }) => {
-  const [notaGeral, setNotaGeral] = useState<number>(5);
-  const [notaDidatica, setNotaDidatica] = useState<number>(5);
-  const [notaPontualidade, setNotaPontualidade] = useState<number>(5);
-  const [notaDominio, setNotaDominio] = useState<number>(5);
-  const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([
-    'Excelente Didática',
-    'Domínio do Conteúdo',
-  ]);
+  const [notaGeral, setNotaGeral] = useState<number>(0);
+  const [notaDidatica, setNotaDidatica] = useState<number>(0);
+  const [notaPontualidade, setNotaPontualidade] = useState<number>(0);
+  const [notaDominio, setNotaDominio] = useState<number>(0);
+  const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
   const [comentario, setComentario] = useState<string>('');
-  const [enviadoComSucesso, setEnviadoComSucesso] = useState<boolean>(false);
+  const [enviando, setEnviando] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (visible) {
+      setNotaGeral(0);
+      setNotaDidatica(0);
+      setNotaPontualidade(0);
+      setNotaDominio(0);
+      setTagsSelecionadas([]);
+      setComentario('');
+    }
+  }, [visible]);
 
   const toggleTag = (tag: string) => {
     if (tagsSelecionadas.includes(tag)) {
@@ -75,20 +86,24 @@ export const ModalAvaliacao: React.FC<ModalAvaliacaoProps> = ({
     }
   };
 
-  const handleConfirmar = () => {
-    setEnviadoComSucesso(true);
-    setTimeout(() => {
-      onSubmit({
+  const handleConfirmar = async () => {
+    if (enviando || notaGeral < 1) return;
+    setEnviando(true);
+    try {
+      await onSubmit({
         notaGeral,
-        notaDidatica,
-        notaPontualidade,
-        notaDominio,
+        notaDidatica: notaDidatica || notaGeral,
+        notaPontualidade: notaPontualidade || notaGeral,
+        notaDominio: notaDominio || notaGeral,
         tagsSelecionadas,
         comentario,
       });
-      setEnviadoComSucesso(false);
       onClose();
-    }, 1200);
+    } catch (error) {
+      Alert.alert('Não foi possível enviar a avaliação', getApiErrorMessage(error));
+    } finally {
+      setEnviando(false);
+    }
   };
 
   const renderEstrelas = (
@@ -122,134 +137,143 @@ export const ModalAvaliacao: React.FC<ModalAvaliacaoProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={enviando ? () => {} : onClose}
+    >
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
-          {enviadoComSucesso ? (
-            <View style={styles.sucessoContainer}>
-              <View style={styles.sucessoIconWrap}>
-                <Feather name="check-circle" size={44} color="#059669" />
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Header do Modal */}
+            <View style={styles.header}>
+              <View style={styles.iconTituloWrap}>
+                <View style={styles.iconeEstrelaWrap}>
+                  <FontAwesome5 name="star" size={16} color="#D97706" solid />
+                </View>
+                <View style={styles.textosHeader}>
+                  <Text style={styles.titulo}>Avaliar Mentoria</Text>
+                  <Text style={styles.subtituloHeader}>
+                    {professorNome} • {disciplinaNome} • {dataAula}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.sucessoTitulo}>Avaliação Registrada!</Text>
-              <Text style={styles.sucessoTexto}>
-                Muito obrigado por contribuir com a comunidade pedagógica do Orienta 2.0.
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.btnFechar}
+                disabled={enviando}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.instrucaoTexto}>
+              Sua avaliação mútua é indispensável para o algoritmo de qualidade pedagógica e formação acadêmica contínua.
+            </Text>
+
+            {/* Critério Principal: Nota Geral */}
+            <View style={styles.boxNotaGeral}>
+              <Text style={styles.labelNotaGeral}>Nota Geral da Aula</Text>
+              {renderEstrelas(notaGeral, setNotaGeral, 30, 8)}
+              <Text style={styles.labelDescricaoNota}>
+                {LABELS_NOTAS[notaGeral] || ''}
               </Text>
             </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Header do Modal */}
-              <View style={styles.header}>
-                <View style={styles.iconTituloWrap}>
-                  <View style={styles.iconeEstrelaWrap}>
-                    <FontAwesome5 name="star" size={16} color="#D97706" solid />
-                  </View>
-                  <View style={styles.textosHeader}>
-                    <Text style={styles.titulo}>Avaliar Mentoria</Text>
-                    <Text style={styles.subtituloHeader}>
-                      {professorNome} • {disciplinaNome}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity onPress={onClose} style={styles.btnFechar} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Feather name="x" size={18} color="#64748B" />
-                </TouchableOpacity>
+
+            {/* Critérios Específicos */}
+            <View style={styles.subCriteriosContainer}>
+              <View style={styles.subCriterioItem}>
+                <Text style={styles.subCriterioTitulo}>Didática & Clareza</Text>
+                {renderEstrelas(notaDidatica, setNotaDidatica, 18, 4)}
               </View>
 
-              <Text style={styles.instrucaoTexto}>
-                Sua avaliação mútua é indispensável para o algoritmo de qualidade pedagógica e formação acadêmica contínua.
-              </Text>
-
-              {/* Critério Principal: Nota Geral */}
-              <View style={styles.boxNotaGeral}>
-                <Text style={styles.labelNotaGeral}>Nota Geral da Aula</Text>
-                {renderEstrelas(notaGeral, setNotaGeral, 30, 8)}
-                <Text style={styles.labelDescricaoNota}>
-                  {LABELS_NOTAS[notaGeral] || ''}
-                </Text>
+              <View style={styles.subCriterioItem}>
+                <Text style={styles.subCriterioTitulo}>Pontualidade & Compromisso</Text>
+                {renderEstrelas(notaPontualidade, setNotaPontualidade, 18, 4)}
               </View>
 
-              {/* Critérios Específicos */}
-              <View style={styles.subCriteriosContainer}>
-                <View style={styles.subCriterioItem}>
-                  <Text style={styles.subCriterioTitulo}>Didática & Clareza</Text>
-                  {renderEstrelas(notaDidatica, setNotaDidatica, 18, 4)}
-                </View>
-
-                <View style={styles.subCriterioItem}>
-                  <Text style={styles.subCriterioTitulo}>Pontualidade & Compromisso</Text>
-                  {renderEstrelas(notaPontualidade, setNotaPontualidade, 18, 4)}
-                </View>
-
-                <View style={styles.subCriterioItem}>
-                  <Text style={styles.subCriterioTitulo}>Domínio do Conteúdo</Text>
-                  {renderEstrelas(notaDominio, setNotaDominio, 18, 4)}
-                </View>
+              <View style={styles.subCriterioItem}>
+                <Text style={styles.subCriterioTitulo}>Domínio do Conteúdo</Text>
+                {renderEstrelas(notaDominio, setNotaDominio, 18, 4)}
               </View>
+            </View>
 
-              {/* Tags de Destaques Positivos */}
-              <View style={styles.secaoTags}>
-                <Text style={styles.secaoTitulo}>Destaques Positivos (opcional)</Text>
-                <View style={styles.tagsGrid}>
-                  {TAGS_ELOGIOS_PADRAO.map((tag) => {
-                    const ativa = tagsSelecionadas.includes(tag);
-                    return (
-                      <TouchableOpacity
-                        key={tag}
-                        style={[styles.chipTag, ativa && styles.chipTagAtivo]}
-                        onPress={() => toggleTag(tag)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.chipTagTexto, ativa && styles.chipTagTextoAtivo]}>
-                          {ativa ? '✓ ' : '+ '}
-                          {tag}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+            {/* Tags de Destaques Positivos */}
+            <View style={styles.secaoTags}>
+              <Text style={styles.secaoTitulo}>Destaques Positivos (opcional)</Text>
+              <View style={styles.tagsGrid}>
+                {TAGS_ELOGIOS_PADRAO.map((tag) => {
+                  const ativa = tagsSelecionadas.includes(tag);
+                  return (
+                    <TouchableOpacity
+                      key={tag}
+                      style={[styles.chipTag, ativa && styles.chipTagAtivo]}
+                      onPress={() => toggleTag(tag)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.chipTagTexto, ativa && styles.chipTagTextoAtivo]}>
+                        {ativa ? '✓ ' : '+ '}
+                        {tag}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
+            </View>
 
-              {/* Campo de Comentário Aberto */}
-              <View style={styles.secaoComentario}>
-                <View style={styles.comentarioHeader}>
-                  <Text style={styles.secaoTitulo}>Deixe um depoimento</Text>
-                  <Text style={styles.caracteresCount}>{comentario.length}/500</Text>
-                </View>
-                <TextInput
-                  style={styles.inputComentario}
-                  placeholder="Compartilhe como foi a dinâmica, se o mentor tirou todas as suas dúvidas e como a aula te ajudou nos estudos..."
-                  placeholderTextColor="#94A3B8"
-                  multiline
-                  maxLength={500}
-                  value={comentario}
-                  onChangeText={setComentario}
-                />
+            {/* Campo de Comentário Aberto */}
+            <View style={styles.secaoComentario}>
+              <View style={styles.comentarioHeader}>
+                <Text style={styles.secaoTitulo}>Deixe um depoimento</Text>
+                <Text style={styles.caracteresCount}>{comentario.length}/500</Text>
               </View>
+              <TextInput
+                style={styles.inputComentario}
+                placeholder="Compartilhe como foi a dinâmica, se o mentor tirou todas as suas dúvidas e como a aula te ajudou nos estudos..."
+                placeholderTextColor="#94A3B8"
+                multiline
+                maxLength={500}
+                value={comentario}
+                onChangeText={setComentario}
+              />
+            </View>
 
-              {/* Ações Inferiores */}
-              <View style={styles.acoesContainer}>
-                <TouchableOpacity
-                  style={styles.btnDepois}
-                  onPress={onClose}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.btnDepoisTexto}>Depois</Text>
-                </TouchableOpacity>
+            {/* Ações Inferiores */}
+            <View style={styles.acoesContainer}>
+              <TouchableOpacity
+                style={styles.btnDepois}
+                onPress={onClose}
+                disabled={enviando}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.btnDepoisTexto}>Depois</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.btnEnviar}
-                  onPress={handleConfirmar}
-                  activeOpacity={0.8}
-                >
-                  <FontAwesome5 name="paper-plane" size={13} color="#FFFFFF" />
-                  <Text style={styles.btnEnviarTexto}>Enviar Avaliação</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
+              <TouchableOpacity
+                style={[
+                  styles.btnEnviar,
+                  (enviando || notaGeral < 1) && styles.btnEnviarDesabilitado,
+                ]}
+                onPress={handleConfirmar}
+                disabled={enviando || notaGeral < 1}
+                activeOpacity={0.8}
+              >
+                {enviando ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <FontAwesome5 name="paper-plane" size={13} color="#FFFFFF" />
+                    <Text style={styles.btnEnviarTexto}>Enviar Avaliação</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -479,6 +503,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  btnEnviarDesabilitado: {
+    opacity: 0.7,
   },
   sucessoContainer: {
     padding: 32,

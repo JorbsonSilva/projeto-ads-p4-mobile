@@ -8,7 +8,7 @@
  * 4. Extrato financeiro recente com filtros por status e badges semânticos.
  * 5. CTAs integrados para Solicitação de Saque (/saque) e Gestão de Aulas (/solicitacoes).
  * 6. Barra de navegação inferior oficial de 5 abas (Professor) com a aba Ganhos ativa.
- * 7. Serviço híbrido resiliente com fallback offline e badge semântico.
+ * 7. Consulta de métricas financeiras no servidor com indicador de estado.
  */
 
 import { Feather, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -16,6 +16,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   RefreshControl,
@@ -31,12 +32,12 @@ import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   DadosDesempenho,
-  DADOS_DESEMPENHO_MOCK,
   ItemVolumeDisciplina,
   obterDadosDesempenho,
   SegmentoDistribuicao,
   TransacaoExtrato,
 } from "../services/painelGanhosService";
+import { getApiErrorMessage } from "../config/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -45,9 +46,28 @@ export default function PainelGanhosScreen() {
   const { usuarioId } = useAuth() as any;
 
   // Estados de dados e carregamento
-  const [dados, setDados] = useState<DadosDesempenho>(DADOS_DESEMPENHO_MOCK);
+  const [dados, setDados] = useState<DadosDesempenho>({
+    periodoReferencia: "",
+    metricas: {
+      aulasMinistradas: 0,
+      variacaoAulas: "",
+      horasDedicadas: 0,
+      variacaoHoras: "",
+      alunosAtendidos: 0,
+      variacaoAlunos: "",
+      ganhosMes: 0,
+      variacaoGanhos: "",
+      saldoDisponivelSaque: 0,
+      saldoPendente: 0,
+    },
+    graficoEvolucao: [],
+    distribuicaoAulas: [],
+    volumePorDisciplina: [],
+    extratoRecente: [],
+  });
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
+  const [erroPainel, setErroPainel] = useState(false);
   const [ocultarValores, setOcultarValores] = useState(false);
   const [semanaSelecionada, setSemanaSelecionada] = useState<number | null>(3); // Default última semana
   const [filtroExtrato, setFiltroExtrato] = useState<"TODAS" | "PAGAS" | "GRATUITAS" | "PENDENTES">("TODAS");
@@ -63,10 +83,15 @@ export default function PainelGanhosScreen() {
     }
 
     try {
-      const res = await obterDadosDesempenho(usuarioId ? Number(usuarioId) : undefined);
+      if (!usuarioId || !Number.isFinite(Number(usuarioId))) {
+        throw new Error("Sua sessão não contém um usuário válido. Entre novamente.");
+      }
+      const res = await obterDadosDesempenho(Number(usuarioId));
       setDados(res);
-    } catch {
-      setDados(DADOS_DESEMPENHO_MOCK);
+      setErroPainel(false);
+    } catch (error) {
+      setErroPainel(true);
+      Alert.alert("Não foi possível carregar os dados financeiros", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -122,16 +147,18 @@ export default function PainelGanhosScreen() {
     return `${acc} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p.x} ${p.y}`;
   }, "");
 
-  const areaPath = `${linePath} L ${pontos[pontos.length - 1].x} ${CHART_HEIGHT} L ${pontos[0].x} ${CHART_HEIGHT} Z`;
+  const areaPath = pontos.length
+    ? `${linePath} L ${pontos[pontos.length - 1].x} ${CHART_HEIGHT} L ${pontos[0].x} ${CHART_HEIGHT} Z`
+    : "";
 
   // Cálculos do Donut Chart (Raio = 42, Centro = 55, 55)
   const donutRadius = 38;
   const donutCircumference = 2 * Math.PI * donutRadius;
   const strokeWidth = 14;
 
-  const pagasRatio = (dados.distribuicaoAulas[0]?.percentual || 66.7) / 100;
-  const gratisRatio = (dados.distribuicaoAulas[1]?.percentual || 25.0) / 100;
-  const pendentesRatio = (dados.distribuicaoAulas[2]?.percentual || 8.3) / 100;
+  const pagasRatio = (dados.distribuicaoAulas[0]?.percentual ?? 0) / 100;
+  const gratisRatio = (dados.distribuicaoAulas[1]?.percentual ?? 0) / 100;
+  const pendentesRatio = (dados.distribuicaoAulas[2]?.percentual ?? 0) / 100;
 
   const pagasDash = pagasRatio * donutCircumference;
   const gratisDash = gratisRatio * donutCircumference;
@@ -177,23 +204,6 @@ export default function PainelGanhosScreen() {
       </View>
 
       {/* ============================================================== */}
-      {/* 2. BADGE DE RESILIÊNCIA / MODO SIMULAÇÃO                       */}
-      {/* ============================================================== */}
-      <View style={estilos.faixaModoSimulacao}>
-        <Ionicons
-          name={dados.isSimulado ? "information-circle-outline" : "checkmark-circle-outline"}
-          size={14}
-          color={dados.isSimulado ? "#D97706" : "#059669"}
-          style={{ marginRight: 6 }}
-        />
-        <Text style={[estilos.textoModoSimulacao, { color: dados.isSimulado ? "#92400E" : "#065F46" }]}>
-          {dados.isSimulado
-            ? "⚠️ Modo Simulação: Dados offline em exibição (IMG-013)"
-            : "✅ Dados sincronizados em tempo real com a API"}
-        </Text>
-      </View>
-
-      {/* ============================================================== */}
       {/* 3. CONTEÚDO PRINCIPAL COM SCROLL                               */}
       {/* ============================================================== */}
       <ScrollView
@@ -219,6 +229,33 @@ export default function PainelGanhosScreen() {
           </View>
         ) : (
           <>
+            <View
+              style={[
+                estilos.faixaModoSimulacao,
+                {
+                  backgroundColor: erroPainel ? "#FEF3C7" : "#ECFDF5",
+                  borderBottomColor: erroPainel ? "#FDE68A" : "#A7F3D0",
+                },
+              ]}
+            >
+              <Ionicons
+                name={erroPainel ? "alert-circle-outline" : "checkmark-circle-outline"}
+                size={14}
+                color={erroPainel ? "#D97706" : "#059669"}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  estilos.textoModoSimulacao,
+                  { color: erroPainel ? "#92400E" : "#065F46" },
+                ]}
+              >
+                {erroPainel
+                  ? "Não foi possível atualizar os dados financeiros do servidor"
+                  : "Dados financeiros carregados do servidor"}
+              </Text>
+            </View>
+
             {/* ============================================================== */}
             {/* CARD 1: AZUL MARINHO PROFUNDO ("SEUS RESULTADOS" / EVOLUÇÃO)   */}
             {/* ============================================================== */}

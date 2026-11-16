@@ -1,22 +1,17 @@
 /**
  * @file chat.tsx
- * @description Tela de Chat em Tempo Real com Contexto de Aula - Orienta 2.0 [ORI-013].
- * Implementada com total fidelidade à especificação visual Chat.jpeg (IMG-021).
+ * @description Tela de chat conectado à API com contexto do agendamento.
  * 
  * Funcionalidades:
  * - Header com botão voltar, logotipo centralizado da Orienta e menu kebab de opções (⋮)
- * - Card do Interlocutor (Prof. Lucas Rocha) com avatar, dot online, selo verificado, avaliação e botão [Ver perfil]
- * - Banner contextual de aula agendada (Status Confirmada, data, horário e modalidade)
- * - Divisor temporal central "Hoje"
+ * - Card do interlocutor e banner contextual preenchidos pela API
  * - Feed de mensagens em balões estilizados com duplo tique azul (lido) e avatares
- * - Card de evento de sistema no feed ("A aula foi iniciada! Boa aula!")
  * - Faixa horizontal de ações rápidas e anexos (Compartilhar arquivo, Enviar link, Enviar imagem, Dúvida rápida)
  * - Barra de input arredondada com botão +, emoji e envio rápido
  * - Modal integrado de denúncia / segurança
- * - Serviço híbrido resiliente com fallback offline e badge de modo de simulação
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -37,51 +32,60 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import TabBarRN001 from "../components/navigation/TabBarRN001";
+import { getApiErrorMessage } from "../config/api";
 import {
-  ConversaCompleta,
   enviarMensagemChat,
-  MensagemChat,
+  listarConversasChat,
   obterConversaChat,
   registrarDenunciaChat,
-  ResultadoConversa,
 } from "../services/chatService";
+import type { ConversaCompleta, ConversaInboxItem, MensagemChat } from "../services/chatService";
+import { useAuth } from "../context/AuthContext";
 
-const CONVERSA_INICIAL: ConversaCompleta = {
-  conversaId: 0,
-  agendamentoId: 0,
-  interlocutor: {
-    id: "0",
-    nome: "Carregando...",
-    papel: "PROFESSOR",
-    avatar: "",
-    verificado: false,
-    online: false,
-    disciplina: "",
-    avaliacao: 5.0,
-    totalAvaliacoes: 0,
-  },
-  contextoAula: {
-    agendamentoId: 0,
-    disciplina: "",
-    status: "CONFIRMADA",
-    dataTexto: "",
-    horarioTexto: "",
-    modalidade: "ONLINE",
-    localizacao: "",
-    valor: 0,
-  },
-  mensagens: [],
-};
+function interlocutorInicial(nome?: string): string {
+  return nome?.trim().charAt(0).toUpperCase() || "?";
+}
+
+function rotuloStatusAula(status: string): string {
+  const rotulos: Record<string, string> = {
+    PENDENTE: "Pendente",
+    CONFIRMADO: "Confirmado",
+    RECUSADO: "Recusado",
+    CANCELADO: "Cancelado",
+    EM_ANDAMENTO: "Em andamento",
+    AGUARDANDO_CONFIRMACAO: "Aguardando confirmação",
+    REALIZADA: "Realizada",
+  };
+  return rotulos[status] || status;
+}
+
+function rotuloModalidadeAula(modalidade?: string): string {
+  if (modalidade === "ONLINE") return "Online";
+  if (modalidade === "PRESENCIAL") return "Presencial";
+  return "Modalidade não informada";
+}
+
+function formatarDataConversa(data?: string): string {
+  if (!data) return "";
+  const dataValida = new Date(data);
+  if (Number.isNaN(dataValida.getTime())) return "";
+  return dataValida.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const agendamentoId = Number(params.id || params.agendamentoId || 101);
+  const rawId = params.id || params.agendamentoId;
+  const agendamentoId = Number(Array.isArray(rawId) ? rawId[0] : rawId);
+  const temIdAgendamento = rawId !== undefined;
+  const idValido = Number.isSafeInteger(agendamentoId) && agendamentoId > 0;
+  const { usuarioId, perfilAtivo, nomeUsuario } = useAuth();
   const esconderBarra = params.esconderBarra === "true";
 
   const [carregando, setCarregando] = useState<boolean>(true);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
-  const [conversa, setConversa] = useState<ConversaCompleta>(CONVERSA_INICIAL);
+  const [erro, setErro] = useState<string | null>(null);
+  const [conversa, setConversa] = useState<ConversaCompleta | null>(null);
+  const [conversas, setConversas] = useState<ConversaInboxItem[]>([]);
   const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
   const [textoInput, setTextoInput] = useState<string>("");
   const [enviando, setEnviando] = useState<boolean>(false);
@@ -94,23 +98,62 @@ export default function ChatScreen() {
   const [denunciaEnviando, setDenunciaEnviando] = useState<boolean>(false);
 
   const flatListRef = useRef<FlatList>(null);
+  const inicialInterlocutor = interlocutorInicial(conversa?.interlocutor.nome);
+  const inicialUsuario = interlocutorInicial(nomeUsuario);
 
   const carregarDadosChat = useCallback(async () => {
+    const idUsuario = Number(usuarioId);
+    if (!idValido || !Number.isSafeInteger(idUsuario) || idUsuario <= 0) {
+      setConversa(null);
+      setErro(!idValido
+        ? "Selecione um agendamento válido para abrir a conversa."
+        : "Entre novamente para acessar suas conversas.");
+      setCarregando(false);
+      return;
+    }
+
+    setCarregando(true);
     try {
-      const res: ResultadoConversa = await obterConversaChat(agendamentoId);
-      setConversa(res.conversa);
-      setMensagens(res.conversa.mensagens);
-      setIsSimulado(res.isSimulado);
-    } catch {
-      setIsSimulado(true);
+      const resultado = await obterConversaChat(agendamentoId, idUsuario);
+      setConversa(resultado);
+      setMensagens(resultado.mensagens);
+      setErro(null);
+    } catch (error) {
+      setConversa(null);
+      setErro(getApiErrorMessage(error));
     } finally {
       setCarregando(false);
     }
-  }, [agendamentoId]);
+  }, [agendamentoId, idValido, usuarioId]);
+
+  const carregarCaixaEntrada = useCallback(async () => {
+    const idUsuario = Number(usuarioId);
+    if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0) {
+      setErro("Entre novamente para acessar suas conversas.");
+      setCarregando(false);
+      return;
+    }
+
+    setCarregando(true);
+    try {
+      setConversas(await listarConversasChat(idUsuario));
+      setErro(null);
+    } catch (error) {
+      setConversas([]);
+      setErro(getApiErrorMessage(error));
+    } finally {
+      setCarregando(false);
+    }
+  }, [usuarioId]);
+
+  const carregar = useCallback(
+    () => temIdAgendamento ? carregarDadosChat() : carregarCaixaEntrada(),
+    [carregarCaixaEntrada, carregarDadosChat, temIdAgendamento]
+  );
 
   useEffect(() => {
-    carregarDadosChat();
-  }, [carregarDadosChat]);
+    carregar();
+  }, [carregar]);
 
   const rolarParaFim = () => {
     setTimeout(() => {
@@ -126,17 +169,24 @@ export default function ChatScreen() {
     const texto = conteudoPersonalizado || textoInput.trim();
     if (!texto && tipo === "TEXTO") return;
 
-    if (!conteudoPersonalizado) {
-      setTextoInput("");
-    }
     setEnviando(true);
 
     try {
-      const res = await enviarMensagemChat(agendamentoId, "user-aluno", texto, tipo, metaAnexo);
-      setMensagens((prev) => [...prev, res.mensagem]);
+      const mensagem = await enviarMensagemChat(
+        agendamentoId,
+        Number(usuarioId),
+        texto,
+        tipo,
+        metaAnexo
+      );
+      setMensagens((prev) => [...prev, mensagem]);
+      if (!conteudoPersonalizado) setTextoInput("");
       rolarParaFim();
-    } catch (e: any) {
-      Alert.alert("Erro", "Não foi possível enviar a mensagem.");
+    } catch (error) {
+      Alert.alert(
+        "Erro",
+        getApiErrorMessage(error)
+      );
     } finally {
       setEnviando(false);
     }
@@ -145,24 +195,11 @@ export default function ChatScreen() {
   const handleAcaoRapida = (tipo: string) => {
     switch (tipo) {
       case "arquivo":
-        handleEnviarMensagem(
-          "Compartilhou um documento: Lista_Exercicios_Calculo_I.pdf",
-          "ARQUIVO",
-          { nomeArquivo: "Lista_Exercicios_Calculo_I.pdf", tamanho: "1.4 MB" }
-        );
+        Alert.alert("Anexos indisponíveis", "O backend ainda não oferece upload de arquivos.");
         break;
       case "link":
-        handleEnviarMensagem(
-          "Link da sala complementar: https://meet.google.com/ori-aula-calc",
-          "LINK",
-          { url: "https://meet.google.com/ori-aula-calc" }
-        );
-        break;
       case "imagem":
-        handleEnviarMensagem(
-          "Enviou uma foto da questão para resolução",
-          "IMAGEM"
-        );
+        Alert.alert("Anexos indisponíveis", "O backend ainda não oferece envio de links ou imagens.");
         break;
       case "duvida":
         setTextoInput("Professor, gostaria de tirar uma dúvida sobre a última questão antes da aula.");
@@ -173,6 +210,7 @@ export default function ChatScreen() {
   };
 
   const handleEnviarDenuncia = async () => {
+    if (!conversa) return;
     if (!descricaoDenuncia.trim()) {
       Alert.alert("Atenção", "Por favor, descreva brevemente o ocorrido.");
       return;
@@ -182,15 +220,19 @@ export default function ChatScreen() {
     try {
       const res = await registrarDenunciaChat(
         agendamentoId,
-        conversa.interlocutor.id,
+        Number(usuarioId),
+        Number(conversa.interlocutor.id),
         motivoDenuncia,
         descricaoDenuncia
       );
       Alert.alert("Sucesso", res.mensagem);
       setModalDenunciaVisivel(false);
       setDescricaoDenuncia("");
-    } catch {
-      Alert.alert("Erro", "Não foi possível registrar a denúncia no momento.");
+    } catch (error) {
+      Alert.alert(
+        "Erro",
+        getApiErrorMessage(error)
+      );
     } finally {
       setDenunciaEnviando(false);
     }
@@ -200,7 +242,105 @@ export default function ChatScreen() {
     return (
       <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#FF5A1F" />
-        <Text style={estilos.loadingTexto}>Carregando mensagens da aula...</Text>
+        <Text style={estilos.loadingTexto}>
+          {temIdAgendamento ? "Carregando mensagens da aula..." : "Carregando conversas..."}
+        </Text>
+      </View>
+    );
+  }
+
+  if (!temIdAgendamento && erro) {
+    return (
+      <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
+        <Feather name="alert-circle" size={30} color="#DC2626" />
+        <Text style={estilos.loadingTexto}>{erro}</Text>
+        <TouchableOpacity style={estilos.botaoErroChat} onPress={carregar}>
+          <Text style={estilos.botaoErroChatTexto}>Tentar novamente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={estilos.botaoErroChat} onPress={() => router.back()}>
+          <Text style={estilos.botaoErroChatTexto}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!temIdAgendamento) {
+    return (
+      <View style={[estilos.container, { paddingTop: insets.top }]}>
+        <View style={estilos.header}>
+          <TouchableOpacity style={estilos.botaoVoltar} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color="#1E293B" />
+          </TouchableOpacity>
+          <Text style={estilos.tituloInbox}>Mensagens</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <FlatList
+          data={conversas}
+          keyExtractor={(item) => String(item.conversaId)}
+          contentContainerStyle={conversas.length ? estilos.listaInbox : estilos.listaInboxVazia}
+          ListEmptyComponent={
+            <View style={estilos.containerVazioInbox}>
+              <Feather name="message-circle" size={34} color="#94A3B8" />
+              <Text style={estilos.textoVazioInbox}>Nenhuma conversa disponível.</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={estilos.itemInbox}
+              onPress={() => router.push({
+                pathname: "/chat",
+                params: {
+                  id: String(item.agendamentoId),
+                  ...(esconderBarra ? { esconderBarra: "true" } : {}),
+                },
+              })}
+            >
+              {item.interlocutor.avatar
+                ? <Image source={{ uri: item.interlocutor.avatar }} style={estilos.avatarInbox} />
+                : <View style={[estilos.avatarInbox, estilos.avatarFallback]}>
+                    <Text style={estilos.avatarInicial}>{interlocutorInicial(item.interlocutor.nome)}</Text>
+                  </View>}
+              <View style={estilos.dadosInbox}>
+                <View style={estilos.nomeEDataInbox}>
+                  <Text style={estilos.nomeInbox} numberOfLines={1}>{item.interlocutor.nome}</Text>
+                  <Text style={estilos.dataInbox}>{formatarDataConversa(item.dataHoraUltimaMensagem)}</Text>
+                </View>
+                <Text style={estilos.previewInbox} numberOfLines={1}>
+                  {item.ultimaMensagem || "Conversa sem mensagens"}
+                </Text>
+                {item.disciplina ? (
+                  <Text style={estilos.disciplinaInbox} numberOfLines={1}>{item.disciplina}</Text>
+                ) : null}
+              </View>
+              {item.mensagensNaoLidas > 0 && (
+                <View style={estilos.naoLidasInbox}>
+                  <Text style={estilos.naoLidasTextoInbox}>{item.mensagensNaoLidas}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+        />
+        {!esconderBarra && (
+          <TabBarRN001
+            abaAtiva="chat"
+            perfilForcado={perfilAtivo === "Professor" ? "Professor" : "Aluno"}
+          />
+        )}
+      </View>
+    );
+  }
+
+  if (!conversa) {
+    return (
+      <View style={[estilos.loadingContainer, { paddingTop: insets.top }]}>
+        <Feather name="alert-circle" size={30} color="#DC2626" />
+        <Text style={estilos.loadingTexto}>{erro || "Conversa indisponível."}</Text>
+        <TouchableOpacity style={estilos.botaoErroChat} onPress={carregar}>
+          <Text style={estilos.botaoErroChatTexto}>Tentar novamente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={estilos.botaoErroChat} onPress={() => router.back()}>
+          <Text style={estilos.botaoErroChatTexto}>Voltar</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -213,18 +353,6 @@ export default function ChatScreen() {
       style={[estilos.container, { paddingTop: insets.top }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE SIMULAÇÃO OFFLINE                        */}
-      {/* ============================================================== */}
-      {isSimulado && (
-        <View style={estilos.bannerSimulacao}>
-          <Ionicons name="information-circle" size={14} color="#D97706" style={{ marginRight: 6 }} />
-          <Text style={estilos.textoBannerSimulacao}>
-            ⚠️ Modo Simulação: Dados offline em exibição
-          </Text>
-        </View>
-      )}
-
       {/* ============================================================== */}
       {/* 1. HEADER SUPERIOR COM LOGO E AÇÕES                            */}
       {/* ============================================================== */}
@@ -239,10 +367,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
 
         <View style={estilos.headerLogoContainer}>
-          <Image
-            source={{ uri: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=100&h=100&fit=crop" }}
-            style={estilos.logoIcone}
-          />
+          <Feather name="book-open" size={22} color="#FF5A1F" style={estilos.logoIcone} />
           <Text style={estilos.logoTexto}>
             Orienta <Text style={{ color: "#FF5A1F" }}>2.0</Text>
           </Text>
@@ -262,30 +387,29 @@ export default function ChatScreen() {
       {/* ============================================================== */}
       <View style={estilos.cardInterlocutor}>
         <View style={estilos.avatarContainer}>
-          <Image source={{ uri: interlocutor.avatar }} style={estilos.avatar} />
-          {interlocutor.online && <View style={estilos.dotOnline} />}
+          {interlocutor.avatar
+            ? <Image source={{ uri: interlocutor.avatar }} style={estilos.avatar} />
+            : <View style={[estilos.avatar, estilos.avatarFallback]}>
+                <Text style={estilos.avatarInicial}>{inicialInterlocutor}</Text>
+              </View>}
         </View>
 
         <View style={estilos.interlocutorInfo}>
           <View style={estilos.nomeLinha}>
             <Text style={estilos.nomeProfessor}>{interlocutor.nome}</Text>
-            {interlocutor.verificado && (
-              <MaterialIcons name="verified" size={16} color="#0284C7" style={{ marginLeft: 4 }} />
-            )}
           </View>
           <Text style={estilos.disciplinaProfessor}>{interlocutor.disciplina}</Text>
-          <View style={estilos.avaliacaoLinha}>
-            <Ionicons name="star" size={13} color="#F59E0B" />
-            <Text style={estilos.avaliacaoTexto}>
-              {" "}{interlocutor.avaliacao.toFixed(1).replace(".", ",")}{" "}
-              <Text style={estilos.avaliacaoTotal}>({interlocutor.totalAvaliacoes} avaliações)</Text>
-            </Text>
-          </View>
         </View>
 
         <TouchableOpacity
           style={estilos.botaoVerPerfil}
-          onPress={() => router.push("/perfil-professor" as any)}
+          onPress={() => {
+            if (interlocutor.papel === "PROFESSOR") {
+              router.push(`/professor/${interlocutor.id}` as any);
+            } else {
+              Alert.alert("Perfil indisponível", "O perfil público deste participante não está disponível.");
+            }
+          }}
           activeOpacity={0.8}
         >
           <Feather name="calendar" size={13} color="#0F172A" style={{ marginRight: 4 }} />
@@ -303,8 +427,8 @@ export default function ChatScreen() {
             <Text style={estilos.bannerAulaLabel}>Aula agendada</Text>
           </View>
           <View style={estilos.badgeConfirmada}>
-            <Ionicons name="checkmark-circle" size={13} color="#10B981" style={{ marginRight: 4 }} />
-            <Text style={estilos.textoBadgeConfirmada}>Confirmada</Text>
+            <Ionicons name="calendar-outline" size={13} color="#10B981" style={{ marginRight: 4 }} />
+            <Text style={estilos.textoBadgeConfirmada}>{rotuloStatusAula(aula.status)}</Text>
           </View>
         </View>
 
@@ -316,7 +440,7 @@ export default function ChatScreen() {
           </Text>
           <Text style={estilos.bannerAulaModalidade}>
             <Ionicons name="location-outline" size={13} color="#64748B" />
-            {" "}{aula.localizacao || "Online (Google Meet)"}
+            {" "}{aula.localizacao || rotuloModalidadeAula(aula.modalidade)}
           </Text>
         </View>
       </View>
@@ -330,15 +454,6 @@ export default function ChatScreen() {
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={estilos.mensagensListContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View style={estilos.divisorTemporalContainer}>
-            <View style={estilos.divisorLinha} />
-            <View style={estilos.divisorPill}>
-              <Text style={estilos.divisorTexto}>Hoje</Text>
-            </View>
-            <View style={estilos.divisorLinha} />
-          </View>
-        }
         renderItem={({ item }) => {
           // Mensagem de Evento do Sistema
           if (item.tipo === "SISTEMA" || item.remetentePapel === "SISTEMA") {
@@ -352,24 +467,27 @@ export default function ChatScreen() {
             );
           }
 
-          const isAluno = item.remetentePapel === "ALUNO" || item.remetenteId === "user-aluno";
+          const isUsuarioAtual = Number(item.remetenteId) === Number(usuarioId);
 
           return (
-            <View style={[estilos.linhaMensagem, isAluno ? estilos.linhaAluno : estilos.linhaProfessor]}>
-              {!isAluno && (
+            <View style={[estilos.linhaMensagem, isUsuarioAtual ? estilos.linhaAluno : estilos.linhaProfessor]}>
+              {!isUsuarioAtual && (
                 <View style={estilos.avatarPequenoContainer}>
-                  <Image source={{ uri: item.avatar || interlocutor.avatar }} style={estilos.avatarPequeno} />
-                  {interlocutor.online && <View style={estilos.dotOnlinePequeno} />}
+                  {item.avatar || interlocutor.avatar
+                    ? <Image source={{ uri: item.avatar || interlocutor.avatar }} style={estilos.avatarPequeno} />
+                    : <View style={[estilos.avatarPequeno, estilos.avatarFallback]}>
+                        <Text style={estilos.avatarInicialPequeno}>{inicialInterlocutor}</Text>
+                      </View>}
                 </View>
               )}
 
-              <View style={[estilos.balaoMensagem, isAluno ? estilos.balaoAluno : estilos.balaoProfessor]}>
+              <View style={[estilos.balaoMensagem, isUsuarioAtual ? estilos.balaoAluno : estilos.balaoProfessor]}>
                 {item.metaAnexo && (
                   <View style={estilos.anexoBox}>
                     <Ionicons
                       name={item.tipo === "ARQUIVO" ? "document-text" : item.tipo === "LINK" ? "link" : "image"}
                       size={18}
-                      color={isAluno ? "#FF5A1F" : "#0284C7"}
+                      color={isUsuarioAtual ? "#FF5A1F" : "#0284C7"}
                       style={{ marginRight: 6 }}
                     />
                     <Text style={estilos.anexoNome} numberOfLines={1}>
@@ -378,13 +496,13 @@ export default function ChatScreen() {
                   </View>
                 )}
 
-                <Text style={[estilos.textoMensagem, isAluno ? estilos.textoAluno : estilos.textoProfessor]}>
+                <Text style={[estilos.textoMensagem, isUsuarioAtual ? estilos.textoAluno : estilos.textoProfessor]}>
                   {item.conteudo}
                 </Text>
 
                 <View style={estilos.metaMensagemLinha}>
                   <Text style={estilos.horarioMensagem}>{item.enviadaEm}</Text>
-                  {isAluno && (
+                  {isUsuarioAtual && (
                     <Ionicons
                       name="checkmark-done"
                       size={14}
@@ -395,12 +513,13 @@ export default function ChatScreen() {
                 </View>
               </View>
 
-              {isAluno && (
+              {isUsuarioAtual && (
                 <View style={estilos.avatarPequenoContainer}>
-                  <Image
-                    source={{ uri: item.avatar || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop&crop=faces" }}
-                    style={estilos.avatarPequeno}
-                  />
+                  {item.avatar
+                    ? <Image source={{ uri: item.avatar }} style={estilos.avatarPequeno} />
+                    : <View style={[estilos.avatarPequeno, estilos.avatarFallback]}>
+                        <Text style={estilos.avatarInicialPequeno}>{inicialUsuario}</Text>
+                      </View>}
                 </View>
               )}
             </View>
@@ -514,7 +633,10 @@ export default function ChatScreen() {
       {/* 6.1 BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS - RN-001)     */}
       {/* ============================================================== */}
       {!esconderBarra && (
-        <TabBarRN001 abaAtiva="chat" perfilForcado="Aluno" />
+        <TabBarRN001
+          abaAtiva="chat"
+          perfilForcado={perfilAtivo === "Professor" ? "Professor" : "Aluno"}
+        />
       )}
 
       {/* ============================================================== */}
@@ -531,7 +653,11 @@ export default function ChatScreen() {
               style={estilos.opcaoMenuItem}
               onPress={() => {
                 setMenuOpcoesVisivel(false);
-                router.push("/perfil-professor" as any);
+                if (interlocutor.papel === "PROFESSOR") {
+                  router.push(`/professor/${interlocutor.id}` as any);
+                } else {
+                  Alert.alert("Perfil indisponível", "O perfil público deste participante não está disponível.");
+                }
               }}
             >
               <Ionicons name="person-outline" size={18} color="#0F172A" style={{ marginRight: 10 }} />
@@ -656,20 +782,97 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     fontWeight: "500",
   },
-  bannerSimulacao: {
-    flexDirection: "row",
+  botaoErroChat: {
+    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+  },
+  botaoErroChatTexto: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  tituloInbox: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  listaInbox: {
+    paddingHorizontal: 16,
+  },
+  listaInboxVazia: {
+    flexGrow: 1,
+  },
+  containerVazioInbox: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
+    padding: 24,
   },
-  textoBannerSimulacao: {
+  textoVazioInbox: {
+    marginTop: 12,
+    color: "#64748B",
+    fontSize: 14,
+  },
+  itemInbox: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  avatarInbox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#E2E8F0",
+  },
+  dadosInbox: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  nomeEDataInbox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  nomeInbox: {
+    flex: 1,
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  dataInbox: {
+    marginLeft: 8,
+    color: "#94A3B8",
     fontSize: 11,
-    color: "#92400E",
-    fontWeight: "600",
+  },
+  previewInbox: {
+    marginTop: 4,
+    color: "#64748B",
+    fontSize: 13,
+  },
+  disciplinaInbox: {
+    marginTop: 3,
+    color: "#0284C7",
+    fontSize: 11,
+  },
+  naoLidasInbox: {
+    minWidth: 20,
+    height: 20,
+    marginLeft: 8,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF5A1F",
+  },
+  naoLidasTextoInbox: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
 
   // 1. Header
@@ -695,9 +898,6 @@ const estilos = StyleSheet.create({
     alignItems: "center",
   },
   logoIcone: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
     marginRight: 6,
   },
   logoTexto: {
@@ -734,16 +934,19 @@ const estilos = StyleSheet.create({
     borderRadius: 24,
     backgroundColor: "#E2E8F0",
   },
-  dotOnline: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#10B981",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
+  avatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInicial: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  avatarInicialPequeno: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#475569",
   },
   interlocutorInfo: {
     flex: 1,
@@ -761,21 +964,6 @@ const estilos = StyleSheet.create({
     fontSize: 12,
     color: "#64748B",
     marginTop: 1,
-  },
-  avaliacaoLinha: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  avaliacaoTexto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  avaliacaoTotal: {
-    fontSize: 11,
-    fontWeight: "400",
-    color: "#94A3B8",
   },
   botaoVerPerfil: {
     flexDirection: "row",
@@ -852,28 +1040,6 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  divisorTemporalContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 14,
-  },
-  divisorLinha: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E2E8F0",
-  },
-  divisorPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: "#F1F5F9",
-    borderRadius: 12,
-    marginHorizontal: 8,
-  },
-  divisorTexto: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#64748B",
-  },
   cardSistemaFeed: {
     flexDirection: "row",
     alignItems: "center",
@@ -916,17 +1082,6 @@ const estilos = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     backgroundColor: "#E2E8F0",
-  },
-  dotOnlinePequeno: {
-    position: "absolute",
-    bottom: -1,
-    right: -1,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#10B981",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
   },
   balaoMensagem: {
     maxWidth: "75%",

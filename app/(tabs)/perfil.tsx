@@ -9,15 +9,14 @@
  *   chave PIX), feed de avaliações dos alunos e 5 abas Professor.
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +28,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../context/AuthContext";
+import { getApiErrorMessage } from "../../config/api";
 import {
   obterPerfilAluno,
   obterPerfilProfessor,
@@ -42,11 +42,8 @@ import {
 
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ persona?: string; papel?: string }>();
-  const { logoutGlobal } = useAuth() as any;
-
-  // Estado da persona ativa: "Aluno" ou "Professor"
-  const [personaAtiva, setPersonaAtiva] = useState<"Aluno" | "Professor">("Aluno");
+  const { logoutGlobal, usuarioId, perfilAtivo, trocarPerfil } = useAuth();
+  const personaAtiva = perfilAtivo === "Professor" ? "Professor" : "Aluno";
 
   // Estados dos dados de perfil
   const [perfilAluno, setPerfilAluno] = useState<PerfilAlunoData>({
@@ -56,14 +53,13 @@ export default function PerfilScreen() {
   });
   const [perfilProfessor, setPerfilProfessor] = useState<PerfilProfessorData>({
     id: 0, nome: '', email: '', telefone: '', cidade: '', estado: '', tipo: 'PROFESSOR',
-    fotoUrl: '', bio: '',
+    fotoUrl: '', bio: '', titulacao: '',
     resumoMes: { aulasMinistradas: 0, horasDedicadas: 0, alunosAtendidos: 0, ganhosMes: 0 },
-    configuracoesEnsino: { valorHoraOnline: 0, valorHoraPresencial: 0, permitePresencial: false, raioAtendimentoKm: 0, chavePix: '' },
+    configuracoesEnsino: { permitePresencial: false, chavePix: '' },
     saberes: [], disponibilidades: [],
   });
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
 
   // Controle de visibilidade de saldo do resumo do professor
   const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
@@ -91,48 +87,40 @@ export default function PerfilScreen() {
   const [formProfPix, setFormProfPix] = useState<string>("");
 
   const [salvandoEdicao, setSalvandoEdicao] = useState<boolean>(false);
+  const [trocandoPerfil, setTrocandoPerfil] = useState<boolean>(false);
 
-  // Sincronizar com parâmetro de rota se fornecido
-  useEffect(() => {
-    if (params.persona === "professor" || params.papel === "professor") {
-      setPersonaAtiva("Professor");
-    } else if (params.persona === "aluno" || params.papel === "aluno") {
-      setPersonaAtiva("Aluno");
-    }
-  }, [params.persona, params.papel]);
-
-  // Carregar dados de ambos os perfis
   const carregarDados = useCallback(async () => {
     try {
-      const [resAluno, resProf]: [ResultadoPerfilAluno, ResultadoPerfilProfessorData] =
-        await Promise.all([obterPerfilAluno(1), obterPerfilProfessor(2)]);
+      if (!usuarioId) throw new Error("Sua sessão expirou. Entre novamente.");
+      const id = Number(usuarioId);
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error("Identificador de usuário inválido.");
 
-      setPerfilAluno(resAluno.dados);
-      setPerfilProfessor(resProf.dados);
-      setIsSimulado(resAluno.isSimulado || resProf.isSimulado);
-
-      // Preencher formulário aluno
-      setFormAlunoNome(resAluno.dados.nome);
-      setFormAlunoTelefone(resAluno.dados.telefone);
-      setFormAlunoCidade(resAluno.dados.cidade);
-      setFormAlunoBio(resAluno.dados.bio);
-
-      // Preencher formulário professor
-      setFormProfNome(resProf.dados.nome);
-      setFormProfTitulacao('');
-      setFormProfTelefone(resProf.dados.telefone);
-      setFormProfCidade(resProf.dados.cidade);
-      setFormProfBio(resProf.dados.bio);
-      setFormProfPrecoOnline(String(resProf.dados.configuracoesEnsino.valorHoraOnline));
-      setFormProfPrecoPresencial(String(resProf.dados.configuracoesEnsino.valorHoraPresencial));
-      setFormProfPix(resProf.dados.configuracoesEnsino.chavePix);
-    } catch {
-      setIsSimulado(true);
+      if (personaAtiva === "Professor") {
+        const res: ResultadoPerfilProfessorData = await obterPerfilProfessor(id);
+        setPerfilProfessor(res.dados);
+        setFormProfNome(res.dados.nome);
+        setFormProfTitulacao(res.dados.titulacao);
+        setFormProfTelefone(res.dados.telefone);
+        setFormProfCidade(res.dados.cidade);
+        setFormProfBio(res.dados.bio);
+        setFormProfPrecoOnline(String(res.dados.configuracoesEnsino.valorHoraOnline || ""));
+        setFormProfPrecoPresencial(String(res.dados.configuracoesEnsino.valorHoraPresencial || ""));
+        setFormProfPix(res.dados.configuracoesEnsino.chavePix);
+      } else {
+        const res: ResultadoPerfilAluno = await obterPerfilAluno(id);
+        setPerfilAluno(res.dados);
+        setFormAlunoNome(res.dados.nome);
+        setFormAlunoTelefone(res.dados.telefone);
+        setFormAlunoCidade(res.dados.cidade);
+        setFormAlunoBio(res.dados.bio);
+      }
+    } catch (error) {
+      Alert.alert("Não foi possível carregar o perfil", error instanceof Error ? error.message : "Tente novamente mais tarde.");
     } finally {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, []);
+  }, [personaAtiva, usuarioId]);
 
   useEffect(() => {
     carregarDados();
@@ -141,6 +129,18 @@ export default function PerfilScreen() {
   const onRefresh = () => {
     setAtualizando(true);
     carregarDados();
+  };
+
+  const alterarPerfil = async (perfil: "Aluno" | "Professor") => {
+    if (perfil === personaAtiva || trocandoPerfil) return;
+    setTrocandoPerfil(true);
+    try {
+      await trocarPerfil(perfil);
+    } catch (error) {
+      Alert.alert("Não foi possível trocar de perfil", getApiErrorMessage(error));
+    } finally {
+      setTrocandoPerfil(false);
+    }
   };
 
   const handleSalvarAluno = async () => {
@@ -161,6 +161,8 @@ export default function PerfilScreen() {
         bio: formAlunoBio,
       }));
       setModalEditarAluno(false);
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
     } finally {
       setSalvandoEdicao(false);
     }
@@ -169,14 +171,22 @@ export default function PerfilScreen() {
   const handleSalvarProfessor = async () => {
     setSalvandoEdicao(true);
     try {
-      const precoOnlineNum = parseFloat(formProfPrecoOnline) || 60;
-      const precoPresencialNum = parseFloat(formProfPrecoPresencial) || 80;
+      const precoOnlineNum = formProfPrecoOnline.trim() ? Number(formProfPrecoOnline.replace(",", ".")) : undefined;
+      const precoPresencialNum = formProfPrecoPresencial.trim() ? Number(formProfPrecoPresencial.replace(",", ".")) : undefined;
+      if (
+        (precoOnlineNum !== undefined && (!Number.isFinite(precoOnlineNum) || precoOnlineNum <= 0)) ||
+        (precoPresencialNum !== undefined && (!Number.isFinite(precoPresencialNum) || precoPresencialNum <= 0))
+      ) {
+        Alert.alert("Valor inválido", "Informe um preço maior que zero ou deixe o campo vazio.");
+        return;
+      }
 
       await salvarPerfilProfessor(perfilProfessor.id, {
         nome: formProfNome,
         telefone: formProfTelefone,
         cidade: formProfCidade,
         bio: formProfBio,
+        titulacao: formProfTitulacao,
         configuracoesEnsino: {
           ...perfilProfessor.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
@@ -191,6 +201,7 @@ export default function PerfilScreen() {
         telefone: formProfTelefone,
         cidade: formProfCidade,
         bio: formProfBio,
+        titulacao: formProfTitulacao,
         configuracoesEnsino: {
           ...prev.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
@@ -199,6 +210,8 @@ export default function PerfilScreen() {
         },
       }));
       setModalEditarProf(false);
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
     } finally {
       setSalvandoEdicao(false);
     }
@@ -223,18 +236,6 @@ export default function PerfilScreen() {
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
-      {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE MODO SIMULAÇÃO (OFFLINE)                 */}
-      {/* ============================================================== */}
-      {isSimulado && (
-        <View style={estilos.bannerSimulacao}>
-          <Ionicons name="information-circle" size={14} color="#D97706" style={{ marginRight: 6 }} />
-          <Text style={estilos.textoBannerSimulacao}>
-            ⚠️ Modo Simulação: Dados offline em exibição
-          </Text>
-        </View>
-      )}
-
       {/* ============================================================== */}
       {/* 1. HEADER SUPERIOR COM TÍTULO E BOTÃO SAIR                     */}
       {/* ============================================================== */}
@@ -267,17 +268,17 @@ export default function PerfilScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ============================================================== */}
-      {/* 2. ALTERNADOR DE PERSONAS (ALUNO / PROFESSOR)                  */}
-      {/* ============================================================== */}
       <View style={estilos.alternadorContainer}>
         <TouchableOpacity
           style={[
             estilos.botaoAlternador,
             personaAtiva === "Aluno" && estilos.botaoAlternadorAtivoAluno,
           ]}
-          onPress={() => setPersonaAtiva("Aluno")}
+          onPress={() => alterarPerfil("Aluno")}
+          disabled={trocandoPerfil}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityState={{ selected: personaAtiva === "Aluno" }}
         >
           <Text
             style={[
@@ -294,8 +295,11 @@ export default function PerfilScreen() {
             estilos.botaoAlternador,
             personaAtiva === "Professor" && estilos.botaoAlternadorAtivoProf,
           ]}
-          onPress={() => setPersonaAtiva("Professor")}
+          onPress={() => alterarPerfil("Professor")}
+          disabled={trocandoPerfil}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityState={{ selected: personaAtiva === "Professor" }}
         >
           <Text
             style={[
@@ -716,7 +720,7 @@ export default function PerfilScreen() {
                   <View style={estilos.infoMenuItem}>
                     <Text style={estilos.tituloMenuItem}>Formatos de aula e tarifas</Text>
                     <Text style={estilos.subtituloMenuItem}>
-                      Online: R$ {perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h • Presencial: R$ {perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h
+                      Online: {perfilProfessor.configuracoesEnsino.valorHoraOnline !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h` : "Não informado"} • Presencial: {perfilProfessor.configuracoesEnsino.valorHoraPresencial !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h` : "Não informado"}
                     </Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />

@@ -13,11 +13,11 @@
  *   * Concluída: Fundo #F5F3FF com texto #7C3AED
  * - Ações Bilaterais Completas: Check-in mútuo, Pausa/Retomada, Adição de Tempo (+5m, +10m, +15m, +30m), Encerramento e Avaliação.
  * - Central de Ocorrências / Reportar Problema Técnico durante a aula.
- * - Modo Resiliente / Simulação Interativa transparente no preview.
+ * - Exibição explícita de falha de sincronização, sem simular estados da sessão.
  * - Tokens Oficiais do Design System Orienta 2.0 (Theme.colors, tipografia e contraste WCAG AA).
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   View, 
   Text, 
@@ -31,7 +31,7 @@ import {
   Platform
 } from "react-native";
 import { FontAwesome5, Feather } from "@expo/vector-icons";
-import { api, ApiResponse } from "../config/api";
+import { api, ApiResponse, suporteApi } from "../config/api";
 import { Theme } from "../constants/theme";
 
 export type StatusSessao = 
@@ -62,7 +62,6 @@ export interface CronometroAulaProps {
   duracaoTotalMinutos?: number;
   tituloAula?: string;
   onAulaConcluida?: () => void;
-  onReportarProblema?: (motivo: string) => void;
 }
 
 export const CronometroAula: React.FC<CronometroAulaProps> = ({
@@ -72,14 +71,13 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
   duracaoTotalMinutos = 60,
   tituloAula = "Mentoria Individual Orienta",
   onAulaConcluida,
-  onReportarProblema,
 }) => {
   // Estado principal da sessão
   const [sessao, setSessao] = useState<SessaoData | null>(null);
   const [carregando, setCarregando] = useState<boolean>(true);
+  const [erroSessao, setErroSessao] = useState<string | null>(null);
   const [segundosLocais, setSegundosLocais] = useState<number>(0);
   const [duracaoPrevista, setDuracaoPrevista] = useState<number>(duracaoTotalMinutos * 60);
-  const [modoSimulado, setModoSimulado] = useState<boolean>(false);
 
   // Modais de suporte e avaliação
   const [modalAvaliacao, setModalAvaliacao] = useState<boolean>(false);
@@ -88,9 +86,9 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
   const [modalConfirmarFim, setModalConfirmarFim] = useState<boolean>(false);
 
   // Formulário de Avaliação Pós-Aula
-  const [notaGeral, setNotaGeral] = useState<number>(5);
-  const [notaDidatica, setNotaDidatica] = useState<number>(5);
-  const [notaPontualidade, setNotaPontualidade] = useState<number>(5);
+  const [notaGeral, setNotaGeral] = useState<number>(0);
+  const [notaDidatica, setNotaDidatica] = useState<number>(0);
+  const [notaPontualidade, setNotaPontualidade] = useState<number>(0);
   const [comentario, setComentario] = useState<string>("");
   const [tagsSelecionadas, setTagsSelecionadas] = useState<string[]>([]);
   const [enviandoAvaliacao, setEnviandoAvaliacao] = useState<boolean>(false);
@@ -109,61 +107,39 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
   };
 
   // Inicialização e sincronização periódica
-  const carregarSessao = async () => {
+  const carregarSessao = useCallback(async () => {
     try {
       const res = await api.get<ApiResponse<SessaoData>>(`/aulas/${agendamentoId}/sessao`);
-      if (res.data?.data) {
-        setSessao(res.data.data);
-        setSegundosLocais(res.data.data.segundosDecorridos || 0);
-        if (res.data.data.duracaoPrevistaSegundos) {
-          setDuracaoPrevista(res.data.data.duracaoPrevistaSegundos);
-        }
-        if (res.data.data.statusSessao === "CONCLUIDA") {
-          onAulaConcluida?.();
-        }
-        setModoSimulado(false);
-      } else {
-        ativarFallbackSimulacao();
+      if (!res.data?.success || !res.data.data) {
+        throw new Error(res.data?.message || "A API não retornou o estado da sessão.");
       }
-    } catch {
-      ativarFallbackSimulacao();
+
+      setSessao(res.data.data);
+      setSegundosLocais(res.data.data.segundosDecorridos || 0);
+      if (res.data.data.duracaoPrevistaSegundos) {
+        setDuracaoPrevista(res.data.data.duracaoPrevistaSegundos);
+      }
+      setErroSessao(null);
+    } catch (error: any) {
+      const mensagem = error.response?.data?.message || error.message;
+      setErroSessao(typeof mensagem === "string" ? mensagem : "Não foi possível carregar a sessão no servidor.");
     } finally {
       setCarregando(false);
     }
-  };
-
-  const ativarFallbackSimulacao = () => {
-    setModoSimulado(true);
-    setSessao((prev) => {
-      if (prev) return prev;
-      return {
-        id: agendamentoId || 101,
-        alunoCheckin: false,
-        professorCheckin: false,
-        statusSessao: "AGUARDANDO_CHECKIN",
-        segundosDecorridos: 0,
-        duracaoPrevistaSegundos: duracaoTotalMinutos * 60,
-        alunoConfirmouFim: false,
-        professorConfirmouFim: false,
-        tempoAdicionalMinutos: 0,
-      };
-    });
-  };
+  }, [agendamentoId]);
 
   useEffect(() => {
     carregarSessao();
     const intervaloSync = setInterval(() => {
-      if (!modoSimulado) {
-        carregarSessao();
-      }
+      carregarSessao();
     }, 5000);
     return () => clearInterval(intervaloSync);
-  }, [agendamentoId, modoSimulado]);
+  }, [carregarSessao]);
 
   // Contador local segundo a segundo
   useEffect(() => {
     let timer: any;
-    if (sessao?.statusSessao === "EM_ANDAMENTO" || sessao?.statusSessao === "FINALIZANDO" || sessao?.statusSessao === "TOLERANCIA") {
+    if (!erroSessao && (sessao?.statusSessao === "EM_ANDAMENTO" || sessao?.statusSessao === "FINALIZANDO" || sessao?.statusSessao === "TOLERANCIA")) {
       timer = setInterval(() => {
         setSegundosLocais((prev) => {
           const proximo = prev + 1;
@@ -176,26 +152,10 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [sessao?.statusSessao, duracaoPrevista]);
+  }, [sessao?.statusSessao, duracaoPrevista, erroSessao]);
 
   // AÇÕES BILATERAIS
   const handleCheckin = async () => {
-    if (modoSimulado) {
-      setSessao((prev) => {
-        if (!prev) return null;
-        const novoMeuCheckin = true;
-        const ambosCheckin = isProfessor ? (novoMeuCheckin && prev.alunoCheckin) : (novoMeuCheckin && prev.professorCheckin);
-        return {
-          ...prev,
-          alunoCheckin: isProfessor ? prev.alunoCheckin : true,
-          professorCheckin: isProfessor ? true : prev.professorCheckin,
-          statusSessao: ambosCheckin ? "EM_ANDAMENTO" : "AGUARDANDO_CHECKIN"
-        };
-      });
-      exibirFeedback("Seu check-in foi registrado com sucesso!");
-      return;
-    }
-
     try {
       setCarregando(true);
       const res = await api.post<ApiResponse<SessaoData>>(`/aulas/${agendamentoId}/checkin`, {
@@ -212,31 +172,7 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
     }
   };
 
-  const handleSimularOutraParte = () => {
-    setSessao((prev) => {
-      if (!prev) return null;
-      const outroCheckin = isProfessor ? !prev.alunoCheckin : !prev.professorCheckin;
-      const novoAlunoCheckin = isProfessor ? outroCheckin : prev.alunoCheckin;
-      const novoProfCheckin = isProfessor ? prev.professorCheckin : outroCheckin;
-      const ambosAtivos = novoAlunoCheckin && novoProfCheckin;
-
-      return {
-        ...prev,
-        alunoCheckin: novoAlunoCheckin,
-        professorCheckin: novoProfCheckin,
-        statusSessao: ambosAtivos ? "EM_ANDAMENTO" : "AGUARDANDO_CHECKIN",
-      };
-    });
-    exibirFeedback("Status da outra parte alternado no simulador.");
-  };
-
   const handlePausar = async () => {
-    if (modoSimulado) {
-      setSessao((prev) => prev ? { ...prev, statusSessao: "PAUSADA" } : null);
-      exibirFeedback("Aula pausada em comum acordo.");
-      return;
-    }
-
     try {
       const res = await api.post<ApiResponse<SessaoData>>(`/aulas/${agendamentoId}/pausar`, {
         usuarioId,
@@ -249,12 +185,6 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
   };
 
   const handleRetomar = async () => {
-    if (modoSimulado) {
-      setSessao((prev) => prev ? { ...prev, statusSessao: "EM_ANDAMENTO" } : null);
-      exibirFeedback("Contagem da aula retomada com sucesso!");
-      return;
-    }
-
     try {
       const res = await api.post<ApiResponse<SessaoData>>(`/aulas/${agendamentoId}/retomar`, {
         usuarioId,
@@ -265,38 +195,16 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
     }
   };
 
-  const handleAdicionarTempo = (minutos: number) => {
-    const segundosAdicionais = minutos * 60;
-    setDuracaoPrevista((prev) => prev + segundosAdicionais);
-    setSessao((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        tempoAdicionalMinutos: (prev.tempoAdicionalMinutos || 0) + minutos,
-        statusSessao: prev.statusSessao === "FINALIZANDO" ? "EM_ANDAMENTO" : prev.statusSessao
-      };
-    });
+  const handleAdicionarTempo = (_minutos: number) => {
+    Alert.alert(
+      "Extensão indisponível",
+      "A API ainda não oferece extensão de duração com confirmação dos dois participantes."
+    );
     setModalTempoExtra(false);
-    exibirFeedback(`+${minutos} minutos adicionados à mentoria!`);
   };
 
   const handleConfirmarEncerramento = async () => {
     setModalConfirmarFim(false);
-
-    if (modoSimulado) {
-      setSessao((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          statusSessao: "CONCLUIDA",
-          alunoConfirmouFim: true,
-          professorConfirmouFim: true,
-        };
-      });
-      setModalAvaliacao(true);
-      onAulaConcluida?.();
-      return;
-    }
 
     try {
       const res = await api.post<ApiResponse<SessaoData>>(`/aulas/${agendamentoId}/finalizar`, {
@@ -317,36 +225,64 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
   };
 
   const handleEnviarAvaliacao = async () => {
+    if (notaGeral < 1) {
+      Alert.alert("Avaliação incompleta", "Escolha uma nota geral de 1 a 5 estrelas.");
+      return;
+    }
     setEnviandoAvaliacao(true);
     try {
-      if (!modoSimulado) {
-        await api.post(`/aulas/${agendamentoId}/avaliar?avaliadorId=${usuarioId}`, {
-          notaGeral,
-          didatica: notaDidatica,
-          pontualidade: notaPontualidade,
-          comentario,
-          tags: tagsSelecionadas,
-        });
-      }
+      await api.post(`/aulas/${agendamentoId}/avaliar`, {
+        notaGeral,
+        didatica: notaDidatica || notaGeral,
+        pontualidade: notaPontualidade || notaGeral,
+        dominio: notaGeral,
+        comentario,
+        tags: tagsSelecionadas,
+      });
       exibirFeedback("Avaliação registrada com sucesso! Obrigado pelo feedback.");
       setModalAvaliacao(false);
-      onAulaConcluida?.();
-    } catch {
-      exibirFeedback("Avaliação registrada localmente.");
-      setModalAvaliacao(false);
+    } catch (error: any) {
+      const mensagem = error?.response?.data?.message;
+      Alert.alert(
+        "Não foi possível enviar a avaliação",
+        typeof mensagem === "string"
+          ? mensagem
+          : "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente."
+      );
     } finally {
       setEnviandoAvaliacao(false);
     }
   };
 
-  const handleEnviarProblema = () => {
+  const handleEnviarProblema = async () => {
+    if (!detalhesProblema.trim()) {
+      Alert.alert("Atenção", "Descreva o problema técnico antes de abrir o chamado.");
+      return;
+    }
+
     setEnviandoProblema(true);
-    setTimeout(() => {
-      setEnviandoProblema(false);
+    try {
+      const resposta = await suporteApi.criarTicket(usuarioId, {
+        titulo: `Problema técnico na aula #${agendamentoId}`,
+        descricao: `${motivoProblema}: ${detalhesProblema.trim()}`,
+        categoria: "TECNICO",
+        prioridade: "ALTA",
+      });
+      if (!resposta.success || !resposta.data) {
+        throw new Error(resposta.message || "A API não confirmou a abertura do chamado.");
+      }
+
       setModalSuporte(false);
-      onReportarProblema?.(motivoProblema);
-      exibirFeedback("Chamado de suporte registrado (Protocolo SUP-AULA-2026).");
-    }, 600);
+      setDetalhesProblema("");
+      exibirFeedback(`Chamado registrado${resposta.data.protocolo ? `: ${resposta.data.protocolo}` : ""}.`);
+    } catch (error: any) {
+      Alert.alert(
+        "Não foi possível abrir o chamado",
+        error.response?.data?.message || error.message || "Verifique sua conexão e tente novamente."
+      );
+    } finally {
+      setEnviandoProblema(false);
+    }
   };
 
   // Formatação de Horas, Minutos e Segundos
@@ -459,8 +395,36 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
     );
   }
 
+  if (!sessao) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Feather name="alert-circle" size={24} color="#DC2626" />
+        <Text style={styles.loadingText}>
+          {erroSessao || "Não foi possível carregar a sessão da aula."}
+        </Text>
+        <TouchableOpacity
+          style={styles.botaoCheckinPrincipal}
+          onPress={() => {
+            setCarregando(true);
+            carregarSessao();
+          }}
+        >
+          <Text style={styles.botaoCheckinTexto}>Tentar novamente</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.cardContainer}>
+      {erroSessao && (
+        <View style={styles.toastBanner}>
+          <Feather name="alert-triangle" size={14} color="#FFFFFF" />
+          <Text style={styles.toastTexto}>
+            Falha ao sincronizar com o servidor: {erroSessao}
+          </Text>
+        </View>
+      )}
       {/* Toast de feedback */}
       {mensagemStatus && (
         <View style={styles.toastBanner}>
@@ -479,12 +443,6 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
         </View>
 
         <View style={styles.headerRight}>
-          {modoSimulado && (
-            <View style={styles.badgeSimulacao}>
-              <Feather name="zap" size={11} color="#D97706" />
-              <Text style={styles.badgeSimulacaoTexto}>Simulação Ativa</Text>
-            </View>
-          )}
           <Text style={styles.codigoAula}>ID #{agendamentoId}</Text>
         </View>
       </View>
@@ -582,18 +540,6 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
               </Text>
             </TouchableOpacity>
 
-            {modoSimulado && (
-              <TouchableOpacity 
-                style={styles.botaoSimularOutraParte}
-                onPress={handleSimularOutraParte}
-                activeOpacity={0.8}
-              >
-                <Feather name="refresh-cw" size={13} color="#D97706" />
-                <Text style={styles.botaoSimularOutraParteTexto}>
-                  Simulador: Alternar Check-in de {isProfessor ? "Aluno" : "Professor"}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         )}
 
@@ -972,9 +918,12 @@ export const CronometroAula: React.FC<CronometroAulaProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity 
-                  style={styles.botaoModalEnviarAvaliacao} 
+                  style={[
+                    styles.botaoModalEnviarAvaliacao,
+                    (!notaGeral || enviandoAvaliacao) && styles.botaoDesabilitado,
+                  ]}
                   onPress={handleEnviarAvaliacao}
-                  disabled={enviandoAvaliacao}
+                  disabled={enviandoAvaliacao || notaGeral < 1}
                 >
                   <Text style={styles.botaoTextoBranco}>
                     {enviandoAvaliacao ? "Enviando..." : "Enviar Avaliação ⭐"}

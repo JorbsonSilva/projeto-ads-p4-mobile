@@ -13,7 +13,7 @@
  * - Passo 3: Revisão discriminada com valor solicitado, forma de recebimento, taxa da plataforma e valor líquido a receber
  * - Sticky Action Footer com botão degradê laranja "Solicitar saque"
  * - Modal de comprovante de transferência com protocolo e novo saldo
- * - Serviço híbrido resiliente saqueService.ts com fallback offline e badge de modo de simulação
+ * - Dados da carteira consultados no servidor com indicador de estado da requisição
  */
 
 import { Feather, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -31,6 +31,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
+import { getApiErrorMessage } from "../config/api";
 
 import {
   MetodoRecebimento,
@@ -58,17 +60,18 @@ const RESUMO_SAQUE_INICIAL: ResumoFinanceiroProfessor = {
 
 export default function SaqueScreen() {
   const insets = useSafeAreaInsets();
+  const { usuarioId } = useAuth();
 
   const [carregando, setCarregando] = useState<boolean>(true);
-  const [isSimulado, setIsSimulado] = useState<boolean>(false);
   const [resumo, setResumo] = useState<ResumoFinanceiroProfessor>(RESUMO_SAQUE_INICIAL);
+  const [erroCarteira, setErroCarteira] = useState<boolean>(false);
 
   // Estados Interativos
   const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
-  const [valorSaque, setValorSaque] = useState<number>(2480.0);
-  const [valorInputTexto, setValorInputTexto] = useState<string>("2480,00");
+  const [valorSaque, setValorSaque] = useState<number>(0);
+  const [valorInputTexto, setValorInputTexto] = useState<string>("");
   const [metodoSelecionado, setMetodoSelecionado] = useState<MetodoRecebimento>("PIX");
-  const [chavePixEditada, setChavePixEditada] = useState<string>("prof.lucas@orienta.com.br");
+  const [chavePixEditada, setChavePixEditada] = useState<string>("");
 
   // Modais de Apoio
   const [modalComoFunciona, setModalComoFunciona] = useState<boolean>(false);
@@ -78,16 +81,20 @@ export default function SaqueScreen() {
 
   const carregarDadosFinanceiros = useCallback(async () => {
     try {
-      const res: ResultadoResumoFinanceiro = await obterResumoSaqueProfessor(101);
+      if (!usuarioId || !Number.isFinite(Number(usuarioId))) {
+        throw new Error("Sua sessão não contém um usuário válido. Entre novamente.");
+      }
+      const res: ResultadoResumoFinanceiro = await obterResumoSaqueProfessor(Number(usuarioId));
       setResumo(res.resumo);
-      setIsSimulado(res.isSimulado);
       setChavePixEditada(res.resumo.chavePixPadrao);
-    } catch {
-      setIsSimulado(true);
+      setErroCarteira(false);
+    } catch (error) {
+      setErroCarteira(true);
+      Alert.alert("Não foi possível carregar sua carteira", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
     }
-  }, []);
+  }, [usuarioId]);
 
   useEffect(() => {
     carregarDadosFinanceiros();
@@ -129,7 +136,7 @@ export default function SaqueScreen() {
     setSolicitando(true);
     try {
       const res = await solicitarSaqueProfessor({
-        professorId: 101,
+        professorId: Number(usuarioId),
         valor: valorSaque,
         metodo: metodoSelecionado,
         chavePix: chavePixEditada,
@@ -142,8 +149,8 @@ export default function SaqueScreen() {
         ...prev,
         saldoDisponivel: res.resultado.novoSaldoDisponivel,
       }));
-    } catch {
-      Alert.alert("Erro", "Não foi possível concluir a solicitação de saque no momento.");
+    } catch (error) {
+      Alert.alert("Não foi possível solicitar o saque", getApiErrorMessage(error));
     } finally {
       setSolicitando(false);
     }
@@ -160,18 +167,6 @@ export default function SaqueScreen() {
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
-      {/* ============================================================== */}
-      {/* 0. BANNER DISCRETO DE SIMULAÇÃO OFFLINE                        */}
-      {/* ============================================================== */}
-      {isSimulado && (
-        <View style={estilos.bannerSimulacao}>
-          <Ionicons name="information-circle" size={14} color="#D97706" style={{ marginRight: 6 }} />
-          <Text style={estilos.textoBannerSimulacao}>
-            ⚠️ Modo Simulação: Dados offline em exibição
-          </Text>
-        </View>
-      )}
-
       {/* ============================================================== */}
       {/* 1. HEADER SUPERIOR COM TÍTULO E AJUDA                          */}
       {/* ============================================================== */}
@@ -200,6 +195,33 @@ export default function SaqueScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[estilos.scrollContent, { paddingBottom: 110 }]}
       >
+        <View
+          style={[
+            estilos.bannerSimulacao,
+            {
+              backgroundColor: erroCarteira ? "#FEF3C7" : "#ECFDF5",
+              borderBottomColor: erroCarteira ? "#FDE68A" : "#A7F3D0",
+            },
+          ]}
+        >
+          <Ionicons
+            name={erroCarteira ? "alert-circle-outline" : "checkmark-circle-outline"}
+            size={14}
+            color={erroCarteira ? "#D97706" : "#059669"}
+            style={{ marginRight: 6 }}
+          />
+          <Text
+            style={[
+              estilos.textoBannerSimulacao,
+              { color: erroCarteira ? "#92400E" : "#065F46" },
+            ]}
+          >
+            {erroCarteira
+              ? "Não foi possível atualizar a carteira do servidor"
+              : "Carteira carregada do servidor"}
+          </Text>
+        </View>
+
         {/* ============================================================== */}
         {/* 2. CARDS SUPERIORES DE RESUMO FINANCEIRO (2 BLOCOS)            */}
         {/* ============================================================== */}

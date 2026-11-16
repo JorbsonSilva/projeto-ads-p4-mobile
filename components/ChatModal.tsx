@@ -8,10 +8,10 @@
  * - Feed de mensagens em tempo real com balões do usuário (Laranja #FF5A1F) e destinatário (Cinza #F1F5F9), hora e duplo tique.
  * - Barra de entrada com menu de anexos (+), envio de fotos/documentos e botão enviar institucional.
  * - Canal de denúncias e moderação com 5 categorias, justificativa e protocolo auditável (DEN-2026-XXXXX).
- * - Camada de resiliência e simulação offline com feedback amigável.
+ * - Mensagens, denúncias e erros tratados conforme a resposta real da API.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -35,7 +35,7 @@ export interface ChatModalProps {
   onClose: () => void;
   agendamentoId: number;
   usuarioId: number;
-  outroUsuarioId?: number;
+  outroUsuarioId: number;
   outroUsuarioNome?: string;
   outroParticipanteNome?: string;
   assunto?: string;
@@ -60,22 +60,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   onClose,
   agendamentoId,
   usuarioId,
-  outroUsuarioId = 2,
+  outroUsuarioId,
   outroUsuarioNome,
   outroParticipanteNome,
   assunto,
   disciplinaNome,
-  agendamentoStatus = "Confirmada",
-  avatarIniciais = "RS",
+  agendamentoStatus = "Aula",
+  avatarIniciais = "",
 }) => {
-  const nomeExibicao = outroUsuarioNome || outroParticipanteNome || "Prof. Dr. Ricardo Santos";
-  const assuntoExibicao = assunto || disciplinaNome || "Cálculo Diferencial e Integral I";
+  const nomeExibicao = outroUsuarioNome || outroParticipanteNome || "Participante";
+  const assuntoExibicao = assunto || disciplinaNome || "Aula";
 
   const [mensagens, setMensagens] = useState<MensagemItem[]>([]);
   const [novoTexto, setNovoTexto] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
-  const [isModoOffline, setIsModoOffline] = useState(false);
+  const [erroMensagens, setErroMensagens] = useState<string | null>(null);
   const [menuAnexosAberto, setMenuAnexosAberto] = useState(false);
 
   // Estados do Canal de Denúncias
@@ -87,133 +87,64 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const flatListRef = useRef<FlatList>(null);
 
-  // Inicialização de mensagens mock para resiliência / offline
-  const mensagensMock: MensagemItem[] = [
-    {
-      id: 1,
-      remetenteId: outroUsuarioId,
-      remetenteNome: nomeExibicao,
-      conteudo: `Olá! Confirmando nossa mentoria de ${assuntoExibicao}. Já separei a lista de exercícios.`,
-      lida: true,
-      enviadaEm: new Date(Date.now() - 3600000 * 2).toISOString(),
-    },
-    {
-      id: 2,
-      remetenteId: usuarioId,
-      remetenteNome: "Você",
-      conteudo: "Excelente, professor! Gostaria de focar especialmente na regra da cadeia e derivadas parciais.",
-      lida: true,
-      enviadaEm: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: 3,
-      remetenteId: outroUsuarioId,
-      remetenteNome: nomeExibicao,
-      conteudo: "Perfeito! Deixei o material anexado na sala de aula. O link do Google Meet está liberado.",
-      lida: true,
-      enviadaEm: new Date(Date.now() - 1800000).toISOString(),
-    },
-  ];
-
-  const carregarMensagens = async () => {
+  const carregarMensagens = useCallback(async () => {
     try {
       const res = await chatApi.listarMensagens(agendamentoId, usuarioId);
-      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-        setMensagens(res.data);
-        setIsModoOffline(false);
-      } else {
-        ativarMockOffline();
+      if (!res.success || !Array.isArray(res.data)) {
+        throw new Error(res.message || "A API retornou um formato inesperado para as mensagens.");
       }
-    } catch {
-      ativarMockOffline();
+      setMensagens(res.data);
+      setErroMensagens(null);
+    } catch (error) {
+      setErroMensagens(
+        error instanceof Error ? error.message : "Não foi possível carregar as mensagens."
+      );
     } finally {
       setCarregando(false);
     }
-  };
-
-  const ativarMockOffline = () => {
-    setIsModoOffline(true);
-    setMensagens((prev) => (prev.length > 0 ? prev : mensagensMock));
-  };
+  }, [agendamentoId, usuarioId]);
 
   useEffect(() => {
     if (visible && agendamentoId) {
       setCarregando(true);
       carregarMensagens();
       const interval = setInterval(() => {
-        if (!isModoOffline) {
-          carregarMensagens();
-        }
+        carregarMensagens();
       }, 4000);
       return () => clearInterval(interval);
     }
-  }, [visible, agendamentoId, isModoOffline]);
+  }, [visible, agendamentoId, carregarMensagens]);
 
   const handleEnviar = async () => {
     if (!novoTexto.trim() || enviando) return;
     const textoParaEnviar = novoTexto.trim();
-    setNovoTexto("");
     setEnviando(true);
-
-    const novaMensagemLocal: MensagemItem = {
-      id: Date.now(),
-      remetenteId: usuarioId,
-      remetenteNome: "Você",
-      conteudo: textoParaEnviar,
-      lida: false,
-      enviadaEm: new Date().toISOString(),
-    };
-
-    if (isModoOffline) {
-      setMensagens((prev) => [...prev, novaMensagemLocal]);
-      setEnviando(false);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-
-      // Simulação de resposta amigável do parceiro após 2 segundos no preview
-      setTimeout(() => {
-        const respostaAutomatica: MensagemItem = {
-          id: Date.now() + 1,
-          remetenteId: outroUsuarioId,
-          remetenteNome: nomeExibicao,
-          conteudo: "Recebido! Estou acompanhando as mensagens em tempo real.",
-          lida: true,
-          enviadaEm: new Date().toISOString(),
-        };
-        setMensagens((prev) => [...prev, respostaAutomatica]);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-      }, 2000);
-      return;
-    }
 
     try {
       const res = await chatApi.enviarMensagem(agendamentoId, usuarioId, textoParaEnviar);
-      if (res.data) {
-        setMensagens((prev) => [...prev, res.data]);
-      } else {
-        setMensagens((prev) => [...prev, novaMensagemLocal]);
+      if (!res.success || !res.data) {
+        throw new Error(res.message || "A API não confirmou o envio da mensagem.");
       }
+      setMensagens((prev) => [...prev, res.data]);
+      setNovoTexto("");
+      setErroMensagens(null);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch {
-      setMensagens((prev) => [...prev, novaMensagemLocal]);
+    } catch (error) {
+      Alert.alert(
+        "Falha no envio",
+        error instanceof Error ? error.message : "Não foi possível enviar a mensagem."
+      );
     } finally {
       setEnviando(false);
     }
   };
 
-  const handleEnviarAnexo = (tipo: "imagem" | "documento" | "link", nome: string) => {
+  const handleEnviarAnexo = () => {
     setMenuAnexosAberto(false);
-    const msgAnexo: MensagemItem = {
-      id: Date.now(),
-      remetenteId: usuarioId,
-      remetenteNome: "Você",
-      conteudo: `📎 Anexo enviado: ${nome}`,
-      lida: true,
-      enviadaEm: new Date().toISOString(),
-      anexoTipo: tipo,
-      anexoNome: nome,
-    };
-    setMensagens((prev) => [...prev, msgAnexo]);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    Alert.alert(
+      "Anexos indisponíveis",
+      "O backend ainda não oferece upload de arquivos. Nenhum anexo foi enviado."
+    );
   };
 
   const handleEnviarDenuncia = async () => {
@@ -223,20 +154,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
 
     setEnviandoDenuncia(true);
-    const codigoProtocolo = `DEN-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-
     try {
-      if (!isModoOffline) {
-        await suporteApi.enviarDenuncia(usuarioId, {
-          denunciadoId: outroUsuarioId,
-          agendamentoId,
-          motivo: categoriaDenuncia,
-          descricao: descricaoDenuncia,
-        });
+      const resposta = await suporteApi.enviarDenuncia(usuarioId, {
+        denunciadoId: outroUsuarioId,
+        agendamentoId,
+        motivo: categoriaDenuncia,
+        descricao: descricaoDenuncia,
+      });
+      if (!resposta.success || !resposta.data?.protocolo) {
+        throw new Error(resposta.message || "A API não retornou o protocolo da denúncia.");
       }
-      setProtocoloGerado(codigoProtocolo);
-    } catch {
-      setProtocoloGerado(codigoProtocolo);
+      setProtocoloGerado(resposta.data.protocolo);
+    } catch (error) {
+      Alert.alert(
+        "Falha ao registrar denúncia",
+        error instanceof Error ? error.message : "Não foi possível registrar a denúncia."
+      );
     } finally {
       setEnviandoDenuncia(false);
     }
@@ -276,9 +209,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
             <View style={styles.avatarContainer}>
               <View style={styles.avatarCirculo}>
-                <Text style={styles.avatarTexto}>{avatarIniciais}</Text>
+                <Text style={styles.avatarTexto}>{avatarIniciais || "?"}</Text>
               </View>
-              <View style={styles.pontoOnline} />
             </View>
 
             <View style={styles.headerInfo}>
@@ -286,10 +218,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <Text style={styles.headerTitulo} numberOfLines={1}>
                   {nomeExibicao}
                 </Text>
-                <MaterialIcons name="verified" size={16} color="#2563EB" style={{ marginLeft: 4 }} />
               </View>
               <Text style={styles.headerSubtitulo} numberOfLines={1}>
-                Online agora • {assuntoExibicao}
+                {assuntoExibicao}
               </Text>
             </View>
 
@@ -307,7 +238,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* BANNER DE STATUS E RESILIÊNCIA */}
+          {/* CONTEXTO DA CONVERSA */}
           <View style={styles.faixaContexto}>
             <View style={styles.faixaContextoEsquerda}>
               <Feather name="calendar" size={13} color="#059669" />
@@ -315,19 +246,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 Aula #{agendamentoId} • <Text style={{ fontWeight: "700" }}>{agendamentoStatus}</Text>
               </Text>
             </View>
-            {isModoOffline && (
-              <View style={styles.badgeOffline}>
-                <Feather name="wifi-off" size={11} color="#D97706" />
-                <Text style={styles.badgeOfflineTexto}>Offline (Demo)</Text>
-              </View>
-            )}
           </View>
+
+          {erroMensagens && (
+            <View style={styles.erroMensagens}>
+              <Feather name="alert-triangle" size={13} color="#B91C1C" />
+              <Text style={styles.erroMensagensTexto}>{erroMensagens}</Text>
+            </View>
+          )}
 
           {/* LISTA DE MENSAGENS */}
           {carregando ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={Theme.colors.primary} />
-              <Text style={styles.loadingTexto}>Carregando mensagens criptografadas...</Text>
+              <Text style={styles.loadingTexto}>Carregando mensagens...</Text>
             </View>
           ) : (
             <FlatList
@@ -342,9 +274,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   <View style={styles.emptyIconBox}>
                     <Feather name="message-circle" size={32} color={Theme.colors.primary} />
                   </View>
-                  <Text style={styles.emptyTitulo}>Inicie uma conversa segura</Text>
+                  <Text style={styles.emptyTitulo}>Nenhuma mensagem nesta conversa</Text>
                   <Text style={styles.emptySubtexto}>
-                    Tire dúvidas pedagógicas, alinhe horários ou compartilhe materiais de apoio antes da mentoria.
+                    As mensagens enviadas aparecerão aqui.
                   </Text>
                 </View>
               }
@@ -398,7 +330,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             <View style={styles.menuAnexosContainer}>
               <TouchableOpacity
                 style={styles.opcaoAnexoBtn}
-                onPress={() => handleEnviarAnexo("imagem", "Exercicio_Resolvido_01.png")}
+                onPress={handleEnviarAnexo}
               >
                 <View style={[styles.opcaoAnexoIcone, { backgroundColor: "#EFF6FF" }]}>
                   <Feather name="image" size={16} color="#2563EB" />
@@ -408,7 +340,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
               <TouchableOpacity
                 style={styles.opcaoAnexoBtn}
-                onPress={() => handleEnviarAnexo("documento", "Lista_Calculo_Derivadas.pdf")}
+                onPress={handleEnviarAnexo}
               >
                 <View style={[styles.opcaoAnexoIcone, { backgroundColor: "#FFF7ED" }]}>
                   <Feather name="file-text" size={16} color={Theme.colors.primary} />
@@ -418,7 +350,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
               <TouchableOpacity
                 style={styles.opcaoAnexoBtn}
-                onPress={() => handleEnviarAnexo("link", "meet.google.com/ori-calc-2026")}
+                onPress={handleEnviarAnexo}
               >
                 <View style={[styles.opcaoAnexoIcone, { backgroundColor: "#ECFDF5" }]}>
                   <Feather name="link" size={16} color="#059669" />
@@ -470,7 +402,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     </View>
                     <Text style={styles.sucessoTitulo}>Denúncia Registrada</Text>
                     <Text style={styles.sucessoSubtitulo}>
-                      Seu relato foi enviado com sigilo absoluto para o Comitê de Moderação e Ouvidoria do Orienta.
+                      Seu relato foi enviado para a equipe de moderação.
                     </Text>
 
                     <View style={styles.protocoloBox}>
@@ -479,7 +411,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     </View>
 
                     <Text style={styles.sucessoPrazo}>
-                      Prazo de análise e retorno: até 24 horas úteis via notificação.
+                      Guarde o protocolo para acompanhar o andamento.
                     </Text>
 
                     <TouchableOpacity
@@ -664,21 +596,18 @@ const styles = StyleSheet.create({
     color: "#475569",
     fontSize: 12,
   },
-  badgeOffline: {
+  erroMensagens: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFBEB",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#FEF2F2",
   },
-  badgeOfflineTexto: {
-    color: "#D97706",
-    fontSize: 10,
-    fontWeight: "700",
+  erroMensagensTexto: {
+    color: "#991B1B",
+    fontSize: 12,
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
