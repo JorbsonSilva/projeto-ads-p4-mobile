@@ -1,28 +1,13 @@
 /**
  * @file marcar-aula.tsx
- * @description Tela de Marcar Aula e Checkout com Stepper em 4 Etapas - Orienta 2.0 [ORI-011].
- * Implementada com total fidelidade à referência visual oficial Marca_Aula.jpeg (IMG-008).
- * 
- * Funcionalidades:
- * - Header com botão voltar e título "Marcar aula"
- * - Stepper horizontal de 4 etapas (Professor concluído, Data e Hora ativo, Pagamento, Confirmação)
- * - Card resumo do professor selecionado com foto, online dot, selo verificado, tags e preço R$ 60,00/h
- * - Seletor semanal de datas interativo com navegação < e > e indicador visual ativo
- * - Grid de horários clicáveis com slots (08:00, 10:00, 14:00 ativo, 16:00, 18:00)
- * - Seletor de forma de pagamento com radio cards (Pix ativo, Cartão de crédito, Carteira Orienta)
- * - Box de resumo da escolha com detalhes de data, horário, professor e valor
- * - Sticky footer com botão "Confirmar e Pagar • R$ 60,00" e aviso de pagamento seguro
- * - Modal de confirmação com suporte a Pix Copia e Cola e redirecionamento para Agenda
- * - Serviço híbrido resiliente agendamentoService.ts com fallback automático e badge de simulação
+ * @description Solicitação de agendamento vinculada ao professor e aos dados reais da API.
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -32,87 +17,250 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getApiErrorMessage } from "../config/api";
+import { useAuth } from "../context/AuthContext";
+import AvatarPerfil from "../components/AvatarPerfil";
 import {
-  CriarAgendamentoDTO,
-  FormaPagamento,
-  MOCK_AGENDAMENTO_PADRAO,
-  solicitarAgendamentoComFallback,
+  obterPerfilProfessor,
+  PerfilProfessorPublico,
+} from "../services/professorService";
+import {
+  AgendamentoSolicitado,
+  solicitarAgendamento,
 } from "../services/agendamentoService";
 
 interface DiaOpcao {
   diaSemana: string;
   diaMes: string;
-  dataCompleta: string; // "26/06/2024 (Qua)"
+  dataIso: string;
+  dataCompleta: string;
+  horarios: string[];
 }
 
-const DIAS_DISPONIVEIS: DiaOpcao[] = [
-  { diaSemana: "Seg", diaMes: "24/06", dataCompleta: "24/06/2024 (Seg)" },
-  { diaSemana: "Ter", diaMes: "25/06", dataCompleta: "25/06/2024 (Ter)" },
-  { diaSemana: "Qua", diaMes: "26/06", dataCompleta: "26/06/2024 (Qua)" },
-  { diaSemana: "Qui", diaMes: "27/06", dataCompleta: "27/06/2024 (Qui)" },
-  { diaSemana: "Sex", diaMes: "28/06", dataCompleta: "28/06/2024 (Sex)" },
-];
+const DIAS_API = ["DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"];
 
-const HORARIOS_DISPONIVEIS: string[] = ["08:00", "10:00", "14:00", "16:00", "18:00"];
+function normalizarDia(dia: string): string {
+  return dia.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()
+    .replace(/-FEIRA$/, "");
+}
+
+function minutosDoHorario(horario: string): number | null {
+  const resultado = horario.match(/^(\d{1,2}):(\d{2})/);
+  if (!resultado) return null;
+  return Number(resultado[1]) * 60 + Number(resultado[2]);
+}
+
+function horarioFormatado(minutos: number): string {
+  const hora = Math.floor(minutos / 60).toString().padStart(2, "0");
+  const minuto = (minutos % 60).toString().padStart(2, "0");
+  return `${hora}:${minuto}`;
+}
+
+function horariosDaData(
+  diaSemana: string,
+  disponibilidades: PerfilProfessorPublico["disponibilidades"],
+): string[] {
+  const horarios = new Set<string>();
+  const nomeDia = normalizarDia(diaSemana);
+
+  disponibilidades
+    .filter((disponibilidade) => normalizarDia(disponibilidade.diaSemana) === nomeDia)
+    .forEach((disponibilidade) => {
+      const inicio = minutosDoHorario(disponibilidade.horaInicio);
+      const fim = minutosDoHorario(disponibilidade.horaFim);
+      if (inicio === null || fim === null) return;
+
+      for (let horario = inicio; horario + 60 <= fim; horario += 60) {
+        horarios.add(horarioFormatado(horario));
+      }
+    });
+
+  return Array.from(horarios).sort();
+}
+
+function gerarDiasDisponiveis(
+  disponibilidades: PerfilProfessorPublico["disponibilidades"],
+): DiaOpcao[] {
+  const dias: DiaOpcao[] = [];
+
+  for (let deslocamento = 2; deslocamento <= 30 && dias.length < 5; deslocamento += 1) {
+    const data = new Date();
+    data.setHours(12, 0, 0, 0);
+    data.setDate(data.getDate() + deslocamento);
+
+    const dia = data.toLocaleDateString("pt-BR", { weekday: "short" })
+      .replace(".", "");
+    const nomeDia = DIAS_API[data.getDay()];
+    const horarios = horariosDaData(nomeDia, disponibilidades);
+    if (horarios.length === 0) continue;
+
+    dias.push({
+      diaSemana: dia.charAt(0).toUpperCase() + dia.slice(1),
+      diaMes: data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      dataIso: [
+        data.getFullYear(),
+        (data.getMonth() + 1).toString().padStart(2, "0"),
+        data.getDate().toString().padStart(2, "0"),
+      ].join("-"),
+      dataCompleta: data.toLocaleDateString("pt-BR"),
+      horarios,
+    });
+  }
+
+  return dias;
+}
 
 export default function MarcarAulaScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{
+    professorId?: string | string[];
+    modalidade?: string | string[];
+  }>();
+  const { usuarioId, perfilAtivo, carregandoAuth } = useAuth();
+  const professorId = Array.isArray(params.professorId)
+    ? params.professorId[0]
+    : params.professorId;
+  const modalidadeParam = Array.isArray(params.modalidade)
+    ? params.modalidade[0]
+    : params.modalidade;
 
-  // Estados de Seleção
-  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(2); // Quarta-feira 26/06 por padrão
-  const [horarioSelecionado, setHorarioSelecionado] = useState<string>("14:00"); // 14:00 por padrão
-  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("PIX"); // Pix por padrão
+  const [professor, setProfessor] = useState<PerfilProfessorPublico | null>(null);
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true);
+  const [erroPerfil, setErroPerfil] = useState<string | null>(null);
+  const [erroAgendamento, setErroAgendamento] = useState<string | null>(null);
+  const [modalidade, setModalidade] = useState<"ONLINE" | "PRESENCIAL">("ONLINE");
+  const [aptidaoSelecionadaId, setAptidaoSelecionadaId] = useState<number | null>(null);
+  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(0);
+  const [horarioSelecionado, setHorarioSelecionado] = useState<string>("");
+  const [agendamentoCriado, setAgendamentoCriado] = useState<AgendamentoSolicitado | null>(null);
   const [modalSucesso, setModalSucesso] = useState<boolean>(false);
   const [processando, setProcessando] = useState<boolean>(false);
-  const [pixCopiado, setPixCopiado] = useState<boolean>(false);
 
-  const diaAtual = DIAS_DISPONIVEIS[diaSelecionadoIdx] || DIAS_DISPONIVEIS[2];
-  const precoTotal = 60.0;
+  const diasDisponiveis = useMemo(
+    () => gerarDiasDisponiveis(professor?.disponibilidades ?? []),
+    [professor],
+  );
+  const diaAtual = diasDisponiveis[diaSelecionadoIdx];
+  const horariosDisponiveis = diaAtual?.horarios ?? [];
+  const aptidoesComPreco = professor?.aptidoes.filter(
+    (aptidao) => aptidao.saberId !== null && aptidao.precoHora !== null && aptidao.precoHora > 0,
+  ) ?? [];
+  const aptidaoSelecionada = aptidoesComPreco.find(
+    (aptidao) => aptidao.saberId === aptidaoSelecionadaId,
+  ) ?? aptidoesComPreco[0];
 
-  // Navegação do seletor semanal
-  const handleDiaAnterior = () => {
-    setDiaSelecionadoIdx((prev) => (prev > 0 ? prev - 1 : DIAS_DISPONIVEIS.length - 1));
-  };
-
-  const handleProximoDia = () => {
-    setDiaSelecionadoIdx((prev) => (prev < DIAS_DISPONIVEIS.length - 1 ? prev + 1 : 0));
-  };
-
-  // Submissão do Agendamento e Pagamento
-  const handleConfirmarEPagar = async () => {
-    setProcessando(true);
-    try {
-      const payload: CriarAgendamentoDTO = {
-        idAluno: 1,
-        idProfessor: Number(params.professorId) || 101,
-        idDisciplina: 1,
-        data: diaAtual.dataCompleta,
-        hora: horarioSelecionado,
-        modalidade: "PRESENCIAL",
-        formaPagamento: formaPagamento,
-        valor: precoTotal,
-      };
-
-      await solicitarAgendamentoComFallback(payload);
-      setProcessando(false);
-      setModalSucesso(true);
-    } catch {
-      setProcessando(false);
-      setModalSucesso(true);
+  useEffect(() => {
+    if (carregandoAuth) return;
+    if (!professorId || !/^\d+$/.test(professorId)) {
+      setErroPerfil("Identificador de professor inválido.");
+      setCarregandoPerfil(false);
+      return;
     }
-  };
 
-  const handleCopiarPix = () => {
-    setPixCopiado(true);
-    setTimeout(() => setPixCopiado(false), 3000);
-    Alert.alert("Código Pix", "Código Pix copia e cola copiado com sucesso!");
+    const controller = new AbortController();
+    setCarregandoPerfil(true);
+    setErroPerfil(null);
+    obterPerfilProfessor(professorId, controller.signal)
+      .then((perfil) => {
+        if (controller.signal.aborted) return;
+        setProfessor(perfil);
+        const modalidadeSolicitada = modalidadeParam === "PRESENCIAL"
+          ? "PRESENCIAL"
+          : "ONLINE";
+        setModalidade(
+          modalidadeSolicitada === "ONLINE" && perfil.aceitaOnline
+            || modalidadeSolicitada === "PRESENCIAL" && perfil.oferecePresencial
+            ? modalidadeSolicitada
+            : perfil.aceitaOnline
+              ? "ONLINE"
+              : "PRESENCIAL",
+        );
+        const primeiraAptidaoComPreco = perfil.aptidoes.find(
+          (aptidao) => aptidao.saberId !== null && aptidao.precoHora !== null && aptidao.precoHora > 0,
+        );
+        setAptidaoSelecionadaId(primeiraAptidaoComPreco?.saberId ?? null);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setProfessor(null);
+          setErroPerfil(getApiErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCarregandoPerfil(false);
+      });
+
+    return () => controller.abort();
+  }, [carregandoAuth, professorId, modalidadeParam]);
+
+  useEffect(() => {
+    setDiaSelecionadoIdx(0);
+    setHorarioSelecionado(diasDisponiveis[0]?.horarios[0] ?? "");
+  }, [diasDisponiveis]);
+
+  const handleConfirmarSolicitacao = async () => {
+    if (
+      !professor
+      || !diaAtual
+      || !horarioSelecionado
+      || !aptidaoSelecionada
+      || aptidaoSelecionada.saberId === null
+    ) return;
+    if (!usuarioId || perfilAtivo !== "Aluno") {
+      setErroAgendamento("Entre em uma conta de aluno para solicitar uma aula.");
+      return;
+    }
+    if (Number(usuarioId) === professor.id) {
+      setErroAgendamento("Não é possível agendar uma aula com seu próprio perfil.");
+      return;
+    }
+
+    setProcessando(true);
+    setErroAgendamento(null);
+    try {
+      const resultado = await solicitarAgendamento({
+        idAluno: Number(usuarioId),
+        idProfessor: professor.id,
+        idDisciplina: aptidaoSelecionada.saberId,
+        data: diaAtual.dataIso,
+        hora: `${horarioSelecionado}:00`,
+        modalidade,
+        assunto: aptidaoSelecionada.nome,
+      });
+      setAgendamentoCriado(resultado);
+      setModalSucesso(true);
+    } catch (error) {
+      setErroAgendamento(getApiErrorMessage(error));
+    } finally {
+      setProcessando(false);
+    }
   };
 
   const handleIrParaAgenda = () => {
     setModalSucesso(false);
     router.push("/agenda" as any);
   };
+
+  if (carregandoAuth || carregandoPerfil) {
+    return (
+      <View style={[estilos.container, estilos.estadoContainer, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color="#FF6B1A" />
+        <Text style={estilos.textoEstado}>Carregando os dados do professor...</Text>
+      </View>
+    );
+  }
+
+  if (erroPerfil || !professor) {
+    return (
+      <View style={[estilos.container, estilos.estadoContainer, { paddingTop: insets.top }]}>
+        <Feather name="alert-circle" size={42} color="#DC2626" />
+        <Text style={estilos.textoEstado}>{erroPerfil ?? "Professor não encontrado."}</Text>
+        <TouchableOpacity style={estilos.botaoVoltar} onPress={() => router.back()}>
+          <Text>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
@@ -138,48 +286,21 @@ export default function MarcarAulaScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ============================================================== */}
-        {/* 2. STEPPER DE PROGRESSO HORIZONTAL (4 ETAPAS)                  */}
+        {/* 2. ETAPAS REAIS DA SOLICITAÇÃO                                 */}
         {/* ============================================================== */}
         <View style={estilos.stepperContainer}>
-          {/* Passo 1: Professor (Concluído) */}
           <View style={estilos.stepItem}>
             <View style={estilos.stepCirculoConcluido}>
               <Feather name="check" size={14} color="#FFFFFF" />
             </View>
             <Text style={estilos.stepRotuloConcluido}>Professor</Text>
           </View>
-
-          {/* Linha Conectora 1-2 (Laranja) */}
           <View style={[estilos.linhaConectora, estilos.linhaAtiva]} />
-
-          {/* Passo 2: Data e Hora (Ativo) */}
           <View style={estilos.stepItem}>
             <View style={estilos.stepCirculoAtivo}>
               <Text style={estilos.stepNumeroAtivo}>2</Text>
             </View>
             <Text style={estilos.stepRotuloAtivo}>Data e Hora</Text>
-          </View>
-
-          {/* Linha Conectora 2-3 (Cinza) */}
-          <View style={estilos.linhaConectora} />
-
-          {/* Passo 3: Pagamento (Próximo) */}
-          <View style={estilos.stepItem}>
-            <View style={estilos.stepCirculoNeutro}>
-              <Text style={estilos.stepNumeroNeutro}>3</Text>
-            </View>
-            <Text style={estilos.stepRotuloNeutro}>Pagamento</Text>
-          </View>
-
-          {/* Linha Conectora 3-4 (Cinza) */}
-          <View style={estilos.linhaConectora} />
-
-          {/* Passo 4: Confirmação (Futuro) */}
-          <View style={estilos.stepItem}>
-            <View style={estilos.stepCirculoNeutro}>
-              <Text style={estilos.stepNumeroNeutro}>4</Text>
-            </View>
-            <Text style={estilos.stepRotuloNeutro}>Confirmação</Text>
           </View>
         </View>
 
@@ -187,53 +308,108 @@ export default function MarcarAulaScreen() {
         {/* 3. CARD RESUMO DO PROFESSOR SELECIONADO                        */}
         {/* ============================================================== */}
         <View style={estilos.cardProfessor}>
-          {/* Foto com Dot Online */}
           <View style={estilos.fotoContainer}>
-            <Image
-              source={{ uri: MOCK_AGENDAMENTO_PADRAO.professorFoto }}
-              style={estilos.fotoProfessor}
+            <AvatarPerfil
+              nome={professor.nome}
+              fotoUrl={professor.fotoUrl}
+              tamanho={72}
             />
-            <View style={estilos.dotOnline} />
           </View>
 
-          {/* Dados do Professor */}
           <View style={estilos.infoProfessor}>
             <View style={estilos.linhaNome}>
-              <Text style={estilos.nomeProfessor}>{MOCK_AGENDAMENTO_PADRAO.professorNome}</Text>
-              <MaterialIcons
-                name="verified"
-                size={16}
-                color="#0284C7"
-                style={{ marginLeft: 4 }}
-              />
+              <Text style={estilos.nomeProfessor}>{professor.nome}</Text>
             </View>
-            <Text style={estilos.materiaProfessor}>Matemática</Text>
-
-            {/* Avaliação */}
+            <Text style={estilos.materiaProfessor}>
+              {aptidaoSelecionada?.nome ?? "Disciplina não selecionada"}
+            </Text>
             <View style={estilos.linhaAvaliacao}>
-              <Ionicons name="star" size={14} color="#F59E0B" />
-              <Text style={estilos.textoAvaliacao}> 4,9 (128 avaliações)</Text>
+              {professor.notaMedia !== null && (
+                <Ionicons name="star" size={14} color="#F59E0B" />
+              )}
+              <Text style={estilos.textoAvaliacao}>
+                {professor.notaMedia !== null
+                  ? ` ${professor.notaMedia.toFixed(1).replace(".", ",")} (${professor.totalAvaliacoes} avaliações)`
+                  : "Ainda sem avaliações"}
+              </Text>
             </View>
-
-            {/* Badges de Modalidade e Nível */}
             <View style={estilos.badgesRow}>
               <View style={estilos.badgePill}>
-                <Ionicons name="school" size={12} color="#0284C7" style={{ marginRight: 3 }} />
-                <Text style={estilos.badgePillTexto}>Ensino Superior</Text>
-              </View>
-              <View style={estilos.badgePill}>
                 <Feather name="monitor" size={12} color="#0284C7" style={{ marginRight: 3 }} />
-                <Text style={estilos.badgePillTexto}>Aula Presencial e Online</Text>
+                <Text style={estilos.badgePillTexto}>
+                  {professor.aceitaOnline && professor.oferecePresencial
+                    ? "Online e presencial"
+                    : professor.aceitaOnline
+                      ? "Online"
+                      : professor.oferecePresencial
+                        ? "Presencial"
+                        : "Modalidade não informada"}
+                </Text>
               </View>
             </View>
           </View>
 
-          {/* Valor Hora/Aula */}
           <View style={estilos.blocoPreco}>
-            <Text style={estilos.valorHora}>R$ 60,00</Text>
-            <Text style={estilos.unidadeHora}>/h</Text>
+            <Text style={estilos.valorHora}>
+              {aptidaoSelecionada?.precoHora !== null && aptidaoSelecionada
+                ? `R$ ${aptidaoSelecionada.precoHora.toFixed(2).replace(".", ",")}`
+                : "—"}
+            </Text>
+            {aptidaoSelecionada?.precoHora !== null && aptidaoSelecionada && (
+              <Text style={estilos.unidadeHora}>/h</Text>
+            )}
           </View>
         </View>
+
+        {aptidoesComPreco.length > 1 && (
+          <View style={estilos.secaoContainer}>
+            <Text style={estilos.secaoTitulo}>Disciplina</Text>
+            <View style={estilos.materiasDisponiveis}>
+              {aptidoesComPreco.map((aptidao) => (
+                <TouchableOpacity
+                  key={aptidao.saberId}
+                  onPress={() => setAptidaoSelecionadaId(aptidao.saberId)}
+                  style={[
+                    estilos.materiaDisponivel,
+                    aptidaoSelecionada?.saberId === aptidao.saberId
+                      && estilos.materiaDisponivelAtiva,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      estilos.materiaDisponivelTexto,
+                      aptidaoSelecionada?.saberId === aptidao.saberId
+                        && estilos.materiaDisponivelTextoAtiva,
+                    ]}
+                  >
+                    {aptidao.nome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {professor.aceitaOnline && professor.oferecePresencial && (
+          <View style={estilos.modalidadeSelecao}>
+            <TouchableOpacity
+              onPress={() => setModalidade("ONLINE")}
+              style={[estilos.modalidadeOpcao, modalidade === "ONLINE" && estilos.modalidadeOpcaoAtiva]}
+            >
+              <Text style={modalidade === "ONLINE" ? estilos.modalidadeOpcaoTextoAtiva : estilos.modalidadeOpcaoTexto}>
+                Online
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setModalidade("PRESENCIAL")}
+              style={[estilos.modalidadeOpcao, modalidade === "PRESENCIAL" && estilos.modalidadeOpcaoAtiva]}
+            >
+              <Text style={modalidade === "PRESENCIAL" ? estilos.modalidadeOpcaoTextoAtiva : estilos.modalidadeOpcaoTexto}>
+                Presencial
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ============================================================== */}
         {/* 4. SELETOR SEMANAL DE DATAS ("Escolha a data")                 */}
@@ -244,24 +420,17 @@ export default function MarcarAulaScreen() {
             <Text style={estilos.secaoTitulo}>Escolha a data</Text>
           </View>
 
-          <View style={estilos.seletorSemanalRow}>
-            {/* Seta Esquerda */}
-            <TouchableOpacity
-              onPress={handleDiaAnterior}
-              style={estilos.botaoSetaSemana}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chevron-back" size={18} color="#0F172A" />
-            </TouchableOpacity>
-
-            {/* Dias da Semana */}
+          {diasDisponiveis.length > 0 ? (
             <View style={estilos.diasContainer}>
-              {DIAS_DISPONIVEIS.map((dia, idx) => {
+              {diasDisponiveis.map((dia, idx) => {
                 const isSelected = idx === diaSelecionadoIdx;
                 return (
                   <TouchableOpacity
                     key={`dia-${idx}`}
-                    onPress={() => setDiaSelecionadoIdx(idx)}
+                    onPress={() => {
+                      setDiaSelecionadoIdx(idx);
+                      setHorarioSelecionado(dia.horarios[0] ?? "");
+                    }}
                     style={[estilos.cardDia, isSelected && estilos.cardDiaAtivo]}
                     activeOpacity={0.8}
                   >
@@ -281,16 +450,11 @@ export default function MarcarAulaScreen() {
                 );
               })}
             </View>
-
-            {/* Seta Direita */}
-            <TouchableOpacity
-              onPress={handleProximoDia}
-              style={estilos.botaoSetaSemana}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chevron-forward" size={18} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
+          ) : (
+            <Text style={estilos.textoSemDisponibilidade}>
+              O professor não informou horários disponíveis para os próximos dias.
+            </Text>
+          )}
         </View>
 
         {/* ============================================================== */}
@@ -303,7 +467,7 @@ export default function MarcarAulaScreen() {
           </View>
 
           <View style={estilos.horariosGrid}>
-            {HORARIOS_DISPONIVEIS.map((hora) => {
+            {horariosDisponiveis.map((hora) => {
               const isSelected = hora === horarioSelecionado;
               return (
                 <TouchableOpacity
@@ -324,101 +488,11 @@ export default function MarcarAulaScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 6. FORMAS DE PAGAMENTO ("Forma de pagamento")                  */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoContainer}>
-          <View style={estilos.secaoTituloRow}>
-            <Feather name="credit-card" size={18} color="#0F172A" style={{ marginRight: 6 }} />
-            <Text style={estilos.secaoTitulo}>Forma de pagamento</Text>
-          </View>
-
-          <View style={estilos.pagamentosContainer}>
-            {/* Opção 1: PIX (Selecionado por Padrão conforme IMG-008) */}
-            <TouchableOpacity
-              onPress={() => setFormaPagamento("PIX")}
-              style={[
-                estilos.cardPagamento,
-                formaPagamento === "PIX" && estilos.cardPagamentoAtivo,
-              ]}
-              activeOpacity={0.8}
-            >
-              {/* Ícone Pix Oficial em Verde */}
-              <View style={estilos.iconePixContainer}>
-                <Ionicons name="shapes" size={20} color="#059669" />
-              </View>
-
-              <View style={estilos.infoPagamento}>
-                <Text style={estilos.tituloPagamento}>Pix</Text>
-                <Text style={estilos.subtituloPagamento}>Pagamento instantâneo</Text>
-              </View>
-
-              {/* Radio Indicator */}
-              <View style={estilos.radioContainer}>
-                {formaPagamento === "PIX" ? (
-                  <Ionicons name="checkmark-circle" size={22} color="#FF6B1A" />
-                ) : (
-                  <View style={estilos.radioVazio} />
-                )}
-              </View>
-            </TouchableOpacity>
-
-            {/* Opção 2: Cartão de Crédito */}
-            <TouchableOpacity
-              onPress={() => setFormaPagamento("CARTAO")}
-              style={[
-                estilos.cardPagamento,
-                formaPagamento === "CARTAO" && estilos.cardPagamentoAtivo,
-              ]}
-              activeOpacity={0.8}
-            >
-              <View style={estilos.iconeCartaoContainer}>
-                <Feather name="credit-card" size={20} color="#2563EB" />
-              </View>
-
-              <View style={estilos.infoPagamento}>
-                <Text style={estilos.tituloPagamento}>Cartão de crédito</Text>
-                <Text style={estilos.subtituloPagamento}>Parcele em até 12x</Text>
-              </View>
-
-              <View style={estilos.radioContainer}>
-                {formaPagamento === "CARTAO" ? (
-                  <Ionicons name="checkmark-circle" size={22} color="#FF6B1A" />
-                ) : (
-                  <View style={estilos.radioVazio} />
-                )}
-              </View>
-            </TouchableOpacity>
-
-            {/* Opção 3: Carteira Orienta */}
-            <TouchableOpacity
-              onPress={() => setFormaPagamento("CARTEIRA")}
-              style={[
-                estilos.cardPagamento,
-                formaPagamento === "CARTEIRA" && estilos.cardPagamentoAtivo,
-              ]}
-              activeOpacity={0.8}
-            >
-              <View style={estilos.iconeCarteiraContainer}>
-                <Ionicons name="wallet-outline" size={20} color="#2563EB" />
-              </View>
-
-              <View style={estilos.infoPagamento}>
-                <Text style={estilos.tituloPagamento}>Carteira Orienta</Text>
-                <Text style={estilos.subtituloPagamento}>Saldo disponível: R$ 120,00</Text>
-              </View>
-
-              <View style={estilos.radioContainer}>
-                {formaPagamento === "CARTEIRA" ? (
-                  <Ionicons name="checkmark-circle" size={22} color="#FF6B1A" />
-                ) : (
-                  <View style={estilos.radioVazio} />
-                )}
-              </View>
-            </TouchableOpacity>
+            {horariosDisponiveis.length === 0 && (
+              <Text style={estilos.textoSemDisponibilidade}>
+                Selecione uma data com horário disponível.
+              </Text>
+            )}
           </View>
         </View>
 
@@ -438,7 +512,7 @@ export default function MarcarAulaScreen() {
                 <Feather name="calendar" size={13} color="#94A3B8" />
                 <Text style={estilos.labelResumo}> Data</Text>
               </View>
-              <Text style={estilos.valorResumo}>{diaAtual.dataCompleta}</Text>
+              <Text style={estilos.valorResumo}>{diaAtual?.dataCompleta ?? "—"}</Text>
             </View>
 
             {/* Coluna 2: Horário */}
@@ -447,19 +521,20 @@ export default function MarcarAulaScreen() {
                 <Feather name="clock" size={13} color="#94A3B8" />
                 <Text style={estilos.labelResumo}> Horário</Text>
               </View>
-              <Text style={estilos.valorResumo}>{horarioSelecionado} – 15:00</Text>
+              <Text style={estilos.valorResumo}>
+                {horarioSelecionado
+                  ? `${horarioSelecionado} – ${horarioFormatado((minutosDoHorario(horarioSelecionado) ?? 0) + 60)}`
+                  : "—"}
+              </Text>
             </View>
 
             {/* Coluna 3: Professor */}
             <View style={estilos.colunaResumo}>
               <View style={estilos.professorLinhaResumo}>
-                <Image
-                  source={{ uri: MOCK_AGENDAMENTO_PADRAO.professorFoto }}
-                  style={estilos.fotoMiniaturaResumo}
-                />
+                <AvatarPerfil nome={professor.nome} fotoUrl={professor.fotoUrl} tamanho={32} />
                 <View style={{ marginLeft: 6 }}>
                   <Text style={estilos.labelResumo}>Professor</Text>
-                  <Text style={estilos.valorResumo}>Prof. Lucas Rocha</Text>
+                  <Text style={estilos.valorResumo}>{professor.nome}</Text>
                 </View>
               </View>
             </View>
@@ -467,11 +542,20 @@ export default function MarcarAulaScreen() {
             {/* Coluna 4: Valor */}
             <View style={[estilos.colunaResumo, { alignItems: "flex-end" }]}>
               <Text style={estilos.labelResumo}>Valor</Text>
-              <Text style={estilos.valorDestaqueLaranja}>R$ 60,00</Text>
+              <Text style={estilos.valorDestaqueLaranja}>
+                {aptidaoSelecionada?.precoHora != null
+                  ? `R$ ${aptidaoSelecionada.precoHora.toFixed(2).replace(".", ",")}`
+                  : "A consultar"}
+              </Text>
             </View>
           </View>
         </View>
 
+        {erroAgendamento && (
+          <Text style={estilos.mensagemErro} accessibilityRole="alert">
+            {erroAgendamento}
+          </Text>
+        )}
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -480,18 +564,29 @@ export default function MarcarAulaScreen() {
       {/* ============================================================== */}
       <View style={[estilos.stickyFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <TouchableOpacity
-          onPress={handleConfirmarEPagar}
-          disabled={processando}
-          style={estilos.botaoConfirmarPagar}
+          onPress={handleConfirmarSolicitacao}
+          disabled={
+            processando
+            || !diaAtual
+            || !horarioSelecionado
+            || !aptidaoSelecionada
+            || !usuarioId
+            || perfilAtivo !== "Aluno"
+          }
+          style={[
+            estilos.botaoConfirmarPagar,
+            (!diaAtual || !horarioSelecionado || !aptidaoSelecionada || perfilAtivo !== "Aluno")
+              && estilos.botaoDesabilitado,
+          ]}
           activeOpacity={0.85}
         >
           {processando ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <View style={estilos.botaoConteudoRow}>
-              <Feather name="lock" size={17} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Feather name="calendar" size={17} color="#FFFFFF" style={{ marginRight: 8 }} />
               <Text style={estilos.textoBotaoConfirmar}>
-                Confirmar e Pagar • R$ 60,00
+                Solicitar aula
               </Text>
             </View>
           )}
@@ -499,8 +594,10 @@ export default function MarcarAulaScreen() {
 
         {/* Selo Inferior de Pagamento Seguro */}
         <View style={estilos.seloSeguroLinha}>
-          <Feather name="shield" size={13} color="#64748B" style={{ marginRight: 4 }} />
-          <Text style={estilos.textoSeloSeguro}>Pagamento seguro e protegido</Text>
+          <Feather name="info" size={13} color="#64748B" style={{ marginRight: 4 }} />
+          <Text style={estilos.textoSeloSeguro}>
+            A solicitação aguarda confirmação do professor.
+          </Text>
         </View>
       </View>
 
@@ -520,33 +617,17 @@ export default function MarcarAulaScreen() {
               <Feather name="check" size={32} color="#FFFFFF" />
             </View>
 
-            <Text style={estilos.modalTitulo}>Aula Agendada com Sucesso!</Text>
+            <Text style={estilos.modalTitulo}>Solicitação enviada</Text>
             <Text style={estilos.modalSubtitulo}>
-              Sua mentoria com Prof. Lucas Rocha para {diaAtual.dataCompleta} às {horarioSelecionado} foi confirmada.
+              Sua solicitação para {agendamentoCriado?.professorNome ?? professor.nome}
+              {" "}em {diaAtual?.dataCompleta} às {horarioSelecionado} foi enviada.
+              {" "}A aula só será confirmada após o aceite do professor.
             </Text>
 
-            {formaPagamento === "PIX" && (
-              <View style={estilos.modalPixBox}>
-                <Text style={estilos.modalPixTitulo}>Chave Pix Copia e Cola:</Text>
-                <Text style={estilos.modalPixChave} numberOfLines={2}>
-                  {MOCK_AGENDAMENTO_PADRAO.codigoPix}
-                </Text>
-                <TouchableOpacity
-                  style={estilos.botaoCopiarPix}
-                  onPress={handleCopiarPix}
-                  activeOpacity={0.8}
-                >
-                  <Feather
-                    name={pixCopiado ? "check-circle" : "copy"}
-                    size={16}
-                    color="#FF6B1A"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={estilos.textoCopiarPix}>
-                    {pixCopiado ? "Chave Copiada!" : "Copiar Código Pix"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            {agendamentoCriado && (
+              <Text style={estilos.statusAgendamento}>
+                Solicitação #{agendamentoCriado.id} · {agendamentoCriado.status}
+              </Text>
             )}
 
             <View style={estilos.modalAcoesRow}>
@@ -576,6 +657,17 @@ const estilos = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F8FAFC",
+  },
+  estadoContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  textoEstado: {
+    color: "#475569",
+    fontSize: 15,
+    textAlign: "center",
   },
   topHeader: {
     flexDirection: "row",
@@ -818,6 +910,58 @@ const estilos = StyleSheet.create({
     fontWeight: "700",
     color: "#0F172A",
   },
+  materiasDisponiveis: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 10,
+  },
+  materiaDisponivel: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+  },
+  materiaDisponivelAtiva: {
+    backgroundColor: "#FFF1E8",
+    borderWidth: 1,
+    borderColor: "#FF6B1A",
+  },
+  materiaDisponivelTexto: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  materiaDisponivelTextoAtiva: {
+    color: "#C2410C",
+  },
+  modalidadeSelecao: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 18,
+  },
+  modalidadeOpcao: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+  },
+  modalidadeOpcaoAtiva: {
+    backgroundColor: "#FFF1E8",
+    borderWidth: 1,
+    borderColor: "#FF6B1A",
+  },
+  modalidadeOpcaoTexto: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  modalidadeOpcaoTextoAtiva: {
+    color: "#C2410C",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 
   // Seletor Semanal
   seletorSemanalRow: {
@@ -831,10 +975,9 @@ const estilos = StyleSheet.create({
     backgroundColor: "#F1F5F9",
   },
   diasContainer: {
-    flex: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginHorizontal: 8,
+    gap: 6,
   },
   cardDia: {
     position: "relative",
@@ -882,6 +1025,12 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  textoSemDisponibilidade: {
+    width: "100%",
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 19,
   },
   pillHorario: {
     position: "relative",
@@ -1057,6 +1206,9 @@ const estilos = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  botaoDesabilitado: {
+    opacity: 0.5,
+  },
   botaoConteudoRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1077,6 +1229,12 @@ const estilos = StyleSheet.create({
     fontSize: 11,
     fontWeight: "500",
     color: "#64748B",
+  },
+  mensagemErro: {
+    color: "#B91C1C",
+    fontSize: 13,
+    marginTop: 12,
+    lineHeight: 19,
   },
 
   // Modal
@@ -1121,6 +1279,12 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     textAlign: "center",
     lineHeight: 18,
+    marginBottom: 16,
+  },
+  statusAgendamento: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
     marginBottom: 16,
   },
   modalPixBox: {

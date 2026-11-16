@@ -22,7 +22,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +36,7 @@ import {
 } from "../../services/professorService";
 import { getApiErrorMessage } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
+import AvatarPerfil from "../../components/AvatarPerfil";
 
 export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
@@ -111,7 +111,13 @@ export default function PerfilProfessorScreen() {
   };
 
   const handleAgendarAula = () => {
-    router.push("/marcar-aula" as any);
+    router.push({
+      pathname: "/marcar-aula",
+      params: {
+        professorId: String(professor?.id ?? ""),
+        modalidade,
+      },
+    } as any);
   };
 
   if (carregandoAuth || carregandoPerfil) {
@@ -201,13 +207,11 @@ export default function PerfilProfessorScreen() {
         <View style={estilos.heroCard}>
           {/* Avatar com Dot Online */}
           <View style={estilos.avatarContainer}>
-            {professor.fotoUrl ? (
-              <Image source={{ uri: professor.fotoUrl }} style={estilos.avatarFoto} />
-            ) : (
-              <View style={[estilos.avatarFoto, estilos.avatarSemFoto]}>
-                <Feather name="user" size={36} color="#94A3B8" />
-              </View>
-            )}
+            <AvatarPerfil
+              nome={professor.nome}
+              fotoUrl={professor.fotoUrl}
+              tamanho={88}
+            />
             {professor.online && <View style={estilos.dotOnlineVerde} />}
           </View>
 
@@ -260,16 +264,6 @@ export default function PerfilProfessorScreen() {
               <Text style={estilos.textoBadgeLocalizacao}>{professor.cidade}</Text>
             </View>
           ) : null}
-        </View>
-
-        {/* ============================================================== */}
-        {/* 3. ALERTA DE SIMULAÇÃO / RESILIÊNCIA                           */}
-        {/* ============================================================== */}
-        <View style={estilos.containerAlerta}>
-          <View style={estilos.badgeConectado}>
-            <View style={estilos.dotVerdeOnline} />
-            <Text style={estilos.textoConectado}>Perfil carregado da API Orienta</Text>
-          </View>
         </View>
 
         {/* ============================================================== */}
@@ -344,7 +338,7 @@ export default function PerfilProfessorScreen() {
                 <View style={estilos.modalidadePrecoLinha}>
                   <Text style={estilos.precoModalidade}>
                     {professor.precoOnline !== null
-                      ? `R$ ${professor.precoOnline.toFixed(2).replace(".", ",")} / hora`
+                      ? `${professor.precoOnlinePorAptidao ? "A partir de " : ""}R$ ${professor.precoOnline.toFixed(2).replace(".", ",")} / hora`
                       : "Preço não informado"}
                   </Text>
                   <View
@@ -390,7 +384,7 @@ export default function PerfilProfessorScreen() {
                 <View style={estilos.modalidadePrecoLinha}>
                   <Text style={estilos.precoModalidade}>
                     {professor.precoPresencial !== null
-                      ? `R$ ${professor.precoPresencial.toFixed(2).replace(".", ",")} / hora`
+                      ? `${professor.precoPresencialPorAptidao ? "A partir de " : ""}R$ ${professor.precoPresencial.toFixed(2).replace(".", ",")} / hora`
                       : "Preço não informado"}
                   </Text>
                   <View
@@ -450,21 +444,26 @@ export default function PerfilProfessorScreen() {
           <View style={estilos.topoAvaliacoesLinha}>
             <Text style={estilos.secaoTitulo}>Avaliações Recentes</Text>
             <Text style={estilos.linkVerTodasAvaliacoes}>
-              {professor.totalAvaliacoes} comentários
+              {professor.totalComentarios} comentários
             </Text>
           </View>
 
           {professor.avaliacoesRecentes.map((av) => (
             <View key={`av-${av.id}`} style={estilos.cardAvaliacao}>
               <View style={estilos.avaliacaoCardTopo}>
-                <Image source={{ uri: av.alunoFoto }} style={estilos.alunoFoto} />
+                <AvatarPerfil nome={av.alunoNome} fotoUrl={av.alunoFoto} tamanho={40} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={estilos.alunoNome}>{av.alunoNome}</Text>
                   <Text style={estilos.avaliacaoData}>{av.data}</Text>
                 </View>
                 <View style={estilos.estrelasRow}>
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <MaterialIcons key={s} name="star" size={14} color="#F5A623" />
+                    <MaterialIcons
+                      key={s}
+                      name={s <= av.nota ? "star" : "star-outline"}
+                      size={14}
+                      color="#F5A623"
+                    />
                   ))}
                 </View>
               </View>
@@ -472,7 +471,7 @@ export default function PerfilProfessorScreen() {
             </View>
           ))}
           {professor.avaliacoesRecentes.length === 0 ? (
-            <Text style={estilos.textoBiografia}>Ainda não há comentários disponíveis.</Text>
+            <Text style={estilos.textoBiografia}>Ainda não há avaliações disponíveis.</Text>
           ) : null}
         </View>
       </ScrollView>
@@ -487,7 +486,13 @@ export default function PerfilProfessorScreen() {
         ]}
       >
         <View style={estilos.precoFooterContainer}>
-          <Text style={estilos.labelPrecoFooter}>Valor por hora</Text>
+          <Text style={estilos.labelPrecoFooter}>
+            {(modalidade === "ONLINE"
+              ? professor.precoOnlinePorAptidao
+              : professor.precoPresencialPorAptidao)
+              ? "A partir de"
+              : "Valor por hora"}
+          </Text>
           <View style={estilos.valorFooterLinha}>
             <Text style={estilos.valorFooterGrande}>
               {precoAtual !== null

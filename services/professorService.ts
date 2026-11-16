@@ -22,10 +22,23 @@ export interface DiaDisponivel {
 export interface AvaliacaoAluno {
   id: number;
   alunoNome: string;
-  alunoFoto: string;
+  alunoFoto: string | null;
   nota: number;
   data: string;
   comentario: string;
+}
+
+export interface AptidaoProfessor {
+  saberId: number | null;
+  nome: string;
+  precoHora: number | null;
+  nivelDominio: string | null;
+}
+
+export interface DisponibilidadeProfessor {
+  diaSemana: string;
+  horaInicio: string;
+  horaFim: string;
 }
 
 export interface PerfilProfessorPublico {
@@ -38,14 +51,19 @@ export interface PerfilProfessorPublico {
   cidade: string;
   notaMedia: number | null;
   totalAvaliacoes: number;
+  totalComentarios: number;
   alunosAtendidos: number | null;
   taxaAprovacao: number | null;
   bio: string;
   precoOnline: number | null;
   precoPresencial: number | null;
+  precoOnlinePorAptidao: boolean;
+  precoPresencialPorAptidao: boolean;
   aceitaOnline: boolean;
   oferecePresencial: boolean;
   materias: string[];
+  aptidoes: AptidaoProfessor[];
+  disponibilidades: DisponibilidadeProfessor[];
   disponibilidadeSemanal: DiaDisponivel[];
   avaliacoesRecentes: AvaliacaoAluno[];
 }
@@ -63,10 +81,12 @@ interface PerfilProfessorResposta {
   regiaoAtendimento: string | null;
   notaMedia: number | null;
   totalAvaliacoes: number | null;
+  totalComentarios: number | null;
   bioProfessor: string | null;
   precoHoraOnline: number | null;
   precoHoraPresencial: number | null;
   aptidoes: {
+    saberId: number;
     nome: string;
     precoHora: number | null;
     nivelDominio: string | null;
@@ -76,6 +96,30 @@ interface PerfilProfessorResposta {
     horaInicio: string;
     horaFim: string;
   }[] | null;
+  avaliacoesRecentes: {
+    id: number;
+    alunoNome: string | null;
+    alunoFoto: string | null;
+    nota: number;
+    data: string | null;
+    comentario: string | null;
+  }[] | null;
+}
+
+function menorPrecoAptidoes(aptidoes: AptidaoProfessor[]): number | null {
+  const precos = aptidoes
+    .map((aptidao) => aptidao.precoHora)
+    .filter((preco): preco is number => preco !== null && preco > 0);
+
+  return precos.length > 0 ? Math.min(...precos) : null;
+}
+
+function formatarDataAvaliacao(data: string | null): string {
+  if (!data) return "";
+  const dataValida = new Date(data);
+  return Number.isNaN(dataValida.getTime())
+    ? ""
+    : dataValida.toLocaleDateString("pt-BR");
 }
 
 export async function obterPerfilProfessor(
@@ -89,6 +133,16 @@ export async function obterPerfilProfessor(
   const payload: unknown = await resposta.json();
   const dados = extrairDadosObjeto<PerfilProfessorResposta>(payload);
   const cidade = [dados.cidade, dados.estado].filter(Boolean).join(" - ");
+  const aptidoes = (dados.aptidoes ?? []).map((aptidao) => ({
+    saberId: aptidao.saberId,
+    nome: aptidao.nome,
+    precoHora: aptidao.precoHora,
+    nivelDominio: aptidao.nivelDominio,
+  }));
+  const precoPorAptidao = menorPrecoAptidoes(aptidoes);
+  const precoOnlineInformado = dados.precoHoraOnline !== null && dados.precoHoraOnline > 0;
+  const precoPresencialInformado =
+    dados.precoHoraPresencial !== null && dados.precoHoraPresencial > 0;
 
   return {
     id: dados.id,
@@ -100,15 +154,31 @@ export async function obterPerfilProfessor(
     cidade: dados.regiaoAtendimento || cidade,
     notaMedia: dados.notaMedia,
     totalAvaliacoes: dados.totalAvaliacoes ?? 0,
+    totalComentarios: dados.totalComentarios ?? 0,
     alunosAtendidos: null,
     taxaAprovacao: null,
     bio: dados.bioProfessor ?? "",
-    precoOnline: dados.precoHoraOnline,
-    precoPresencial: dados.precoHoraPresencial,
+    precoOnline: precoOnlineInformado
+      ? dados.precoHoraOnline
+      : precoPorAptidao,
+    precoPresencial: precoPresencialInformado
+      ? dados.precoHoraPresencial
+      : precoPorAptidao,
+    precoOnlinePorAptidao: !precoOnlineInformado && precoPorAptidao !== null,
+    precoPresencialPorAptidao: !precoPresencialInformado && precoPorAptidao !== null,
     aceitaOnline: dados.aceitaOnline === true,
     oferecePresencial: dados.oferecePresencial === true,
-    materias: (dados.aptidoes ?? []).map((aptidao) => aptidao.nome),
+    materias: aptidoes.map((aptidao) => aptidao.nome),
+    aptidoes,
+    disponibilidades: dados.disponibilidades ?? [],
     disponibilidadeSemanal: [],
-    avaliacoesRecentes: [],
+    avaliacoesRecentes: (dados.avaliacoesRecentes ?? []).map((avaliacao) => ({
+      id: avaliacao.id,
+      alunoNome: avaliacao.alunoNome ?? "Aluno",
+      alunoFoto: avaliacao.alunoFoto,
+      nota: avaliacao.nota,
+      data: formatarDataAvaliacao(avaliacao.data),
+      comentario: avaliacao.comentario ?? "",
+    })),
   };
 }
