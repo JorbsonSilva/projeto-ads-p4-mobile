@@ -18,7 +18,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Platform,
   ScrollView,
@@ -40,6 +39,7 @@ import {
 } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
+import AvatarPerfil from "../components/AvatarPerfil";
 
 // ==========================================
 // 1. CONTRATOS DE TIPAGEM (INTERFACES TS)
@@ -811,16 +811,11 @@ export default function BuscaProfessores() {
                   <View style={estilos.cardCorpoPrincipal}>
                     {/* Avatar com status online verde */}
                     <View style={estilos.avatarContainer}>
-                      {prof.fotoUrl ? (
-                        <Image
-                          source={{ uri: prof.fotoUrl }}
-                          style={estilos.avatarImagem}
-                        />
-                      ) : (
-                        <View style={[estilos.avatarImagem, estilos.avatarSemFoto]}>
-                          <Feather name="user" size={26} color="#94A3B8" />
-                        </View>
-                      )}
+                      <AvatarPerfil
+                        nome={prof.nome}
+                        fotoUrl={prof.fotoUrl}
+                        tamanho={64}
+                      />
                     </View>
 
                     {/* Informações centrais */}
@@ -1624,16 +1619,6 @@ const estilos = StyleSheet.create({
   avatarContainer: {
     position: "relative",
     marginRight: 14,
-  },
-  avatarImagem: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#E2E8F0",
-  },
-  avatarSemFoto: {
-    alignItems: "center",
-    justifyContent: "center",
   },
   indicadorOnlineVerde: {
     position: "absolute",
