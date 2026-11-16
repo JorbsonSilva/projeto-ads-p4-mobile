@@ -3,9 +3,9 @@
  * @description Dashboard Analítico de Desempenho e Painel Financeiro do Professor [ORI-020 / IMG-013].
  * Alinhado estritamente à referência visual oficial (DashBoard.png) com:
  * 1. Card Azul Marinho Superior ("Seus resultados") com gráfico de linha luminosa e métricas 2x2.
- * 2. Gráfico Donut de distribuição das aulas (66,7% Pagas, 25% Gratuitas, 8,3% Pendentes).
- * 3. Barras de volume proporcional por disciplina lecionada.
- * 4. Extrato financeiro recente com filtros por status e badges semânticos.
+ * 2. Gráfico de distribuição mensal de aulas realizadas e pendentes.
+ * 3. Barras de créditos financeiros do mês agrupados por disciplina.
+ * 4. Extrato financeiro recente filtrável por tipo de lançamento contábil.
  * 5. CTAs integrados para Solicitação de Saque (/saque) e Gestão de Aulas (/solicitacoes).
  * 6. Barra de navegação inferior oficial de 5 abas (Professor) com a aba Ganhos ativa.
  * 7. Consulta de métricas financeiras no servidor com indicador de estado.
@@ -18,7 +18,6 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -32,10 +31,8 @@ import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import {
   DadosDesempenho,
-  ItemVolumeDisciplina,
   obterDadosDesempenho,
-  SegmentoDistribuicao,
-  TransacaoExtrato,
+  TipoTransacao,
 } from "../services/painelGanhosService";
 import { getApiErrorMessage } from "../config/api";
 
@@ -50,13 +47,9 @@ export default function PainelGanhosScreen() {
     periodoReferencia: "",
     metricas: {
       aulasMinistradas: 0,
-      variacaoAulas: "",
-      horasDedicadas: 0,
-      variacaoHoras: "",
+      aulasPendentes: 0,
       alunosAtendidos: 0,
-      variacaoAlunos: "",
       ganhosMes: 0,
-      variacaoGanhos: "",
       saldoDisponivelSaque: 0,
       saldoPendente: 0,
     },
@@ -69,8 +62,8 @@ export default function PainelGanhosScreen() {
   const [atualizando, setAtualizando] = useState(false);
   const [erroPainel, setErroPainel] = useState(false);
   const [ocultarValores, setOcultarValores] = useState(false);
-  const [semanaSelecionada, setSemanaSelecionada] = useState<number | null>(3); // Default última semana
-  const [filtroExtrato, setFiltroExtrato] = useState<"TODAS" | "PAGAS" | "GRATUITAS" | "PENDENTES">("TODAS");
+  const [semanaSelecionada, setSemanaSelecionada] = useState<number | null>(null);
+  const [filtroExtrato, setFiltroExtrato] = useState<"TODAS" | TipoTransacao>("TODAS");
 
   /**
    * Carrega os dados analíticos via serviço resiliente
@@ -111,10 +104,7 @@ export default function PainelGanhosScreen() {
   // Filtragem do extrato recente
   const extratoFiltrado = dados.extratoRecente.filter((item) => {
     if (filtroExtrato === "TODAS") return true;
-    if (filtroExtrato === "PAGAS") return item.tipo === "PAGA" && item.status === "RECEBIDA";
-    if (filtroExtrato === "GRATUITAS") return item.tipo === "GRATUITA";
-    if (filtroExtrato === "PENDENTES") return item.status === "EM_ANALISE" || item.status === "PROCESSANDO";
-    return true;
+    return item.tipo === filtroExtrato;
   });
 
   // Dimensões do Gráfico de Linha Superior
@@ -125,14 +115,12 @@ export default function PainelGanhosScreen() {
   const graphWidth = CHART_WIDTH - paddingX * 2;
   const graphHeight = CHART_HEIGHT - paddingY * 2;
 
-  // Cálculo das coordenadas dos 4 pontos do gráfico de linha
+  const maiorValorGrafico = Math.max(1, ...dados.graficoEvolucao.map((ponto) => ponto.valor));
+
+  // Escala ajustada aos valores recebidos no período, sem limites monetários arbitrários.
   const pontos = dados.graficoEvolucao.map((p, index) => {
     const x = paddingX + (index / (dados.graficoEvolucao.length - 1)) * graphWidth;
-    // Escala normalizada entre R$ 300 e R$ 900
-    const minVal = 300;
-    const maxVal = 900;
-    const normalizedY = (p.valor - minVal) / (maxVal - minVal);
-    const y = CHART_HEIGHT - paddingY - normalizedY * graphHeight;
+    const y = CHART_HEIGHT - paddingY - (p.valor / maiorValorGrafico) * graphHeight;
     return { ...p, x, y };
   });
 
@@ -151,22 +139,19 @@ export default function PainelGanhosScreen() {
     ? `${linePath} L ${pontos[pontos.length - 1].x} ${CHART_HEIGHT} L ${pontos[0].x} ${CHART_HEIGHT} Z`
     : "";
 
-  // Cálculos do Donut Chart (Raio = 42, Centro = 55, 55)
+  // Cálculos do gráfico circular (raio = 38, centro = 55, 55).
   const donutRadius = 38;
   const donutCircumference = 2 * Math.PI * donutRadius;
   const strokeWidth = 14;
 
-  const pagasRatio = (dados.distribuicaoAulas[0]?.percentual ?? 0) / 100;
-  const gratisRatio = (dados.distribuicaoAulas[1]?.percentual ?? 0) / 100;
-  const pendentesRatio = (dados.distribuicaoAulas[2]?.percentual ?? 0) / 100;
+  const realizadasRatio = (dados.distribuicaoAulas[0]?.percentual ?? 0) / 100;
+  const pendentesRatio = (dados.distribuicaoAulas[1]?.percentual ?? 0) / 100;
 
-  const pagasDash = pagasRatio * donutCircumference;
-  const gratisDash = gratisRatio * donutCircumference;
+  const realizadasDash = realizadasRatio * donutCircumference;
   const pendentesDash = pendentesRatio * donutCircumference;
 
-  const pagasOffset = 0;
-  const gratisOffset = -pagasDash;
-  const pendentesOffset = -(pagasDash + gratisDash);
+  const realizadasOffset = 0;
+  const pendentesOffset = -realizadasDash;
 
   return (
     <SafeAreaView style={estilos.container} edges={["top"]}>
@@ -252,7 +237,7 @@ export default function PainelGanhosScreen() {
               >
                 {erroPainel
                   ? "Não foi possível atualizar os dados financeiros do servidor"
-                  : "Dados financeiros carregados do servidor"}
+                  : "Resumo mensal e extrato carregados do servidor"}
               </Text>
             </View>
 
@@ -264,14 +249,10 @@ export default function PainelGanhosScreen() {
               <View style={estilos.cardNavyHeader}>
                 <View>
                   <View style={estilos.linhaTagCard}>
-                    <Text style={estilos.tituloSeusResultados}>Seus resultados</Text>
-                    <View style={estilos.badgeCrescimento}>
-                      <Ionicons name="trending-up" size={13} color="#10B981" style={{ marginRight: 3 }} />
-                      <Text style={estilos.textoBadgeCrescimento}>+18,5%</Text>
-                    </View>
+                    <Text style={estilos.tituloSeusResultados}>Resultados de {dados.periodoReferencia}</Text>
                   </View>
                   <Text style={estilos.subtituloSeusResultados}>
-                    Desempenho acumulado no mês de {dados.periodoReferencia.split("/")[0].trim()}
+                    Aulas realizadas e créditos registrados no mês
                   </Text>
                 </View>
 
@@ -376,7 +357,7 @@ export default function PainelGanhosScreen() {
                           {p.label}
                         </Text>
                         <Text style={[estilos.textoSemanaValor, isSelected && estilos.textoSemanaValorAtivo]}>
-                          {ocultarValores ? "•••" : `R$ ${p.valor}`}
+                          {ocultarValores ? "•••" : formatarMoeda(p.valor)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -384,64 +365,58 @@ export default function PainelGanhosScreen() {
                 </View>
 
                 {/* Banner de detalhe da semana selecionada */}
-                {semanaSelecionada !== null && (
+                {semanaSelecionada !== null && dados.graficoEvolucao[semanaSelecionada] && (
                   <View style={estilos.bannerSemanaDetalhe}>
-                    <Ionicons name="sparkles" size={13} color="#FFA629" style={{ marginRight: 6 }} />
+                    <Ionicons name="receipt-outline" size={13} color="#FFA629" style={{ marginRight: 6 }} />
                     <Text style={estilos.textoBannerSemana}>
                       <Text style={{ fontWeight: "700", color: "#FFFFFF" }}>
                         {dados.graficoEvolucao[semanaSelecionada].label}:{" "}
                       </Text>
-                      {dados.graficoEvolucao[semanaSelecionada].aulas} aulas ministradas •{" "}
-                      {formatarMoeda(dados.graficoEvolucao[semanaSelecionada].valor)} gerados
+                      {dados.graficoEvolucao[semanaSelecionada].aulas} créditos de aula •{" "}
+                      {formatarMoeda(dados.graficoEvolucao[semanaSelecionada].valor)} em créditos
                     </Text>
                   </View>
                 )}
               </View>
 
-              {/* GRADE DE 4 MÉTRICAS 2x2 COM ÍCONES E VARIAÇÃO */}
+              {/* Indicadores mensais fornecidos pelo resumo financeiro */}
               <View style={estilos.gridMetricasNavy}>
-                {/* 1. Aulas */}
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(255, 90, 31, 0.15)" }]}>
                     <FontAwesome5 name="chalkboard-teacher" size={15} color="#FF7A3D" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Aulas</Text>
+                  <Text style={estilos.labelMetricaNavy}>Aulas realizadas</Text>
                   <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasMinistradas}</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoAulas}</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
                 </View>
 
-                {/* 2. Horas */}
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(37, 99, 235, 0.15)" }]}>
                     <Feather name="clock" size={15} color="#60A5FA" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Horas</Text>
-                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.horasDedicadas}h</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoHoras}</Text>
+                  <Text style={estilos.labelMetricaNavy}>Aulas pendentes</Text>
+                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasPendentes}</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
                 </View>
 
-                {/* 3. Alunos */}
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
                     <Feather name="users" size={15} color="#34D399" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Alunos</Text>
+                  <Text style={estilos.labelMetricaNavy}>Alunos atendidos</Text>
                   <Text style={estilos.valorMetricaNavy}>{dados.metricas.alunosAtendidos}</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>{dados.metricas.variacaoAlunos}</Text>
+                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
                 </View>
 
-                {/* 4. Ganhos */}
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
                     <MaterialCommunityIcons name="currency-usd" size={17} color="#FBBF24" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Ganhos</Text>
+                  <Text style={estilos.labelMetricaNavy}>Ganhos brutos</Text>
                   <Text style={[estilos.valorMetricaNavy, { color: "#34D399" }]}>
                     {formatarMoeda(dados.metricas.ganhosMes)}
                   </Text>
-                  <Text style={[estilos.variacaoMetricaNavy, { color: "#34D399" }]}>
-                    {dados.metricas.variacaoGanhos}
-                  </Text>
+                  <Text style={[estilos.variacaoMetricaNavy, { color: "#34D399" }]}>No mês</Text>
                 </View>
               </View>
             </View>
@@ -477,17 +452,17 @@ export default function PainelGanhosScreen() {
             </View>
 
             {/* ============================================================== */}
-            {/* CARD 2: GRÁFICO DONUT DE DISTRIBUIÇÃO DAS AULAS (IMG-013)      */}
+            {/* CARD 2: DISTRIBUIÇÃO DE AULAS POR STATUS                      */}
             {/* ============================================================== */}
             <View style={estilos.cardSecao}>
               <View style={estilos.headerSecao}>
                 <View>
                   <Text style={estilos.tituloSecao}>Distribuição das Aulas</Text>
-                  <Text style={estilos.subtituloSecao}>Total de {dados.metricas.aulasMinistradas} aulas registradas</Text>
+                  <Text style={estilos.subtituloSecao}>Aulas do mês por situação</Text>
                 </View>
                 <View style={estilos.chipTotalAulas}>
                   <FontAwesome5 name="chart-pie" size={12} color="#FF5A1F" style={{ marginRight: 5 }} />
-                  <Text style={estilos.textoChipTotalAulas}>Mês Atual</Text>
+                  <Text style={estilos.textoChipTotalAulas}>{dados.periodoReferencia}</Text>
                 </View>
               </View>
 
@@ -496,36 +471,24 @@ export default function PainelGanhosScreen() {
                 <View style={estilos.donutWrapper}>
                   <Svg width={110} height={110} viewBox="0 0 110 110">
                     <G rotation="-90" origin="55, 55">
-                      {/* Segmento 1: Aulas Pagas (Laranja) */}
+                      {/* Aulas realizadas */}
                       <Circle
                         cx="55"
                         cy="55"
                         r={donutRadius}
                         stroke="#FF5A1F"
                         strokeWidth={strokeWidth}
-                        strokeDasharray={`${pagasDash} ${donutCircumference}`}
-                        strokeDashoffset={pagasOffset}
+                        strokeDasharray={`${realizadasDash} ${donutCircumference}`}
+                        strokeDashoffset={realizadasOffset}
                         strokeLinecap="round"
                         fill="transparent"
                       />
-                      {/* Segmento 2: Aulas Gratuitas (Azul) */}
+                      {/* Aulas pendentes ou em andamento */}
                       <Circle
                         cx="55"
                         cy="55"
                         r={donutRadius}
                         stroke="#2563EB"
-                        strokeWidth={strokeWidth}
-                        strokeDasharray={`${gratisDash} ${donutCircumference}`}
-                        strokeDashoffset={gratisOffset}
-                        strokeLinecap="round"
-                        fill="transparent"
-                      />
-                      {/* Segmento 3: Pendentes (Cinza) */}
-                      <Circle
-                        cx="55"
-                        cy="55"
-                        r={donutRadius}
-                        stroke="#CBD5E1"
                         strokeWidth={strokeWidth}
                         strokeDasharray={`${pendentesDash} ${donutCircumference}`}
                         strokeDashoffset={pendentesOffset}
@@ -542,7 +505,7 @@ export default function PainelGanhosScreen() {
                       fontWeight="bold"
                       fill="#0F172A"
                     >
-                      {dados.metricas.aulasMinistradas}
+                      {dados.metricas.aulasMinistradas + dados.metricas.aulasPendentes}
                     </SvgText>
                     <SvgText
                       x="55"
@@ -578,13 +541,13 @@ export default function PainelGanhosScreen() {
             </View>
 
             {/* ============================================================== */}
-            {/* CARD 3: VOLUME POR DISCIPLINA (PROGRESS BARS HORIZONTAIS)      */}
+            {/* CARD 3: CRÉDITOS DO MÊS POR DISCIPLINA                       */}
             {/* ============================================================== */}
             <View style={estilos.cardSecao}>
               <View style={estilos.headerSecao}>
                 <View>
                   <Text style={estilos.tituloSecao}>Volume por Disciplina</Text>
-                  <Text style={estilos.subtituloSecao}>Rentabilidade e demanda de ensino</Text>
+                  <Text style={estilos.subtituloSecao}>Créditos de aula registrados por disciplina</Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => router.push("/solicitacoes" as any)}
@@ -604,7 +567,7 @@ export default function PainelGanhosScreen() {
                         <Text style={estilos.faturamentoDisciplina}>
                           {formatarMoeda(disc.faturamento)}
                         </Text>
-                        <Text style={estilos.percentualDisciplina}>({disc.percentual}%)</Text>
+                        <Text style={estilos.percentualDisciplina}>({disc.percentual.toFixed(1)}%)</Text>
                       </View>
                     </View>
 
@@ -622,7 +585,7 @@ export default function PainelGanhosScreen() {
                     </View>
 
                     <Text style={estilos.rodapeBarraDisciplina}>
-                      {disc.aulas} aulas ministradas no período
+                      {disc.aulas} crédito(s) de aula no mês
                     </Text>
                   </View>
                 ))}
@@ -640,14 +603,15 @@ export default function PainelGanhosScreen() {
                 </View>
               </View>
 
-              {/* CHIPS DE FILTRO DO EXTRATO */}
+              {/* FILTROS POR TIPO DE LANÇAMENTO CONTÁBIL */}
               <View style={estilos.rowFiltrosExtrato}>
                 {(
                   [
                     { id: "TODAS", label: "Todas" },
-                    { id: "PAGAS", label: "Recebidas" },
-                    { id: "GRATUITAS", label: "Gratuitas" },
-                    { id: "PENDENTES", label: "Em análise" },
+                    { id: "CREDITO_AULA", label: "Créditos" },
+                    { id: "RETENCAO_TAXA_INSTITUICAO", label: "Taxas" },
+                    { id: "SAQUE_DEBITO", label: "Saques" },
+                    { id: "REEMBOLSO_ALUNO", label: "Reembolsos" },
                   ] as const
                 ).map((filtro) => {
                   const isActive = filtroExtrato === filtro.id;
@@ -683,22 +647,46 @@ export default function PainelGanhosScreen() {
                 ) : (
                   extratoFiltrado.map((item) => (
                     <View key={item.id} style={estilos.itemTransacao}>
-                      <Image source={{ uri: item.alunoFoto }} style={estilos.avatarTransacao} />
+                      <View style={estilos.avatarTransacao}>
+                        <Feather
+                          name={item.tipo === "CREDITO_AULA"
+                            ? "arrow-down-left"
+                            : item.tipo === "SAQUE_DEBITO"
+                              ? "send"
+                              : item.tipo === "REEMBOLSO_ALUNO"
+                                ? "corner-up-left"
+                                : "percent"}
+                          size={16}
+                          color={item.tipo === "CREDITO_AULA" ? "#059669" : "#64748B"}
+                        />
+                      </View>
 
                       <View style={{ flex: 1 }}>
                         <View style={estilos.topoItemTransacao}>
-                          <Text style={estilos.nomeAlunoTransacao}>{item.alunoNome}</Text>
+                          <Text style={estilos.nomeAlunoTransacao}>
+                            {item.alunoNome || (
+                              item.tipo === "CREDITO_AULA"
+                                ? "Crédito de aula"
+                                : item.tipo === "RETENCAO_TAXA_INSTITUICAO"
+                                  ? "Taxa da plataforma"
+                                  : item.tipo === "SAQUE_DEBITO"
+                                    ? "Saque"
+                                    : "Reembolso"
+                            )}
+                          </Text>
                           <Text
                             style={[
                               estilos.valorTransacao,
-                              item.valor > 0 ? estilos.valorPositivo : estilos.valorNeutro,
+                              item.tipo === "CREDITO_AULA" ? estilos.valorPositivo : estilos.valorNeutro,
                             ]}
                           >
-                            {item.valor > 0 ? `+ ${formatarMoeda(item.valor)}` : "Gratuita"}
+                            {item.tipo === "CREDITO_AULA" ? "+" : "-"} {formatarMoeda(item.valor)}
                           </Text>
                         </View>
 
-                        <Text style={estilos.materiaTransacao}>{item.materia}</Text>
+                        {item.materia ? (
+                          <Text style={estilos.materiaTransacao}>{item.materia}</Text>
+                        ) : null}
                         <Text style={estilos.descricaoTransacao}>{item.descricao}</Text>
 
                         <View style={estilos.rodapeItemTransacao}>
@@ -712,28 +700,34 @@ export default function PainelGanhosScreen() {
                           <View
                             style={[
                               estilos.badgeStatusTransacao,
-                              item.status === "RECEBIDA"
-                                ? estilos.badgeRecebida
-                                : item.status === "CONFIRMADA"
-                                ? estilos.badgeConfirmada
-                                : estilos.badgeAnalise,
+                              {
+                                backgroundColor: item.tipo === "CREDITO_AULA"
+                                  ? "#ECFDF5"
+                                  : item.tipo === "RETENCAO_TAXA_INSTITUICAO"
+                                    ? "#FEF3C7"
+                                    : "#EFF6FF",
+                              },
                             ]}
                           >
                             <Text
                               style={[
                                 estilos.textoStatusTransacao,
-                                item.status === "RECEBIDA"
-                                  ? estilos.textoRecebida
-                                  : item.status === "CONFIRMADA"
-                                  ? estilos.textoConfirmada
-                                  : estilos.textoAnalise,
+                                {
+                                  color: item.tipo === "CREDITO_AULA"
+                                    ? "#047857"
+                                    : item.tipo === "RETENCAO_TAXA_INSTITUICAO"
+                                      ? "#B45309"
+                                      : "#1D4ED8",
+                                },
                               ]}
                             >
-                              {item.status === "RECEBIDA"
-                                ? "✔ Recebida"
-                                : item.status === "CONFIRMADA"
-                                ? "Confirmada"
-                                : "Em análise"}
+                              {item.tipo === "CREDITO_AULA"
+                                ? "Crédito"
+                                : item.tipo === "RETENCAO_TAXA_INSTITUICAO"
+                                  ? "Taxa"
+                                  : item.tipo === "SAQUE_DEBITO"
+                                    ? "Saque"
+                                    : "Reembolso"}
                             </Text>
                           </View>
                         </View>
@@ -876,21 +870,6 @@ const estilos = StyleSheet.create({
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.3,
-  },
-  badgeCrescimento: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.2)",
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.4)",
-  },
-  textoBadgeCrescimento: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#10B981",
   },
   subtituloSeusResultados: {
     fontSize: 11.5,
@@ -1220,6 +1199,7 @@ const estilos = StyleSheet.create({
   // EXTRATO
   rowFiltrosExtrato: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
     marginBottom: 14,
   },
@@ -1269,6 +1249,8 @@ const estilos = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
   },
   topoItemTransacao: {
     flexDirection: "row",
@@ -1320,27 +1302,9 @@ const estilos = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
   },
-  badgeRecebida: {
-    backgroundColor: "#ECFDF5",
-  },
-  badgeConfirmada: {
-    backgroundColor: "#EFF6FF",
-  },
-  badgeAnalise: {
-    backgroundColor: "#FEF3C7",
-  },
   textoStatusTransacao: {
     fontSize: 10,
     fontWeight: "700",
-  },
-  textoRecebida: {
-    color: "#047857",
-  },
-  textoConfirmada: {
-    color: "#1D4ED8",
-  },
-  textoAnalise: {
-    color: "#B45309",
   },
 
   // BOTÕES AUXILIARES
