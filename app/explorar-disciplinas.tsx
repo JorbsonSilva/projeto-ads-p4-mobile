@@ -8,8 +8,8 @@
  */
 
 import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
 import {
   CONFIG_CATEGORIAS,
   obterCatalogoDisciplinas,
@@ -30,12 +31,22 @@ import {
   SaberItem,
 } from "../services/disciplinasService";
 import { getApiErrorMessage } from "../config/api";
+import { obterPerfilAluno, salvarPreferenciasAluno } from "../services/perfilService";
 
 export default function ExplorarDisciplinas() {
   const insets = useSafeAreaInsets();
+  const { modo } = useLocalSearchParams<{ modo?: string }>();
+  const ehPreferenciasEstudo = modo === "preferencias";
+  const { usuarioId } = useAuth();
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
+  const [salvandoPreferencias, setSalvandoPreferencias] = useState<boolean>(false);
+  const [preferenciasCarregadas, setPreferenciasCarregadas] = useState<boolean>(false);
+  const [materiasSelecionadas, setMateriasSelecionadas] = useState<string[]>([]);
+  const [bioAluno, setBioAluno] = useState<string>("");
+  const [erroPreferencias, setErroPreferencias] = useState<string | null>(null);
+  const [preferenciasSalvas, setPreferenciasSalvas] = useState<boolean>(false);
   const [catalogo, setCatalogo] = useState<ResultadoCatalogo>({
     categorias: [],
     todasDisciplinas: [],
@@ -50,27 +61,92 @@ export default function ExplorarDisciplinas() {
   const [disciplinaModal, setDisciplinaModal] = useState<SaberItem | null>(null);
 
   // Carregar dados iniciais
-  const carregarDados = async (isRefresh = false) => {
+  const carregarDados = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setAtualizando(true);
     } else {
       setCarregando(true);
     }
+    if (ehPreferenciasEstudo) {
+      setErroPreferencias(null);
+      setPreferenciasCarregadas(false);
+    }
 
     try {
       const resultado = await obterCatalogoDisciplinas();
       setCatalogo(resultado);
+      if (ehPreferenciasEstudo) {
+        const id = Number(usuarioId);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+          throw new Error("Sua sessão expirou. Entre novamente.");
+        }
+        const perfil = await obterPerfilAluno(id);
+        setMateriasSelecionadas(perfil.dados.interesses);
+        setBioAluno(perfil.dados.bio);
+        setPreferenciasCarregadas(true);
+      }
     } catch (err) {
-      Alert.alert("Não foi possível carregar o catálogo", getApiErrorMessage(err));
+      const mensagem = getApiErrorMessage(err);
+      if (ehPreferenciasEstudo) {
+        setErroPreferencias(`Não foi possível carregar suas preferências. ${mensagem}`);
+      } else {
+        Alert.alert("Não foi possível carregar o catálogo", mensagem);
+      }
     } finally {
       setCarregando(false);
       setAtualizando(false);
     }
-  };
+  }, [ehPreferenciasEstudo, usuarioId]);
 
   useEffect(() => {
-    carregarDados();
-  }, []);
+    void carregarDados();
+  }, [carregarDados]);
+
+  const alternarMateriaSelecionada = (nomeMateria: string) => {
+    setPreferenciasSalvas(false);
+    setErroPreferencias(null);
+    setMateriasSelecionadas((atuais) =>
+      atuais.includes(nomeMateria)
+        ? atuais.filter((nome) => nome !== nomeMateria)
+        : [...atuais, nomeMateria]
+    );
+  };
+
+  const salvarPreferencias = async () => {
+    if (preferenciasSalvas) {
+      router.back();
+      return;
+    }
+    if (!preferenciasCarregadas || carregando || atualizando) {
+      setErroPreferencias("Aguarde o carregamento das suas preferências antes de salvar.");
+      return;
+    }
+
+    const id = Number(usuarioId);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      setErroPreferencias("Sua sessão expirou. Entre novamente para salvar suas preferências.");
+      return;
+    }
+
+    setSalvandoPreferencias(true);
+    setErroPreferencias(null);
+    try {
+      const interessesIds = catalogo.todasDisciplinas
+        .filter((disciplina) => materiasSelecionadas.includes(disciplina.nome))
+        .map((disciplina) => disciplina.id);
+      if (interessesIds.length !== materiasSelecionadas.length) {
+        throw new Error("Uma ou mais matérias não pertencem ao catálogo atual. Atualize a tela e tente novamente.");
+      }
+
+      const interessesSalvos = await salvarPreferenciasAluno(id, interessesIds, bioAluno);
+      setMateriasSelecionadas(interessesSalvos);
+      setPreferenciasSalvas(true);
+    } catch (error) {
+      setErroPreferencias(getApiErrorMessage(error));
+    } finally {
+      setSalvandoPreferencias(false);
+    }
+  };
 
   // Lista de macro-áreas para os chips de filtragem
   const macroAreasChips = useMemo(() => {
@@ -161,7 +237,9 @@ export default function ExplorarDisciplinas() {
         <View style={estilos.headerInfo}>
           <Text style={estilos.headerTitulo}>Explorar Disciplinas</Text>
           <Text style={estilos.headerSubtitulo}>
-            Catálogo completo de áreas e matérias
+            {ehPreferenciasEstudo
+              ? "Selecione as matérias do seu interesse"
+              : "Catálogo completo de áreas e matérias"}
           </Text>
         </View>
 
@@ -205,6 +283,16 @@ export default function ExplorarDisciplinas() {
             />
           }
         >
+          {ehPreferenciasEstudo && (
+            <View style={estilos.instrucaoPreferencias}>
+              <Feather name="check-circle" size={18} color="#2563EB" />
+              <Text style={estilos.textoInstrucaoPreferencias}>
+                Toque nas matérias que você gostaria de estudar.{"\n"}
+                {materiasSelecionadas.length} selecionada(s)
+              </Text>
+            </View>
+          )}
+
           {/* RESUMO DO CATÁLOGO */}
           <View style={estilos.gridMetricasCatalogo}>
             <View style={estilos.cardMetricaCatalogo}>
@@ -325,49 +413,101 @@ export default function ExplorarDisciplinas() {
 
                 {/* GRADE DE DISCIPLINAS DA ÁREA */}
                 <View style={estilos.gridDisciplinasArea}>
-                  {itens.map((disciplina) => (
-                    <TouchableOpacity
-                      key={disciplina.id}
-                      style={estilos.cardDisciplina}
-                      activeOpacity={0.8}
-                      onPress={() => setDisciplinaModal(disciplina)}
-                    >
-                      <View style={estilos.cardDisciplinaHeader}>
-                        <Text style={estilos.cardDisciplinaNome} numberOfLines={2}>
-                          {disciplina.nome}
+                  {itens.map((disciplina) => {
+                    const selecionada = materiasSelecionadas.includes(disciplina.nome);
+                    return (
+                      <TouchableOpacity
+                        key={disciplina.id}
+                        style={[
+                          estilos.cardDisciplina,
+                          ehPreferenciasEstudo && estilos.cardDisciplinaSelecionavel,
+                          ehPreferenciasEstudo && selecionada && estilos.cardDisciplinaSelecionada,
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() =>
+                          ehPreferenciasEstudo
+                            ? alternarMateriaSelecionada(disciplina.nome)
+                            : setDisciplinaModal(disciplina)
+                        }
+                        accessibilityRole={ehPreferenciasEstudo ? "checkbox" : "button"}
+                        accessibilityState={{ checked: selecionada }}
+                      >
+                        <View style={estilos.cardDisciplinaHeader}>
+                          <Text style={estilos.cardDisciplinaNome} numberOfLines={2}>
+                            {disciplina.nome}
+                          </Text>
+                          {ehPreferenciasEstudo ? (
+                            <View
+                              style={[
+                                estilos.indicadorSelecaoMateria,
+                                selecionada && estilos.indicadorSelecaoMateriaAtivo,
+                              ]}
+                            >
+                              {selecionada && <Feather name="check" size={14} color="#FFFFFF" />}
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => irParaBusca(disciplina.nome, "materia")}
+                              style={estilos.botaoAtalhoLupa}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              accessibilityLabel="Buscar professores desta matéria"
+                            >
+                              <Feather name="chevron-right" size={18} color="#FF5A1F" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+
+                        <Text style={estilos.cardDisciplinaDesc} numberOfLines={2}>
+                          {disciplina.descricao}
                         </Text>
-                        <TouchableOpacity
-                          onPress={() => irParaBusca(disciplina.nome, "materia")}
-                          style={estilos.botaoAtalhoLupa}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          accessibilityLabel="Buscar professores desta matéria"
-                        >
-                          <Feather name="chevron-right" size={18} color="#FF5A1F" />
-                        </TouchableOpacity>
-                      </View>
 
-                      <Text style={estilos.cardDisciplinaDesc} numberOfLines={2}>
-                        {disciplina.descricao}
-                      </Text>
-
-                      {/* Alguns conteúdos cadastrados para a disciplina */}
-                      <View style={estilos.tagsTopicosWrapper}>
-                        {disciplina.topicosPopulares.slice(0, 2).map((topico, idx) => (
-                          <View key={idx} style={estilos.chipMiniTopico}>
-                            <Text style={estilos.textoMiniTopico} numberOfLines={1}>
-                              {topico}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-
-                    </TouchableOpacity>
-                  ))}
+                        {/* Alguns conteúdos cadastrados para a disciplina */}
+                        <View style={estilos.tagsTopicosWrapper}>
+                          {disciplina.topicosPopulares.slice(0, 2).map((topico, idx) => (
+                            <View key={idx} style={estilos.chipMiniTopico}>
+                              <Text style={estilos.textoMiniTopico} numberOfLines={1}>
+                                {topico}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             ))
           )}
         </ScrollView>
+      )}
+
+      {ehPreferenciasEstudo && !carregando && (
+        <View         style={[estilos.rodapePreferencias, { paddingBottom: Math.max(insets.bottom, 8) + 10 }]}>
+          <TouchableOpacity
+            style={estilos.botaoSalvarPreferencias}
+            onPress={() => void salvarPreferencias()}
+            disabled={salvandoPreferencias || !preferenciasCarregadas}
+            activeOpacity={0.85}
+          >
+            {salvandoPreferencias ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : preferenciasCarregadas ? (
+              <Text style={estilos.textoBotaoSalvarPreferencias}>
+                {preferenciasSalvas ? "Voltar ao perfil" : "Salvar matérias de interesse"}
+              </Text>
+            ) : (
+              <Text style={estilos.textoBotaoSalvarPreferencias}>Carregando preferências...</Text>
+            )}
+          </TouchableOpacity>
+          {erroPreferencias && (
+            <Text style={estilos.mensagemErroPreferencias}>{erroPreferencias}</Text>
+          )}
+          {preferenciasSalvas && (
+            <Text style={estilos.mensagemSucessoPreferencias}>
+              Preferências salvas. Elas já estão atualizadas no seu perfil.
+            </Text>
+          )}
+        </View>
       )}
 
       {/* ============================================================== */}
@@ -451,7 +591,7 @@ export default function ExplorarDisciplinas() {
       {/* ============================================================== */}
       {/* 5. BARRA DE NAVEGAÇÃO INFERIOR DOCKADA (5 ABAS ALUNO - RN-001) */}
       {/* ============================================================== */}
-      <View
+      {!ehPreferenciasEstudo && <View
         style={[
           estilos.tabBarContainer,
           { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 },
@@ -506,7 +646,7 @@ export default function ExplorarDisciplinas() {
           <FontAwesome5 name="user-alt" size={19} color="#64748B" />
           <Text style={estilos.tabLabel}>Perfil</Text>
         </TouchableOpacity>
-      </View>
+      </View>}
     </SafeAreaView>
   );
 }
@@ -578,6 +718,56 @@ const estilos = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: "#64748B",
+  },
+  instrucaoPreferencias: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  textoInstrucaoPreferencias: {
+    flex: 1,
+    fontSize: 13,
+    color: "#1E3A8A",
+    lineHeight: 19,
+  },
+  rodapePreferencias: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingBottom: 10,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  botaoSalvarPreferencias: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF5A1F",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
+  textoBotaoSalvarPreferencias: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  mensagemErroPreferencias: {
+    color: "#B91C1C",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  mensagemSucessoPreferencias: {
+    color: "#047857",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+    textAlign: "center",
   },
 
   // CARDS DE RESUMO (MÉTRICAS DO CATÁLOGO)
@@ -769,6 +959,27 @@ const estilos = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
     shadowRadius: 2,
+  },
+  cardDisciplinaSelecionavel: {
+    borderColor: "#CBD5E1",
+  },
+  cardDisciplinaSelecionada: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FF5A1F",
+  },
+  indicadorSelecaoMateria: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: "#94A3B8",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  indicadorSelecaoMateriaAtivo: {
+    backgroundColor: "#FF5A1F",
+    borderColor: "#FF5A1F",
   },
   cardDisciplinaHeader: {
     flexDirection: "row",

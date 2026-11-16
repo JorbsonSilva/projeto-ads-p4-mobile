@@ -112,8 +112,8 @@ export async function obterPerfilAluno(usuarioId: number): Promise<ResultadoPerf
 export async function salvarPerfilAluno(
   usuarioId: number,
   novosDados: Partial<PerfilAlunoData>
-): Promise<boolean> {
-  await apiFetch(`${API_URL}/api/v1/perfil/aluno/${usuarioId}`, {
+): Promise<string[]> {
+  const response = await apiFetch(`${API_URL}/api/v1/perfil/aluno/${usuarioId}`, {
     method: "PUT",
     body: JSON.stringify({
       nome: novosDados.nome,
@@ -125,7 +125,64 @@ export async function salvarPerfilAluno(
       interessesNomes: novosDados.interesses,
     }),
   });
-  return true;
+  const perfilAtualizado = extrairDadosObjeto<PerfilApi>(await response.json());
+  const interessesSalvos = (Array.isArray(perfilAtualizado.interesses) ? perfilAtualizado.interesses : [])
+    .map((item) => typeof item === "string" ? item : String(item.nome ?? ""))
+    .filter((nome) => nome.length > 0);
+
+  if (
+    novosDados.interesses !== undefined &&
+    (
+      interessesSalvos.length !== novosDados.interesses.length ||
+      novosDados.interesses.some((nome) => !interessesSalvos.includes(nome))
+    )
+  ) {
+    throw new Error("A API não confirmou todas as matérias selecionadas. Tente novamente.");
+  }
+
+  return interessesSalvos;
+}
+
+export async function salvarPreferenciasAluno(
+  usuarioId: number,
+  interessesIds: number[],
+  bio: string,
+): Promise<string[]> {
+  const response = await apiFetch(`${API_URL}/api/v1/usuarios/${usuarioId}/aluno`, {
+    method: "PUT",
+    body: JSON.stringify({ bio, interessesIds }),
+  });
+  const perfilAtualizado = extrairDadosObjeto<PerfilApi>(await response.json());
+  const interesses = Array.isArray(perfilAtualizado.interesses) ? perfilAtualizado.interesses : [];
+  const idsSalvos = interesses.map((item) =>
+    typeof item === "string" ? null : Number(item.saberId ?? item.id)
+  );
+
+  if (
+    idsSalvos.length !== interessesIds.length ||
+    interessesIds.some((id) => !idsSalvos.includes(id))
+  ) {
+    throw new Error("O servidor não confirmou todas as matérias selecionadas. Tente novamente.");
+  }
+
+  return interesses
+    .map((item) => typeof item === "string" ? item : String(item.nome ?? ""))
+    .filter((nome) => nome.length > 0);
+}
+
+export async function alterarSenha(
+  usuarioId: number,
+  senhaAtual: string,
+  novaSenha: string,
+): Promise<void> {
+  const response = await apiFetch(`${API_URL}/api/v1/usuarios/${usuarioId}/senha`, {
+    method: "PUT",
+    body: JSON.stringify({ senhaAtual, novaSenha }),
+  });
+  const resultado = extrairDadosObjeto<{ status?: string }>(await response.json());
+  if (resultado.status !== "OK") {
+    throw new Error("O servidor não confirmou a alteração da senha. Tente novamente.");
+  }
 }
 
 export async function obterPerfilProfessor(usuarioId: number): Promise<ResultadoPerfilProfessorData> {

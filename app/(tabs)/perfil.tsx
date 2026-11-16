@@ -10,8 +10,8 @@
  */
 
 import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -38,6 +38,7 @@ import {
   ResultadoPerfilProfessorData,
   salvarPerfilAluno,
   salvarPerfilProfessor,
+  alterarSenha,
 } from "../../services/perfilService";
 
 export default function PerfilScreen() {
@@ -75,6 +76,14 @@ export default function PerfilScreen() {
   const [formAlunoTelefone, setFormAlunoTelefone] = useState<string>("");
   const [formAlunoCidade, setFormAlunoCidade] = useState<string>("");
   const [formAlunoBio, setFormAlunoBio] = useState<string>("");
+  const [senhaAtual, setSenhaAtual] = useState<string>("");
+  const [novaSenha, setNovaSenha] = useState<string>("");
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState<string>("");
+  const [alterandoSenha, setAlterandoSenha] = useState<boolean>(false);
+  const [mensagemSenha, setMensagemSenha] = useState<{
+    tipo: "sucesso" | "erro";
+    texto: string;
+  } | null>(null);
 
   // Formulário Professor
   const [formProfNome, setFormProfNome] = useState<string>("");
@@ -122,9 +131,11 @@ export default function PerfilScreen() {
     }
   }, [personaAtiva, usuarioId]);
 
-  useEffect(() => {
-    carregarDados();
-  }, [carregarDados]);
+  useFocusEffect(
+    useCallback(() => {
+      void carregarDados();
+    }, [carregarDados])
+  );
 
   const onRefresh = () => {
     setAtualizando(true);
@@ -223,6 +234,45 @@ export default function PerfilScreen() {
       await logoutGlobal();
     }
     router.replace("/login" as any);
+  };
+
+  const handleAlterarSenha = async () => {
+    if (!senhaAtual || !novaSenha || !confirmarNovaSenha) {
+      setMensagemSenha({ tipo: "erro", texto: "Preencha os três campos de senha." });
+      return;
+    }
+    if (novaSenha.length < 8) {
+      setMensagemSenha({ tipo: "erro", texto: "A nova senha deve ter pelo menos 8 caracteres." });
+      return;
+    }
+    if (novaSenha !== confirmarNovaSenha) {
+      setMensagemSenha({ tipo: "erro", texto: "A confirmação deve ser igual à nova senha." });
+      return;
+    }
+    if (novaSenha === senhaAtual) {
+      setMensagemSenha({ tipo: "erro", texto: "A nova senha deve ser diferente da senha atual." });
+      return;
+    }
+
+    const id = Number(usuarioId);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      setMensagemSenha({ tipo: "erro", texto: "Sua sessão expirou. Entre novamente para alterar a senha." });
+      return;
+    }
+
+    setMensagemSenha(null);
+    setAlterandoSenha(true);
+    try {
+      await alterarSenha(id, senhaAtual, novaSenha);
+      setSenhaAtual("");
+      setNovaSenha("");
+      setConfirmarNovaSenha("");
+      setMensagemSenha({ tipo: "sucesso", texto: "Senha alterada com sucesso." });
+    } catch (error) {
+      setMensagemSenha({ tipo: "erro", texto: getApiErrorMessage(error) });
+    } finally {
+      setAlterandoSenha(false);
+    }
   };
 
   if (carregando) {
@@ -417,11 +467,17 @@ export default function PerfilScreen() {
                 <View style={estilos.divisorSuave} />
                 <Text style={estilos.subtituloInteresses}>Disciplinas de interesse:</Text>
                 <View style={estilos.chipsContainer}>
-                  {perfilAluno.interesses.map((item, idx) => (
-                    <View key={idx} style={estilos.chipInteresse}>
-                      <Text style={estilos.textoChipInteresse}>{item}</Text>
-                    </View>
-                  ))}
+                  {perfilAluno.interesses.length > 0 ? (
+                    perfilAluno.interesses.map((item, idx) => (
+                      <View key={`${item}-${idx}`} style={estilos.chipInteresse}>
+                        <Text style={estilos.textoChipInteresse}>{item}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={estilos.interessesVazios}>
+                      Nenhuma disciplina selecionada.
+                    </Text>
+                  )}
                 </View>
               </View>
             </View>
@@ -449,7 +505,12 @@ export default function PerfilScreen() {
 
                 <TouchableOpacity
                   style={estilos.menuItem}
-                  onPress={() => router.push("/explorar-disciplinas" as any)}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/explorar-disciplinas",
+                      params: { modo: "preferencias" },
+                    } as any)
+                  }
                   activeOpacity={0.7}
                 >
                   <View style={[estilos.iconeMenuWrap, { backgroundColor: "#EFF6FF" }]}>
@@ -457,7 +518,7 @@ export default function PerfilScreen() {
                   </View>
                   <View style={estilos.infoMenuItem}>
                     <Text style={estilos.tituloMenuItem}>Preferências de estudo</Text>
-                    <Text style={estilos.subtituloMenuItem}>Modalidade e disciplinas ativas</Text>
+                    <Text style={estilos.subtituloMenuItem}>Escolha matérias do seu interesse</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
                 </TouchableOpacity>
@@ -483,7 +544,10 @@ export default function PerfilScreen() {
 
                 <TouchableOpacity
                   style={estilos.menuItem}
-                  onPress={() => setModalSegurancaVisivel(true)}
+                  onPress={() => {
+                    setMensagemSenha(null);
+                    setModalSegurancaVisivel(true);
+                  }}
                   activeOpacity={0.7}
                 >
                   <View style={[estilos.iconeMenuWrap, { backgroundColor: "#F0FDF4" }]}>
@@ -1054,14 +1118,54 @@ export default function PerfilScreen() {
           <View style={estilos.modalCardEdicao}>
             <View style={estilos.modalHeaderLinha}>
               <Text style={estilos.modalTitulo}>Segurança da Conta</Text>
-              <TouchableOpacity onPress={() => setModalSegurancaVisivel(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (alterandoSenha) return;
+                  setMensagemSenha(null);
+                  setModalSegurancaVisivel(false);
+                }}
+                disabled={alterandoSenha}
+              >
                 <Feather name="x" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
+            {mensagemSenha && (
+              <View
+                style={[
+                  estilos.mensagemSenha,
+                  mensagemSenha.tipo === "sucesso"
+                    ? estilos.mensagemSenhaSucesso
+                    : estilos.mensagemSenhaErro,
+                ]}
+                accessibilityRole="alert"
+              >
+                <Feather
+                  name={mensagemSenha.tipo === "sucesso" ? "check-circle" : "alert-circle"}
+                  size={17}
+                  color={mensagemSenha.tipo === "sucesso" ? "#047857" : "#B91C1C"}
+                />
+                <Text
+                  style={[
+                    estilos.textoMensagemSenha,
+                    mensagemSenha.tipo === "sucesso"
+                      ? estilos.textoMensagemSenhaSucesso
+                      : estilos.textoMensagemSenhaErro,
+                  ]}
+                >
+                  {mensagemSenha.texto}
+                </Text>
+              </View>
+            )}
+
             <Text style={estilos.labelInput}>Senha Atual</Text>
             <TextInput
               style={estilos.inputFormulario}
+              value={senhaAtual}
+              onChangeText={(valor) => {
+                setSenhaAtual(valor);
+                setMensagemSenha(null);
+              }}
               placeholder="Digite sua senha atual"
               placeholderTextColor="#94A3B8"
               secureTextEntry
@@ -1070,6 +1174,11 @@ export default function PerfilScreen() {
             <Text style={estilos.labelInput}>Nova Senha</Text>
             <TextInput
               style={estilos.inputFormulario}
+              value={novaSenha}
+              onChangeText={(valor) => {
+                setNovaSenha(valor);
+                setMensagemSenha(null);
+              }}
               placeholder="Mínimo de 8 caracteres"
               placeholderTextColor="#94A3B8"
               secureTextEntry
@@ -1078,6 +1187,11 @@ export default function PerfilScreen() {
             <Text style={estilos.labelInput}>Confirmar Nova Senha</Text>
             <TextInput
               style={estilos.inputFormulario}
+              value={confirmarNovaSenha}
+              onChangeText={(valor) => {
+                setConfirmarNovaSenha(valor);
+                setMensagemSenha(null);
+              }}
               placeholder="Repita a nova senha"
               placeholderTextColor="#94A3B8"
               secureTextEntry
@@ -1086,19 +1200,26 @@ export default function PerfilScreen() {
             <View style={estilos.modalAcoesLinha}>
               <TouchableOpacity
                 style={estilos.botaoModalCancelar}
-                onPress={() => setModalSegurancaVisivel(false)}
+                onPress={() => {
+                  if (alterandoSenha) return;
+                  setMensagemSenha(null);
+                  setModalSegurancaVisivel(false);
+                }}
+                disabled={alterandoSenha}
               >
                 <Text style={estilos.textoBotaoCancelar}>Fechar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={estilos.botaoModalSalvar}
-                onPress={() => {
-                  setModalSegurancaVisivel(false);
-                  Alert.alert("Sucesso", "Senha atualizada com sucesso!");
-                }}
+                onPress={() => void handleAlterarSenha()}
+                disabled={alterandoSenha}
               >
-                <Text style={estilos.textoBotaoSalvar}>Atualizar senha</Text>
+                {alterandoSenha ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={estilos.textoBotaoSalvar}>Atualizar senha</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1798,6 +1919,36 @@ const estilos = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#0F172A",
+  },
+  mensagemSenha: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  mensagemSenhaSucesso: {
+    backgroundColor: "#ECFDF5",
+  },
+  mensagemSenhaErro: {
+    backgroundColor: "#FEF2F2",
+  },
+  textoMensagemSenha: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  textoMensagemSenhaSucesso: {
+    color: "#047857",
+  },
+  textoMensagemSenhaErro: {
+    color: "#B91C1C",
+  },
+  interessesVazios: {
+    color: "#64748B",
+    fontSize: 12,
+    fontStyle: "italic",
   },
   labelInput: {
     fontSize: 12,
