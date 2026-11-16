@@ -2,8 +2,7 @@
  * @file index.tsx
  * @description Controlador Principal da Tela Home (Hub Central de Navegação).
  * Gerencia o estado de autenticação e chaveia dinamicamente entre:
- * - Home do Aluno: 100% fiel à especificação oficial IMG-005 (Hero 3D, Categorias Populares,
- *   Cards Verticais de Professores em Destaque com R$/h, Faixa de 4 Benefícios e Seção Continue Aprendendo).
+ * - Home do Aluno: Hero 3D, categorias populares, professores em destaque e benefícios.
  * - Home do Professor: Dashboard operacional com Agenda do Dia, Métricas e Solicitações.
  */
 
@@ -32,6 +31,7 @@ import CardAula from "../../components/CardAula";
 import ResumoProfessor from "../../components/ResumoProfessor";
 import {
   API_URL,
+  apiFetch,
   extrairDadosLista,
   extrairDadosObjeto,
   getApiErrorMessage,
@@ -58,22 +58,27 @@ interface InteresseAssociativo {
 }
 
 interface Aptidao {
-  saber: Saber;
-  precoHora: number;
+  saberNome?: string | null;
+  precoHora?: number | null;
 }
 
 interface ProfessorDestaque {
   id: number;
   nome: string;
-  notaMedia?: number;
-  totalAvaliacoes?: number;
-  fotoUrl?: any;
-  materia?: string;
-  precoHora?: number;
-  tagColor?: string;
-  tagBg?: string;
-  online?: boolean;
-  aptidoes?: Aptidao[];
+  notaMedia: number | null;
+  totalAvaliacoes: number | null;
+  fotoUrl: string | null;
+  materia: string | null;
+  precoHora: number | null;
+}
+
+interface ProfessorDestaqueApi {
+  id: number;
+  nome: string;
+  notaMedia?: number | null;
+  totalAvaliacoes?: number | null;
+  fotoUrl?: string | null;
+  aptidoes?: Aptidao[] | null;
 }
 
 interface AlunoVinculado {
@@ -110,45 +115,6 @@ const VISUAL_CATEGORIAS: Record<
   Idiomas: { icone: "globe", cor: "#334155", bg: "#F8FAFC" },
   Negócios: { icone: "bar-chart-2", cor: "#D97706", bg: "#FEF3C7" },
 };
-
-const PROFESSORES_DESTAQUE_IMG005: ProfessorDestaque[] = [
-  {
-    id: 1,
-    nome: "Prof. Lucas Rocha",
-    materia: "Matemática",
-    notaMedia: 4.9,
-    totalAvaliacoes: 128,
-    precoHora: 40.0,
-    fotoUrl: require("../../assets/images/prof-lucas.png"),
-    tagColor: "#1D4ED8",
-    tagBg: "#EFF6FF",
-    online: true,
-  },
-  {
-    id: 2,
-    nome: "Profa. Ana Clara",
-    materia: "Biologia",
-    notaMedia: 4.8,
-    totalAvaliacoes: 96,
-    precoHora: 45.0,
-    fotoUrl: require("../../assets/images/profa-ana.png"),
-    tagColor: "#047857",
-    tagBg: "#ECFDF5",
-    online: true,
-  },
-  {
-    id: 3,
-    nome: "Prof. Rafael Lima",
-    materia: "Programação",
-    notaMedia: 4.9,
-    totalAvaliacoes: 152,
-    precoHora: 50.0,
-    fotoUrl: require("../../assets/images/prof-rafael.png"),
-    tagColor: "#6D28D9",
-    tagBg: "#F5F3FF",
-    online: true,
-  },
-];
 
 const BENEFICIOS_IMG005 = [
   {
@@ -202,17 +168,19 @@ export default function Index() {
 
 function HomeAluno({ nome }: { nome: string }) {
   const insets = useSafeAreaInsets();
-  const { usuarioId } = useAuth() as any;
-  const [professores, setProfessores] = useState<ProfessorDestaque[]>(
-    PROFESSORES_DESTAQUE_IMG005
-  );
+  const [professores, setProfessores] = useState<ProfessorDestaque[]>([]);
   const [favoritos, setFavoritos] = useState<Record<number, boolean>>({});
-  const [carregandoDados, setCarregandoDados] = useState(false);
+  const [carregandoProfessores, setCarregandoProfessores] = useState(true);
+  const [erroProfessores, setErroProfessores] = useState<string | null>(null);
   const [atualizando, setAtualizando] = useState(false);
   const categoriasScrollRef = useRef<ScrollView>(null);
   const [categoriasTemAnterior, setCategoriasTemAnterior] = useState(false);
   const [categoriasTemProxima, setCategoriasTemProxima] = useState(false);
   const categoriasMedidasRef = useRef({ larguraConteudo: 0, larguraVisivel: 0 });
+  const professoresScrollRef = useRef<ScrollView>(null);
+  const [professoresTemAnterior, setProfessoresTemAnterior] = useState(false);
+  const [professoresTemProxima, setProfessoresTemProxima] = useState(false);
+  const professoresMedidasRef = useRef({ larguraConteudo: 0, larguraVisivel: 0 });
   const [categoriasPopulares, setCategoriasPopulares] = useState<CategoriaPopular[]>([]);
   const [carregandoCategorias, setCarregandoCategorias] = useState(true);
   const [erroCategorias, setErroCategorias] = useState<string | null>(null);
@@ -228,6 +196,20 @@ function HomeAluno({ nome }: { nome: string }) {
       categoriasScrollRef.current?.scrollToEnd({ animated: true });
     } else {
       categoriasScrollRef.current?.scrollTo({ x: 0, animated: true });
+    }
+  };
+
+  const atualizarIndicadoresProfessores = (offsetX = 0) => {
+    const { larguraConteudo, larguraVisivel } = professoresMedidasRef.current;
+    setProfessoresTemAnterior(offsetX > 2);
+    setProfessoresTemProxima(offsetX + larguraVisivel < larguraConteudo - 2);
+  };
+
+  const moverProfessores = () => {
+    if (professoresTemProxima) {
+      professoresScrollRef.current?.scrollToEnd({ animated: true });
+    } else {
+      professoresScrollRef.current?.scrollTo({ x: 0, animated: true });
     }
   };
 
@@ -254,78 +236,78 @@ function HomeAluno({ nome }: { nome: string }) {
     }, [carregarCategoriasPopulares])
   );
 
-  const buscarDadosAluno = useCallback(async () => {
-    const isDemo =
-      typeof window !== "undefined" &&
-      (window.location.search.includes("demo=true") ||
-        window.location.search.includes("preview=true") ||
-        window.location.protocol === "https:");
-
-    // Em modo demo ou ambiente de visualização, os dados oficiais da IMG-005 são imediatos
-    if (isDemo || !usuarioId) {
-      setProfessores(PROFESSORES_DESTAQUE_IMG005);
-      setCarregandoDados(false);
-      setAtualizando(false);
-      return;
-    }
-
+  const carregarProfessores = useCallback(async () => {
+    setCarregandoProfessores(true);
+    setErroProfessores(null);
+    setProfessoresTemAnterior(false);
+    setProfessoresTemProxima(false);
+    professoresScrollRef.current?.scrollTo({ x: 0, animated: false });
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1200);
-      const resProfs = await fetch(
-        `${API_URL}/api/usuarios/professores/destaque/${usuarioId}`,
-        { signal: controller.signal }
+      const resposta = await apiFetch(
+        `${API_URL}/api/v1/usuarios/professores/busca?modalidade=TODAS`
       );
-      clearTimeout(timeoutId);
+      const registros = extrairDadosLista<ProfessorDestaqueApi>(await resposta.json());
+      const professoresReais = registros
+        .filter((professor) =>
+          Number.isInteger(professor.id) &&
+          professor.id > 0 &&
+          typeof professor.nome === "string" &&
+          professor.nome.trim().length > 0
+        )
+        .map((professor): ProfessorDestaque => {
+          const aptidoes = (professor.aptidoes ?? []).filter(
+            (aptidao): aptidao is Aptidao =>
+              typeof aptidao?.saberNome === "string" &&
+              aptidao.saberNome.trim().length > 0
+          );
+          const aptidaoPrincipal = aptidoes[0];
+          const precos = aptidoes
+            .map((aptidao) => aptidao.precoHora)
+            .filter((preco): preco is number =>
+              typeof preco === "number" && Number.isFinite(preco) && preco >= 0
+            );
 
-      if (resProfs.ok) {
-        const payloadProfs: unknown = await resProfs.json();
-        const dadosProfs: any[] = extrairDadosLista<any>(payloadProfs);
-        if (dadosProfs && dadosProfs.length > 0) {
-          const profsMapeados: ProfessorDestaque[] = dadosProfs.map((p, idx) => ({
-            id: p.id,
-            nome: p.nome,
-            notaMedia: p.notaMedia || 4.9,
-            totalAvaliacoes: p.totalAvaliacoes || 100 + idx * 15,
-            materia:
-              p.aptidoes && p.aptidoes.length > 0
-                ? p.aptidoes[0].saber.nome
-                : "Matemática",
-            precoHora:
-              p.aptidoes && p.aptidoes.length > 0
-                ? p.aptidoes[0].precoHora
-                : 40.0,
-            fotoUrl: p.fotoUrl
-              ? { uri: p.fotoUrl }
-              : PROFESSORES_DESTAQUE_IMG005[idx % PROFESSORES_DESTAQUE_IMG005.length].fotoUrl,
-            tagColor:
-              idx % 3 === 0 ? "#1D4ED8" : idx % 3 === 1 ? "#047857" : "#6D28D9",
-            tagBg:
-              idx % 3 === 0 ? "#EFF6FF" : idx % 3 === 1 ? "#ECFDF5" : "#F5F3FF",
-            online: true,
-          }));
-          setProfessores(profsMapeados);
-          return;
-        }
-      }
-      setProfessores(PROFESSORES_DESTAQUE_IMG005);
-    } catch {
-      setProfessores(PROFESSORES_DESTAQUE_IMG005);
+          return {
+            id: professor.id,
+            nome: professor.nome.trim(),
+            notaMedia:
+              typeof professor.notaMedia === "number" &&
+              Number.isFinite(professor.notaMedia)
+                ? professor.notaMedia
+                : null,
+            totalAvaliacoes:
+              typeof professor.totalAvaliacoes === "number" &&
+              Number.isFinite(professor.totalAvaliacoes)
+                ? professor.totalAvaliacoes
+                : null,
+            fotoUrl:
+              typeof professor.fotoUrl === "string" && professor.fotoUrl.trim()
+                ? professor.fotoUrl.trim()
+                : null,
+            materia: aptidaoPrincipal?.saberNome?.trim() ?? null,
+            precoHora: precos.length > 0 ? Math.min(...precos) : null,
+          };
+        })
+        .slice(0, 10);
+      setProfessores(professoresReais);
+    } catch (error) {
+      setProfessores([]);
+      setErroProfessores(getApiErrorMessage(error));
     } finally {
-      setCarregandoDados(false);
-      setAtualizando(false);
+      setCarregandoProfessores(false);
     }
-  }, [usuarioId]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      buscarDadosAluno();
-    }, [buscarDadosAluno])
+      void carregarProfessores();
+    }, [carregarProfessores])
   );
 
-  const aoAtualizar = () => {
+  const aoAtualizar = async () => {
     setAtualizando(true);
-    buscarDadosAluno();
+    await Promise.all([carregarCategoriasPopulares(), carregarProfessores()]);
+    setAtualizando(false);
   };
 
   const alternarFavorito = (id: number) => {
@@ -580,107 +562,174 @@ function HomeAluno({ nome }: { nome: string }) {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={estilos.carrosselProfessoresContainer}
-        >
-          {professores.map((prof) => {
-            const isFav = !!favoritos[prof.id];
-            const precoFormatado = (prof.precoHora || 40.0)
-              .toFixed(2)
-              .replace(".", ",");
-            const notaFormatada = (prof.notaMedia || 4.9)
-              .toFixed(1)
-              .replace(".", ",");
+        {carregandoProfessores ? (
+          <ActivityIndicator
+            size="small"
+            color="#FF5A1F"
+            style={estilos.estadoProfessores}
+            accessibilityLabel="Carregando professores em destaque"
+          />
+        ) : erroProfessores ? (
+          <TouchableOpacity
+            style={estilos.estadoProfessores}
+            onPress={() => void carregarProfessores()}
+            accessibilityRole="button"
+          >
+            <Text style={estilos.mensagemProfessores}>
+              Não foi possível carregar os professores. Toque para tentar novamente.
+            </Text>
+          </TouchableOpacity>
+        ) : professores.length === 0 ? (
+          <Text style={estilos.mensagemProfessores}>
+            Ainda não há professores cadastrados para exibir.
+          </Text>
+        ) : (
+          <View
+            style={estilos.areaCarrosselProfessores}
+            onLayout={(event) => {
+              professoresMedidasRef.current.larguraVisivel = event.nativeEvent.layout.width;
+              atualizarIndicadoresProfessores();
+            }}
+          >
+            <ScrollView
+              ref={professoresScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled
+              directionalLockEnabled
+              contentContainerStyle={estilos.carrosselProfessoresContainer}
+              accessibilityLabel="Professores em destaque. Deslize horizontalmente para ver até 10 professores."
+              onContentSizeChange={(width) => {
+                professoresMedidasRef.current.larguraConteudo = width;
+                atualizarIndicadoresProfessores();
+              }}
+              onScroll={(event) =>
+                atualizarIndicadoresProfessores(event.nativeEvent.contentOffset.x)
+              }
+              scrollEventThrottle={16}
+            >
+              {professores.map((prof) => {
+                const isFav = !!favoritos[prof.id];
+                const precoFormatado =
+                  prof.precoHora !== null
+                    ? prof.precoHora.toFixed(2).replace(".", ",")
+                    : null;
+                const notaFormatada =
+                  prof.notaMedia !== null
+                    ? prof.notaMedia.toFixed(1).replace(".", ",")
+                    : null;
 
-            return (
-              <TouchableOpacity
-                key={prof.id}
-                activeOpacity={0.9}
-                onPress={() => router.push(`/professor/${prof.id}`)}
-                style={estilos.cardProfessorVertical}
-              >
-                {/* Linha Topo: Status Online + Botão Favorito */}
-                <View style={estilos.cardProfTopoLinha}>
-                  <View style={estilos.badgeOnline}>
-                    <View style={estilos.dotOnline} />
-                    <Text style={estilos.textoOnline}>Online</Text>
-                  </View>
-
+                return (
                   <TouchableOpacity
-                    onPress={() => alternarFavorito(prof.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={estilos.botaoFavorito}
+                    key={prof.id}
+                    activeOpacity={0.9}
+                    onPress={() => router.push(`/professor/${prof.id}`)}
+                    style={estilos.cardProfessorVertical}
                   >
-                    <Ionicons
-                      name={isFav ? "heart" : "heart-outline"}
-                      size={18}
-                      color={isFav ? "#EF4444" : "#94A3B8"}
-                    />
+                    <View style={estilos.cardProfTopoLinha}>
+                      <TouchableOpacity
+                        onPress={() => alternarFavorito(prof.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={estilos.botaoFavorito}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          isFav ? `Remover ${prof.nome} dos favoritos` : `Favoritar ${prof.nome}`
+                        }
+                      >
+                        <Ionicons
+                          name={isFav ? "heart" : "heart-outline"}
+                          size={18}
+                          color={isFav ? "#EF4444" : "#94A3B8"}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={estilos.avatarProfWrapper}>
+                      {prof.fotoUrl ? (
+                        <Image
+                          source={{ uri: prof.fotoUrl }}
+                          style={estilos.avatarProfFoto}
+                        />
+                      ) : (
+                        <View style={estilos.avatarProfSemFoto}>
+                          <Feather name="user" size={30} color="#94A3B8" />
+                        </View>
+                      )}
+                    </View>
+
+                    <Text style={estilos.cardProfNome} numberOfLines={1}>
+                      {prof.nome}
+                    </Text>
+                    <Text style={estilos.cardProfMateria} numberOfLines={1}>
+                      {prof.materia ?? "Matéria não informada"}
+                    </Text>
+
+                    <View style={estilos.cardProfAvaliacaoLinha}>
+                      {notaFormatada ? (
+                        <>
+                          <Text style={estilos.estrelaIcone}>★</Text>
+                          <Text style={estilos.notaValor}>{notaFormatada}</Text>
+                        </>
+                      ) : (
+                        <Text style={estilos.totalAvaliacoes}>Sem nota</Text>
+                      )}
+                      <Text style={estilos.totalAvaliacoes}>
+                        {prof.totalAvaliacoes !== null
+                          ? `(${prof.totalAvaliacoes} avaliações)`
+                          : "(avaliações indisponíveis)"}
+                      </Text>
+                    </View>
+
+                    <View style={estilos.cardProfPrecoArea}>
+                      {precoFormatado ? (
+                        <>
+                          <Text style={estilos.textoAPartir}>A partir de</Text>
+                          <Text style={estilos.textoPrecoHora}>
+                            R$ {precoFormatado}/h
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={estilos.totalAvaliacoes}>Preço não informado</Text>
+                      )}
+                    </View>
+
+                    {prof.materia && (
+                      <View style={estilos.tagDisciplinaPill}>
+                        <Text
+                          style={estilos.tagDisciplinaTexto}
+                          numberOfLines={1}
+                        >
+                          {prof.materia}
+                        </Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
-                </View>
-
-                {/* Avatar Circular */}
-                <View style={estilos.avatarProfWrapper}>
-                  <Image
-                    source={
-                      typeof prof.fotoUrl === "number"
-                        ? prof.fotoUrl
-                        : typeof prof.fotoUrl === "object" && prof.fotoUrl?.uri
-                        ? prof.fotoUrl
-                        : { uri: `https://i.pravatar.cc/150?u=${prof.id}` }
-                    }
-                    style={estilos.avatarProfFoto}
-                  />
-                </View>
-
-                {/* Informações Centrais */}
-                <Text style={estilos.cardProfNome} numberOfLines={1}>
-                  {prof.nome}
-                </Text>
-                <Text style={estilos.cardProfMateria} numberOfLines={1}>
-                  {prof.materia || "Matemática"}
-                </Text>
-
-                {/* Avaliação com Estrela */}
-                <View style={estilos.cardProfAvaliacaoLinha}>
-                  <Text style={estilos.estrelaIcone}>★</Text>
-                  <Text style={estilos.notaValor}>{notaFormatada}</Text>
-                  <Text style={estilos.totalAvaliacoes}>
-                    ({prof.totalAvaliacoes || 120} avaliações)
-                  </Text>
-                </View>
-
-                {/* Preço por Hora */}
-                <View style={estilos.cardProfPrecoArea}>
-                  <Text style={estilos.textoAPartir}>A partir de</Text>
-                  <Text style={estilos.textoPrecoHora}>
-                    R$ {precoFormatado}/h
-                  </Text>
-                </View>
-
-                {/* Chip de Disciplina */}
-                <View
-                  style={[
-                    estilos.tagDisciplinaPill,
-                    { backgroundColor: prof.tagBg || "#EFF6FF" },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      estilos.tagDisciplinaTexto,
-                      { color: prof.tagColor || "#1D4ED8" },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {prof.materia || "Matemática"}
-                  </Text>
-                </View>
+                );
+              })}
+            </ScrollView>
+            {(professoresTemAnterior || professoresTemProxima) && (
+              <TouchableOpacity
+                style={[
+                  estilos.setaCarrosselCategorias,
+                  estilos.setaCarrosselProfessores,
+                ]}
+                onPress={moverProfessores}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  professoresTemProxima
+                    ? "Mostrar mais professores"
+                    : "Voltar aos primeiros professores"
+                }
+              >
+                <Feather
+                  name={professoresTemProxima ? "chevron-right" : "chevron-left"}
+                  size={20}
+                  color="#475569"
+                />
               </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+            )}
+          </View>
+        )}
 
         {/* ============================================================== */}
         {/* 6. FAIXA INSTITUCIONAL COM QUATRO BENEFÍCIOS (IMG-005)         */}
@@ -1217,6 +1266,17 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
   },
+  estadoProfessores: {
+    minHeight: 220,
+    justifyContent: "center",
+  },
+  mensagemProfessores: {
+    minHeight: 54,
+    paddingVertical: 16,
+    color: "#64748B",
+    fontSize: 13,
+    textAlign: "center",
+  },
   areaCarrosselCategorias: {
     position: "relative",
   },
@@ -1279,9 +1339,18 @@ const estilos = StyleSheet.create({
 
   // 5. Professores em Destaque (Cards Verticais)
   carrosselProfessoresContainer: {
-    paddingRight: 10,
+    paddingLeft: 10,
+    paddingRight: 44,
     gap: 12,
     paddingBottom: 24,
+  },
+  areaCarrosselProfessores: {
+    position: "relative",
+  },
+  setaCarrosselProfessores: {
+    top: "50%",
+    right: 4,
+    marginTop: -15,
   },
   cardProfessorVertical: {
     width: 158,
@@ -1304,22 +1373,6 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  badgeOnline: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  dotOnline: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: "#10B981",
-  },
-  textoOnline: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#059669",
-  },
   botaoFavorito: {
     padding: 2,
   },
@@ -1336,6 +1389,11 @@ const estilos = StyleSheet.create({
   avatarProfFoto: {
     width: "100%",
     height: "100%",
+  },
+  avatarProfSemFoto: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   cardProfNome: {
     fontSize: 13,
@@ -1441,49 +1499,6 @@ const estilos = StyleSheet.create({
     width: 1,
     height: 40,
     backgroundColor: "#F1F5F9",
-  },
-
-  // 7. Seção Continue Aprendendo
-  carrosselContinueContainer: {
-    paddingRight: 10,
-    gap: 10,
-    paddingBottom: 20,
-  },
-  cardContinueItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 10,
-    paddingRight: 14,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  iconeContinueWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  infoContinueTextos: {
-    justifyContent: "center",
-  },
-  tituloContinueMateria: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  subtituloContinueProf: {
-    fontSize: 11,
-    color: "#64748B",
-    marginTop: 1,
   },
 
   // Subvisão do Professor
