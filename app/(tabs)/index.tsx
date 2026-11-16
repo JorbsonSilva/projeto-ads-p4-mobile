@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Importações de Componentes Globais e Contexto de Sessão
 import BotaoRapido from "../../components/BotaoRapido";
 import CardAula from "../../components/CardAula";
+import AvatarPerfil from "../../components/AvatarPerfil";
 import ResumoProfessor from "../../components/ResumoProfessor";
 import {
   API_URL,
@@ -645,16 +646,11 @@ function HomeAluno({ nome }: { nome: string }) {
                     </View>
 
                     <View style={estilos.avatarProfWrapper}>
-                      {prof.fotoUrl ? (
-                        <Image
-                          source={{ uri: prof.fotoUrl }}
-                          style={estilos.avatarProfFoto}
-                        />
-                      ) : (
-                        <View style={estilos.avatarProfSemFoto}>
-                          <Feather name="user" size={30} color="#94A3B8" />
-                        </View>
-                      )}
+                      <AvatarPerfil
+                        nome={prof.nome}
+                        fotoUrl={prof.fotoUrl}
+                        tamanho={66}
+                      />
                     </View>
 
                     <Text style={estilos.cardProfNome} numberOfLines={1}>
@@ -1385,15 +1381,6 @@ const estilos = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1.5,
     borderColor: "#F8FAFC",
-  },
-  avatarProfFoto: {
-    width: "100%",
-    height: "100%",
-  },
-  avatarProfSemFoto: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
   },
   cardProfNome: {
     fontSize: 13,
