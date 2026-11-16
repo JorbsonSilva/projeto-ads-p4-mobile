@@ -20,6 +20,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -40,6 +41,10 @@ import {
   salvarPerfilProfessor,
   alterarSenha,
 } from "../../services/perfilService";
+import {
+  obterPerfilProfessor as obterPerfilPublicoProfessor,
+  PerfilProfessorPublico,
+} from "../../services/professorService";
 
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
@@ -61,6 +66,9 @@ export default function PerfilScreen() {
   });
   const [carregando, setCarregando] = useState<boolean>(true);
   const [atualizando, setAtualizando] = useState<boolean>(false);
+  const [avaliacoesProfessor, setAvaliacoesProfessor] = useState<PerfilProfessorPublico | null>(null);
+  const [carregandoAvaliacoes, setCarregandoAvaliacoes] = useState<boolean>(false);
+  const [erroAvaliacoes, setErroAvaliacoes] = useState<string | null>(null);
 
   // Controle de visibilidade de saldo do resumo do professor
   const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
@@ -68,6 +76,7 @@ export default function PerfilScreen() {
   // Modais de Ação
   const [modalEditarAluno, setModalEditarAluno] = useState<boolean>(false);
   const [modalEditarProf, setModalEditarProf] = useState<boolean>(false);
+  const [modalEditarTarifasProf, setModalEditarTarifasProf] = useState<boolean>(false);
   const [modalLogoutVisivel, setModalLogoutVisivel] = useState<boolean>(false);
   const [modalSegurancaVisivel, setModalSegurancaVisivel] = useState<boolean>(false);
 
@@ -93,7 +102,7 @@ export default function PerfilScreen() {
   const [formProfBio, setFormProfBio] = useState<string>("");
   const [formProfPrecoOnline, setFormProfPrecoOnline] = useState<string>("");
   const [formProfPrecoPresencial, setFormProfPrecoPresencial] = useState<string>("");
-  const [formProfPix, setFormProfPix] = useState<string>("");
+  const [formProfPresencial, setFormProfPresencial] = useState<boolean>(false);
 
   const [salvandoEdicao, setSalvandoEdicao] = useState<boolean>(false);
   const [trocandoPerfil, setTrocandoPerfil] = useState<boolean>(false);
@@ -114,7 +123,17 @@ export default function PerfilScreen() {
         setFormProfBio(res.dados.bio);
         setFormProfPrecoOnline(String(res.dados.configuracoesEnsino.valorHoraOnline || ""));
         setFormProfPrecoPresencial(String(res.dados.configuracoesEnsino.valorHoraPresencial || ""));
-        setFormProfPix(res.dados.configuracoesEnsino.chavePix);
+        setFormProfPresencial(res.dados.configuracoesEnsino.permitePresencial);
+        setCarregandoAvaliacoes(true);
+        setErroAvaliacoes(null);
+        try {
+          setAvaliacoesProfessor(await obterPerfilPublicoProfessor(id));
+        } catch (error) {
+          setAvaliacoesProfessor(null);
+          setErroAvaliacoes(getApiErrorMessage(error));
+        } finally {
+          setCarregandoAvaliacoes(false);
+        }
       } else {
         const res: ResultadoPerfilAluno = await obterPerfilAluno(id);
         setPerfilAluno(res.dados);
@@ -182,6 +201,33 @@ export default function PerfilScreen() {
   const handleSalvarProfessor = async () => {
     setSalvandoEdicao(true);
     try {
+      await salvarPerfilProfessor(perfilProfessor.id, {
+        nome: formProfNome,
+        telefone: formProfTelefone,
+        cidade: formProfCidade,
+        bio: formProfBio,
+        titulacao: formProfTitulacao,
+      });
+
+      setPerfilProfessor((prev) => ({
+        ...prev,
+        nome: formProfNome,
+        telefone: formProfTelefone,
+        cidade: formProfCidade,
+        bio: formProfBio,
+        titulacao: formProfTitulacao,
+      }));
+      setModalEditarProf(false);
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
+  const handleSalvarTarifasProfessor = async () => {
+    setSalvandoEdicao(true);
+    try {
       const precoOnlineNum = formProfPrecoOnline.trim() ? Number(formProfPrecoOnline.replace(",", ".")) : undefined;
       const precoPresencialNum = formProfPrecoPresencial.trim() ? Number(formProfPrecoPresencial.replace(",", ".")) : undefined;
       if (
@@ -193,34 +239,24 @@ export default function PerfilScreen() {
       }
 
       await salvarPerfilProfessor(perfilProfessor.id, {
-        nome: formProfNome,
-        telefone: formProfTelefone,
-        cidade: formProfCidade,
-        bio: formProfBio,
-        titulacao: formProfTitulacao,
         configuracoesEnsino: {
           ...perfilProfessor.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
           valorHoraPresencial: precoPresencialNum,
-          chavePix: formProfPix,
+          permitePresencial: formProfPresencial,
         },
       });
 
       setPerfilProfessor((prev) => ({
         ...prev,
-        nome: formProfNome,
-        telefone: formProfTelefone,
-        cidade: formProfCidade,
-        bio: formProfBio,
-        titulacao: formProfTitulacao,
         configuracoesEnsino: {
           ...prev.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
           valorHoraPresencial: precoPresencialNum,
-          chavePix: formProfPix,
+          permitePresencial: formProfPresencial,
         },
       }));
-      setModalEditarProf(false);
+      setModalEditarTarifasProf(false);
     } catch (error) {
       Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
     } finally {
@@ -723,29 +759,40 @@ export default function PerfilScreen() {
               </View>
             </View>
 
-            {/* SEÇÃO APRESENTAÇÃO DOCENTE & DISCIPLINAS */}
+            {/* PERFIL PROFISSIONAL E DISCIPLINAS */}
             <View style={estilos.secaoContainer}>
-              <Text style={estilos.secaoTitulo}>Apresentação profissional</Text>
+              <Text style={estilos.secaoTitulo}>Perfil profissional</Text>
               <View style={estilos.cardSobre}>
-                <Text style={estilos.textoBio}>{perfilProfessor.bio}</Text>
+                <Text style={estilos.subtituloInteresses}>Titulação acadêmica</Text>
+                <Text style={estilos.textoBio}>
+                  {perfilProfessor.titulacao || "Não informada"}
+                </Text>
                 <View style={estilos.divisorSuave} />
-                <Text style={estilos.subtituloInteresses}>Disciplinas lecionadas:</Text>
+                <Text style={estilos.subtituloInteresses}>Apresentação e metodologia</Text>
+                <Text style={estilos.textoBio}>
+                  {perfilProfessor.bio || "Nenhuma apresentação profissional cadastrada."}
+                </Text>
+                <View style={estilos.divisorSuave} />
+                <Text style={estilos.subtituloInteresses}>Disciplinas lecionadas</Text>
                 <View style={estilos.chipsContainer}>
-                  {perfilProfessor.saberes.map((mat: { id: number; nome: string; nivel: string }, idx: number) => (
-                    <View key={idx} style={estilos.chipMateriaDocente}>
-                      <FontAwesome5 name="book-reader" size={10} color="#047857" style={{ marginRight: 6 }} />
-                      <Text style={estilos.textoChipMateriaDocente}>{mat.nome}</Text>
-                    </View>
-                  ))}
+                  {perfilProfessor.saberes.length > 0 ? (
+                    perfilProfessor.saberes.map((mat: { id: number; nome: string; nivel: string }) => (
+                      <View key={mat.id} style={estilos.chipMateriaDocente}>
+                        <FontAwesome5 name="book-reader" size={10} color="#047857" style={{ marginRight: 6 }} />
+                        <Text style={estilos.textoChipMateriaDocente}>{mat.nome}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={estilos.textoBio}>Nenhuma disciplina cadastrada.</Text>
+                  )}
                 </View>
               </View>
             </View>
 
-            {/* OPÇÕES EXCLUSIVAS DE ENSINO & CONFIGURAÇÕES (IMG-017) */}
+            {/* EDIÇÃO E DISCIPLINAS DO PERFIL PROFISSIONAL */}
             <View style={estilos.secaoContainer}>
-              <Text style={estilos.secaoTitulo}>Gestão de ensino & Conta</Text>
+              <Text style={estilos.secaoTitulo}>Dados profissionais</Text>
               <View style={estilos.menuContaContainer}>
-                {/* 1. Perfil Profissional */}
                 <TouchableOpacity
                   style={estilos.menuItem}
                   onPress={() => setModalEditarProf(true)}
@@ -755,35 +802,63 @@ export default function PerfilScreen() {
                     <Feather name="award" size={17} color="#059669" />
                   </View>
                   <View style={estilos.infoMenuItem}>
-                    <Text style={estilos.tituloMenuItem}>Perfil profissional</Text>
-                    <Text style={estilos.subtituloMenuItem}>Titulação, biografia e foto docente</Text>
+                    <Text style={estilos.tituloMenuItem}>Editar informações profissionais</Text>
+                    <Text style={estilos.subtituloMenuItem}>Nome, contato, titulação e apresentação</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
                 </TouchableOpacity>
-
                 <View style={estilos.divisorMenu} />
-
-                {/* 2. Formatos e Tarifas */}
                 <TouchableOpacity
                   style={estilos.menuItem}
-                  onPress={() => setModalEditarProf(true)}
+                  onPress={() => router.push({
+                    pathname: "/explorar-disciplinas",
+                    params: { modo: "disciplinas-professor" },
+                  })}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#EFF6FF" }]}>
+                    <Feather name="book-open" size={17} color="#2563EB" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Disciplinas lecionadas</Text>
+                    <Text style={estilos.subtituloMenuItem}>
+                      {perfilProfessor.saberes.length > 0
+                        ? `${perfilProfessor.saberes.length} disciplina(s) selecionada(s)`
+                        : "Selecione as matérias que você ensina"}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* EDIÇÃO DE FORMATOS E TARIFAS */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Formatos de aula e tarifas</Text>
+              <View style={estilos.menuContaContainer}>
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={() => setModalEditarTarifasProf(true)}
                   activeOpacity={0.7}
                 >
                   <View style={[estilos.iconeMenuWrap, { backgroundColor: "#FFFBEB" }]}>
                     <Feather name="tag" size={17} color="#D97706" />
                   </View>
                   <View style={estilos.infoMenuItem}>
-                    <Text style={estilos.tituloMenuItem}>Formatos de aula e tarifas</Text>
+                    <Text style={estilos.tituloMenuItem}>Configurar aulas e valores</Text>
                     <Text style={estilos.subtituloMenuItem}>
-                      Online: {perfilProfessor.configuracoesEnsino.valorHoraOnline !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h` : "Não informado"} • Presencial: {perfilProfessor.configuracoesEnsino.valorHoraPresencial !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h` : "Não informado"}
+                      Online: {perfilProfessor.configuracoesEnsino.valorHoraOnline !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h` : "Não informado"} • Presencial: {perfilProfessor.configuracoesEnsino.permitePresencial ? (perfilProfessor.configuracoesEnsino.valorHoraPresencial !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h` : "valor não informado") : "não oferecido"}
                     </Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
                 </TouchableOpacity>
+              </View>
+            </View>
 
-                <View style={estilos.divisorMenu} />
-
-                {/* 3. Métodos de Pagamento e Saque */}
+            {/* CONTA */}
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Conta</Text>
+              <View style={estilos.menuContaContainer}>
                 <TouchableOpacity
                   style={estilos.menuItem}
                   onPress={() => router.push("/saque" as any)}
@@ -803,7 +878,6 @@ export default function PerfilScreen() {
 
                 <View style={estilos.divisorMenu} />
 
-                {/* 4. Notificações */}
                 <TouchableOpacity
                   style={estilos.menuItem}
                   onPress={() => router.push("/notificacoes" as any)}
@@ -818,10 +892,8 @@ export default function PerfilScreen() {
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
                 </TouchableOpacity>
-
                 <View style={estilos.divisorMenu} />
 
-                {/* 5. Segurança */}
                 <TouchableOpacity
                   style={estilos.menuItem}
                   onPress={() => setModalSegurancaVisivel(true)}
@@ -844,27 +916,60 @@ export default function PerfilScreen() {
               <View style={estilos.secaoHeaderLinha}>
                 <Text style={estilos.secaoTitulo}>Avaliações dos alunos</Text>
                 <View style={estilos.badgeMediaAvaliacao}>
-                  <Ionicons name="star" size={12} color="#F59E0B" />
-                  <Text style={estilos.textoMediaAvaliacao}>5.0 (38)</Text>
+                  {avaliacoesProfessor && avaliacoesProfessor.totalAvaliacoes > 0 && !erroAvaliacoes ? (
+                    <Ionicons name="star" size={12} color="#F59E0B" />
+                  ) : null}
+                  <Text style={estilos.textoMediaAvaliacao}>
+                    {carregandoAvaliacoes
+                      ? "Carregando..."
+                      : erroAvaliacoes
+                        ? "Indisponível"
+                        : avaliacoesProfessor && avaliacoesProfessor.totalAvaliacoes > 0
+                          ? `${avaliacoesProfessor.notaMedia?.toFixed(1) ?? "Sem nota"} (${avaliacoesProfessor.totalAvaliacoes} avaliações)`
+                          : "Sem avaliações"}
+                  </Text>
                 </View>
               </View>
 
               <View style={estilos.listaAvaliacoes}>
-                <Text style={{ color: '#64748B', fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>
-                  Nenhuma avaliação disponível no momento.
-                </Text>
+                {carregandoAvaliacoes ? (
+                  <Text style={{ color: "#64748B", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+                    Carregando avaliações dos alunos...
+                  </Text>
+                ) : erroAvaliacoes ? (
+                  <Text style={{ color: "#B91C1C", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+                    Não foi possível carregar as avaliações: {erroAvaliacoes}
+                  </Text>
+                ) : !avaliacoesProfessor || avaliacoesProfessor.totalAvaliacoes === 0 ? (
+                  <Text style={{ color: "#64748B", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+                    Nenhuma avaliação registrada ainda.
+                  </Text>
+                ) : avaliacoesProfessor.avaliacoesRecentes.length === 0 ? (
+                  <Text style={{ color: "#64748B", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+                    Existem {avaliacoesProfessor.totalAvaliacoes} avaliação(ões), mas nenhuma possui comentário.
+                  </Text>
+                ) : (
+                  avaliacoesProfessor.avaliacoesRecentes.map((avaliacao) => (
+                    <View key={avaliacao.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#E2E8F0" }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                        <Text style={{ color: "#0F172A", fontSize: 14, fontWeight: "600" }}>
+                          {avaliacao.alunoNome}
+                        </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Ionicons name="star" size={12} color="#F59E0B" />
+                          <Text style={{ color: "#475569", fontSize: 12 }}>{avaliacao.nota}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ color: "#475569", fontSize: 13 }}>{avaliacao.comentario}</Text>
+                      {avaliacao.data ? (
+                        <Text style={{ color: "#94A3B8", fontSize: 11, marginTop: 6 }}>{avaliacao.data}</Text>
+                      ) : null}
+                    </View>
+                  ))
+                )}
               </View>
             </View>
 
-            {/* BOTÃO PRIMÁRIO PROFESSOR */}
-            <TouchableOpacity
-              style={[estilos.botaoEditarPerfilLaranja, { backgroundColor: "#FF5A1F" }]}
-              onPress={() => setModalEditarProf(true)}
-              activeOpacity={0.85}
-            >
-              <Feather name="edit-3" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={estilos.textoBotaoEditarPerfil}>Editar perfil profissional</Text>
-            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -947,120 +1052,148 @@ export default function PerfilScreen() {
         </View>
       </Modal>
 
-      {/* ============================================================== */}
-      {/* MODAL 2: EDITAR PERFIL DO PROFESSOR (ORI-018)                   */}
-      {/* ============================================================== */}
-      <Modal visible={modalEditarProf} transparent animationType="slide">
+      {/* EDIÇÃO DO PERFIL PROFISSIONAL OU DAS AULAS E TARIFAS */}
+      <Modal visible={modalEditarProf || modalEditarTarifasProf} transparent animationType="slide">
         <View style={estilos.modalOverlay}>
           <View style={estilos.modalCardEdicao}>
             <View style={estilos.modalHeaderLinha}>
-              <Text style={estilos.modalTitulo}>Editar Perfil Docente</Text>
-              <TouchableOpacity onPress={() => setModalEditarProf(false)}>
+              <Text style={estilos.modalTitulo}>
+                {modalEditarProf ? "Editar perfil profissional" : "Formatos de aula e tarifas"}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalEditarProf(false);
+                  setModalEditarTarifasProf(false);
+                }}
+              >
                 <Feather name="x" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-              <Text style={estilos.labelInput}>Nome Completo</Text>
-              <TextInput
-                style={estilos.inputFormulario}
-                value={formProfNome}
-                onChangeText={setFormProfNome}
-                placeholder="Ex: Prof. Carlos Mendes"
-                placeholderTextColor="#94A3B8"
-              />
-
-              <Text style={estilos.labelInput}>Titulação Acadêmica</Text>
-              <TextInput
-                style={estilos.inputFormulario}
-                value={formProfTitulacao}
-                onChangeText={setFormProfTitulacao}
-                placeholder="Mestre em Ciência da Computação • UFCG"
-                placeholderTextColor="#94A3B8"
-              />
-
-              <Text style={estilos.labelInput}>Telefone / WhatsApp</Text>
-              <TextInput
-                style={estilos.inputFormulario}
-                value={formProfTelefone}
-                onChangeText={setFormProfTelefone}
-                placeholder="(83) 99123-4567"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-              />
-
-              <Text style={estilos.labelInput}>Cidade</Text>
-              <TextInput
-                style={estilos.inputFormulario}
-                value={formProfCidade}
-                onChangeText={setFormProfCidade}
-                placeholder="Campina Grande"
-                placeholderTextColor="#94A3B8"
-              />
-
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={estilos.labelInput}>Preço Online (R$/h)</Text>
+              {modalEditarProf ? (
+                <>
+                  <Text style={estilos.labelInput}>Nome completo</Text>
                   <TextInput
                     style={estilos.inputFormulario}
-                    value={formProfPrecoOnline}
-                    onChangeText={setFormProfPrecoOnline}
-                    placeholder="60.00"
+                    value={formProfNome}
+                    onChangeText={setFormProfNome}
+                    placeholder="Ex: Prof. Carlos Mendes"
                     placeholderTextColor="#94A3B8"
-                    keyboardType="numeric"
                   />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={estilos.labelInput}>Preço Presencial (R$/h)</Text>
+
+                  <Text style={estilos.labelInput}>Titulação acadêmica</Text>
                   <TextInput
                     style={estilos.inputFormulario}
-                    value={formProfPrecoPresencial}
-                    onChangeText={setFormProfPrecoPresencial}
-                    placeholder="80.00"
+                    value={formProfTitulacao}
+                    onChangeText={setFormProfTitulacao}
+                    placeholder="Mestre em Ciência da Computação • UFCG"
                     placeholderTextColor="#94A3B8"
-                    keyboardType="numeric"
                   />
-                </View>
-              </View>
 
-              <Text style={estilos.labelInput}>Chave PIX de Recebimento</Text>
-              <TextInput
-                style={estilos.inputFormulario}
-                value={formProfPix}
-                onChangeText={setFormProfPix}
-                placeholder="carlos.mendes@orienta.edu.br"
-                placeholderTextColor="#94A3B8"
-              />
+                  <Text style={estilos.labelInput}>Telefone / WhatsApp</Text>
+                  <TextInput
+                    style={estilos.inputFormulario}
+                    value={formProfTelefone}
+                    onChangeText={setFormProfTelefone}
+                    placeholder="(83) 99123-4567"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="phone-pad"
+                  />
 
-              <Text style={estilos.labelInput}>Biografia e Metodologia</Text>
-              <TextInput
-                style={[estilos.inputFormulario, { height: 90, textAlignVertical: "top" }]}
-                value={formProfBio}
-                onChangeText={setFormProfBio}
-                placeholder="Descreva sua experiência acadêmica e didática..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-              />
+                  <Text style={estilos.labelInput}>Cidade</Text>
+                  <TextInput
+                    style={estilos.inputFormulario}
+                    value={formProfCidade}
+                    onChangeText={setFormProfCidade}
+                    placeholder="Campina Grande"
+                    placeholderTextColor="#94A3B8"
+                  />
+
+                  <Text style={estilos.labelInput}>Biografia e metodologia</Text>
+                  <TextInput
+                    style={[estilos.inputFormulario, { height: 90, textAlignVertical: "top" }]}
+                    value={formProfBio}
+                    onChangeText={setFormProfBio}
+                    placeholder="Descreva sua experiência acadêmica e didática..."
+                    placeholderTextColor="#94A3B8"
+                    multiline
+                    numberOfLines={3}
+                  />
+                </>
+              ) : (
+                <>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={estilos.labelInput}>Aulas online</Text>
+                      <Text style={estilos.subtituloMenuItem}>Disponíveis para atendimento remoto</Text>
+                    </View>
+                    <Feather name="video" size={20} color="#059669" />
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={estilos.labelInput}>Aulas presenciais</Text>
+                      <Text style={estilos.subtituloMenuItem}>Ative para oferecer atendimento presencial</Text>
+                    </View>
+                    <Switch
+                      value={formProfPresencial}
+                      onValueChange={setFormProfPresencial}
+                      trackColor={{ false: "#CBD5E1", true: "#A7F3D0" }}
+                      thumbColor={formProfPresencial ? "#059669" : "#F8FAFC"}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={estilos.labelInput}>Valor online (R$/h)</Text>
+                      <TextInput
+                        style={estilos.inputFormulario}
+                        value={formProfPrecoOnline}
+                        onChangeText={setFormProfPrecoOnline}
+                        placeholder="60.00"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={estilos.labelInput}>Valor presencial (R$/h)</Text>
+                      <TextInput
+                        style={estilos.inputFormulario}
+                        value={formProfPrecoPresencial}
+                        onChangeText={setFormProfPrecoPresencial}
+                        placeholder="80.00"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
             </ScrollView>
 
             <View style={estilos.modalAcoesLinha}>
               <TouchableOpacity
                 style={estilos.botaoModalCancelar}
-                onPress={() => setModalEditarProf(false)}
+                onPress={() => {
+                  setModalEditarProf(false);
+                  setModalEditarTarifasProf(false);
+                }}
               >
                 <Text style={estilos.textoBotaoCancelar}>Cancelar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[estilos.botaoModalSalvar, { backgroundColor: "#FF5A1F" }]}
-                onPress={handleSalvarProfessor}
+                onPress={modalEditarProf ? handleSalvarProfessor : handleSalvarTarifasProfessor}
                 disabled={salvandoEdicao}
               >
                 {salvandoEdicao ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={estilos.textoBotaoSalvar}>Salvar perfil docente</Text>
+                  <Text style={estilos.textoBotaoSalvar}>
+                    {modalEditarProf ? "Salvar perfil profissional" : "Salvar formatos e tarifas"}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>

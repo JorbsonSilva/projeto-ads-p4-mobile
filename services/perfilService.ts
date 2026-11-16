@@ -59,7 +59,7 @@ export interface PerfilProfessorData {
     raioAtendimentoKm?: number;
     chavePix: string;
   };
-  saberes: { id: number; nome: string; nivel: string }[];
+  saberes: { id: number; nome: string; nivel: string; precoHora?: number }[];
   disponibilidades: { diaSemana: string; horaInicio: string; horaFim: string }[];
 }
 
@@ -225,6 +225,9 @@ export async function obterPerfilProfessor(usuarioId: number): Promise<Resultado
         id: Number(item.saberId ?? item.id),
         nome: String(item.nome ?? ""),
         nivel: String(item.nivel ?? ""),
+        ...(item.precoHora == null && item.preco == null
+          ? {}
+          : { precoHora: Number(item.precoHora ?? item.preco) }),
       })),
       disponibilidades: (Array.isArray(perfil.disponibilidades) ? perfil.disponibilidades : []).map((item: any) => ({
         diaSemana: String(item.diaSemana ?? ""),
@@ -239,7 +242,7 @@ export async function salvarPerfilProfessor(
   usuarioId: number,
   novosDados: Partial<PerfilProfessorData>
 ): Promise<boolean> {
-  await apiFetch(`${API_URL}/api/v1/perfil/professor/${usuarioId}`, {
+  const response = await apiFetch(`${API_URL}/api/v1/perfil/professor/${usuarioId}`, {
     method: "PUT",
     body: JSON.stringify({
       nome: novosDados.nome,
@@ -254,7 +257,24 @@ export async function salvarPerfilProfessor(
       chavePix: novosDados.configuracoesEnsino?.chavePix,
       oferecePresencial: novosDados.configuracoesEnsino?.permitePresencial,
       raioAtendimentoKm: novosDados.configuracoesEnsino?.raioAtendimentoKm,
+      aptidoes: novosDados.saberes?.map((saber) => ({
+        saberId: saber.id,
+        nomeSaber: saber.nome,
+        nivelDominio: saber.nivel || "Intermediário",
+        ...(saber.precoHora === undefined ? {} : { precoHora: saber.precoHora }),
+      })),
     }),
   });
+  if (novosDados.saberes) {
+    const perfilAtualizado = extrairDadosObjeto<PerfilApi>(await response.json());
+    const saberesSalvos = (Array.isArray(perfilAtualizado.aptidoes) ? perfilAtualizado.aptidoes : [])
+      .map((item) => Number(item.saberId ?? item.id));
+    if (
+      saberesSalvos.length !== novosDados.saberes.length ||
+      novosDados.saberes.some((saber) => !saberesSalvos.includes(saber.id))
+    ) {
+      throw new Error("O servidor não confirmou todas as disciplinas selecionadas. Tente novamente.");
+    }
+  }
   return true;
 }

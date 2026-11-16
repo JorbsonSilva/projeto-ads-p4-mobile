@@ -31,12 +31,20 @@ import {
   SaberItem,
 } from "../services/disciplinasService";
 import { getApiErrorMessage } from "../config/api";
-import { obterPerfilAluno, salvarPreferenciasAluno } from "../services/perfilService";
+import {
+  obterPerfilAluno,
+  obterPerfilProfessor,
+  PerfilProfessorData,
+  salvarPerfilProfessor,
+  salvarPreferenciasAluno,
+} from "../services/perfilService";
 
 export default function ExplorarDisciplinas() {
   const insets = useSafeAreaInsets();
   const { modo } = useLocalSearchParams<{ modo?: string }>();
   const ehPreferenciasEstudo = modo === "preferencias";
+  const ehDisciplinasProfessor = modo === "disciplinas-professor";
+  const ehModoSelecao = ehPreferenciasEstudo || ehDisciplinasProfessor;
   const { usuarioId } = useAuth();
 
   const [carregando, setCarregando] = useState<boolean>(true);
@@ -44,6 +52,7 @@ export default function ExplorarDisciplinas() {
   const [salvandoPreferencias, setSalvandoPreferencias] = useState<boolean>(false);
   const [preferenciasCarregadas, setPreferenciasCarregadas] = useState<boolean>(false);
   const [materiasSelecionadas, setMateriasSelecionadas] = useState<string[]>([]);
+  const [aptidoesProfessor, setAptidoesProfessor] = useState<PerfilProfessorData["saberes"]>([]);
   const [bioAluno, setBioAluno] = useState<string>("");
   const [erroPreferencias, setErroPreferencias] = useState<string | null>(null);
   const [preferenciasSalvas, setPreferenciasSalvas] = useState<boolean>(false);
@@ -67,7 +76,7 @@ export default function ExplorarDisciplinas() {
     } else {
       setCarregando(true);
     }
-    if (ehPreferenciasEstudo) {
+    if (ehModoSelecao) {
       setErroPreferencias(null);
       setPreferenciasCarregadas(false);
     }
@@ -84,11 +93,20 @@ export default function ExplorarDisciplinas() {
         setMateriasSelecionadas(perfil.dados.interesses);
         setBioAluno(perfil.dados.bio);
         setPreferenciasCarregadas(true);
+      } else if (ehDisciplinasProfessor) {
+        const id = Number(usuarioId);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+          throw new Error("Sua sessão expirou. Entre novamente.");
+        }
+        const perfil = await obterPerfilProfessor(id);
+        setAptidoesProfessor(perfil.dados.saberes);
+        setMateriasSelecionadas(perfil.dados.saberes.map((saber) => saber.nome));
+        setPreferenciasCarregadas(true);
       }
     } catch (err) {
       const mensagem = getApiErrorMessage(err);
-      if (ehPreferenciasEstudo) {
-        setErroPreferencias(`Não foi possível carregar suas preferências. ${mensagem}`);
+      if (ehModoSelecao) {
+        setErroPreferencias(`Não foi possível carregar as disciplinas selecionadas. ${mensagem}`);
       } else {
         Alert.alert("Não foi possível carregar o catálogo", mensagem);
       }
@@ -96,7 +114,7 @@ export default function ExplorarDisciplinas() {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, [ehPreferenciasEstudo, usuarioId]);
+  }, [ehDisciplinasProfessor, ehModoSelecao, ehPreferenciasEstudo, usuarioId]);
 
   useEffect(() => {
     void carregarDados();
@@ -118,7 +136,7 @@ export default function ExplorarDisciplinas() {
       return;
     }
     if (!preferenciasCarregadas || carregando || atualizando) {
-      setErroPreferencias("Aguarde o carregamento das suas preferências antes de salvar.");
+      setErroPreferencias("Aguarde o carregamento das disciplinas antes de salvar.");
       return;
     }
 
@@ -131,15 +149,29 @@ export default function ExplorarDisciplinas() {
     setSalvandoPreferencias(true);
     setErroPreferencias(null);
     try {
-      const interessesIds = catalogo.todasDisciplinas
-        .filter((disciplina) => materiasSelecionadas.includes(disciplina.nome))
-        .map((disciplina) => disciplina.id);
-      if (interessesIds.length !== materiasSelecionadas.length) {
-        throw new Error("Uma ou mais matérias não pertencem ao catálogo atual. Atualize a tela e tente novamente.");
+      const disciplinasSelecionadas = catalogo.todasDisciplinas
+        .filter((disciplina) => materiasSelecionadas.includes(disciplina.nome));
+      if (disciplinasSelecionadas.length !== materiasSelecionadas.length) {
+        throw new Error("Uma ou mais disciplinas não pertencem ao catálogo atual. Atualize a tela e tente novamente.");
       }
 
-      const interessesSalvos = await salvarPreferenciasAluno(id, interessesIds, bioAluno);
-      setMateriasSelecionadas(interessesSalvos);
+      if (ehDisciplinasProfessor) {
+        const aptidoes = disciplinasSelecionadas.map((disciplina) => {
+          const existente = aptidoesProfessor.find((item) => item.id === disciplina.id);
+          return {
+            id: disciplina.id,
+            nome: disciplina.nome,
+            nivel: existente?.nivel || "Intermediário",
+            ...(existente?.precoHora === undefined ? {} : { precoHora: existente.precoHora }),
+          };
+        });
+        await salvarPerfilProfessor(id, { saberes: aptidoes });
+        setAptidoesProfessor(aptidoes);
+      } else {
+        const interessesIds = disciplinasSelecionadas.map((disciplina) => disciplina.id);
+        const interessesSalvos = await salvarPreferenciasAluno(id, interessesIds, bioAluno);
+        setMateriasSelecionadas(interessesSalvos);
+      }
       setPreferenciasSalvas(true);
     } catch (error) {
       setErroPreferencias(getApiErrorMessage(error));
@@ -239,6 +271,8 @@ export default function ExplorarDisciplinas() {
           <Text style={estilos.headerSubtitulo}>
             {ehPreferenciasEstudo
               ? "Selecione as matérias do seu interesse"
+              : ehDisciplinasProfessor
+                ? "Selecione as disciplinas que você leciona"
               : "Catálogo completo de áreas e matérias"}
           </Text>
         </View>
@@ -283,11 +317,13 @@ export default function ExplorarDisciplinas() {
             />
           }
         >
-          {ehPreferenciasEstudo && (
+          {ehModoSelecao && (
             <View style={estilos.instrucaoPreferencias}>
               <Feather name="check-circle" size={18} color="#2563EB" />
               <Text style={estilos.textoInstrucaoPreferencias}>
-                Toque nas matérias que você gostaria de estudar.{"\n"}
+                {ehDisciplinasProfessor
+                  ? "Toque nas disciplinas que você leciona."
+                  : "Toque nas matérias que você gostaria de estudar."}{"\n"}
                 {materiasSelecionadas.length} selecionada(s)
               </Text>
             </View>
@@ -420,23 +456,23 @@ export default function ExplorarDisciplinas() {
                         key={disciplina.id}
                         style={[
                           estilos.cardDisciplina,
-                          ehPreferenciasEstudo && estilos.cardDisciplinaSelecionavel,
-                          ehPreferenciasEstudo && selecionada && estilos.cardDisciplinaSelecionada,
+                          ehModoSelecao && estilos.cardDisciplinaSelecionavel,
+                          ehModoSelecao && selecionada && estilos.cardDisciplinaSelecionada,
                         ]}
                         activeOpacity={0.8}
                         onPress={() =>
-                          ehPreferenciasEstudo
+                          ehModoSelecao
                             ? alternarMateriaSelecionada(disciplina.nome)
                             : setDisciplinaModal(disciplina)
                         }
-                        accessibilityRole={ehPreferenciasEstudo ? "checkbox" : "button"}
+                        accessibilityRole={ehModoSelecao ? "checkbox" : "button"}
                         accessibilityState={{ checked: selecionada }}
                       >
                         <View style={estilos.cardDisciplinaHeader}>
                           <Text style={estilos.cardDisciplinaNome} numberOfLines={2}>
                             {disciplina.nome}
                           </Text>
-                          {ehPreferenciasEstudo ? (
+                          {ehModoSelecao ? (
                             <View
                               style={[
                                 estilos.indicadorSelecaoMateria,
@@ -481,8 +517,16 @@ export default function ExplorarDisciplinas() {
         </ScrollView>
       )}
 
-      {ehPreferenciasEstudo && !carregando && (
-        <View         style={[estilos.rodapePreferencias, { paddingBottom: Math.max(insets.bottom, 8) + 10 }]}>
+      {ehModoSelecao && !carregando && (
+        <View
+          style={[
+            estilos.rodapePreferencias,
+            {
+              paddingBottom: Math.max(insets.bottom, 8) + 10,
+              marginBottom: 60 + insets.bottom,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={estilos.botaoSalvarPreferencias}
             onPress={() => void salvarPreferencias()}
@@ -493,7 +537,11 @@ export default function ExplorarDisciplinas() {
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : preferenciasCarregadas ? (
               <Text style={estilos.textoBotaoSalvarPreferencias}>
-                {preferenciasSalvas ? "Voltar ao perfil" : "Salvar matérias de interesse"}
+                {preferenciasSalvas
+                  ? "Voltar ao perfil"
+                  : ehDisciplinasProfessor
+                    ? "Salvar disciplinas lecionadas"
+                    : "Salvar matérias de interesse"}
               </Text>
             ) : (
               <Text style={estilos.textoBotaoSalvarPreferencias}>Carregando preferências...</Text>
@@ -504,7 +552,9 @@ export default function ExplorarDisciplinas() {
           )}
           {preferenciasSalvas && (
             <Text style={estilos.mensagemSucessoPreferencias}>
-              Preferências salvas. Elas já estão atualizadas no seu perfil.
+            {ehDisciplinasProfessor
+              ? "Disciplinas lecionadas salvas e atualizadas no seu perfil."
+              : "Preferências salvas. Elas já estão atualizadas no seu perfil."}
             </Text>
           )}
         </View>
