@@ -12,6 +12,11 @@ export interface SaberItem {
   mediaPreco: number;
 }
 
+export interface CategoriaPopular {
+  nome: string;
+  totalProfessores: number;
+}
+
 export interface CategoriaAgrupada {
   id: string;
   nome: string;
@@ -98,4 +103,16 @@ export async function obterCatalogoDisciplinas(): Promise<ResultadoCatalogo> {
       disciplinasEmAlta: todasDisciplinas.filter((item) => item.destaque),
     },
   };
+}
+
+export async function obterCategoriasPopulares(): Promise<CategoriaPopular[]> {
+  const response = await apiFetch(`${API_URL}/api/v1/saberes/categorias-populares`);
+  const registros = extrairDadosLista<Record<string, unknown>>(await response.json());
+
+  return registros
+    .filter((item) => typeof item.nome === "string" && item.nome.trim().length > 0)
+    .map((item) => ({
+      nome: String(item.nome).trim(),
+      totalProfessores: Number(item.totalProfessores ?? 0),
+    }));
 }

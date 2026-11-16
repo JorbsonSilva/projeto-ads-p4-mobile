@@ -10,7 +10,7 @@
 import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -30,9 +30,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import BotaoRapido from "../../components/BotaoRapido";
 import CardAula from "../../components/CardAula";
 import ResumoProfessor from "../../components/ResumoProfessor";
-import { API_URL, extrairDadosLista, extrairDadosObjeto } from "../../config/api";
+import {
+  API_URL,
+  extrairDadosLista,
+  extrairDadosObjeto,
+  getApiErrorMessage,
+} from "../../config/api";
 import { Theme } from "../../constants/theme";
 import { useAuth } from "../../context/AuthContext";
+import { CategoriaPopular, obterCategoriasPopulares } from "../../services/disciplinasService";
 import HomeProfessorScreen from "../home-professor";
 
 const { width: LARGURA_DISPOSITIVO } = Dimensions.get("window");
@@ -93,14 +99,17 @@ interface Agendamento {
 // 2. DADOS DE REFERÊNCIA OFICIAL (IMG-005)
 // ==========================================
 
-const CATEGORIAS_POPULARES_IMG005 = [
-  { id: 1, nome: "Exatas", icone: "book-open" as const, cor: "#2563EB", bg: "#EFF6FF" },
-  { id: 2, nome: "Tecnologia", icone: "code" as const, cor: "#EA580C", bg: "#FFF7ED" },
-  { id: 3, nome: "Humanas", icone: "edit-3" as const, cor: "#0284C7", bg: "#F0F9FF" },
-  { id: 4, nome: "Ciências", icone: "activity" as const, cor: "#6366F1", bg: "#EEF2FF" },
-  { id: 5, nome: "Idiomas", icone: "globe" as const, cor: "#334155", bg: "#F8FAFC" },
-  { id: 6, nome: "Negócios", icone: "bar-chart-2" as const, cor: "#D97706", bg: "#FEF3C7" },
-];
+const VISUAL_CATEGORIAS: Record<
+  string,
+  { icone: keyof typeof Feather.glyphMap; cor: string; bg: string }
+> = {
+  Exatas: { icone: "book-open", cor: "#2563EB", bg: "#EFF6FF" },
+  Tecnologia: { icone: "code", cor: "#EA580C", bg: "#FFF7ED" },
+  Humanas: { icone: "edit-3", cor: "#0284C7", bg: "#F0F9FF" },
+  Ciências: { icone: "activity", cor: "#6366F1", bg: "#EEF2FF" },
+  Idiomas: { icone: "globe", cor: "#334155", bg: "#F8FAFC" },
+  Negócios: { icone: "bar-chart-2", cor: "#D97706", bg: "#FEF3C7" },
+};
 
 const PROFESSORES_DESTAQUE_IMG005: ProfessorDestaque[] = [
   {
@@ -234,6 +243,50 @@ function HomeAluno({ nome }: { nome: string }) {
   const [favoritos, setFavoritos] = useState<Record<number, boolean>>({});
   const [carregandoDados, setCarregandoDados] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
+  const categoriasScrollRef = useRef<ScrollView>(null);
+  const [categoriasTemAnterior, setCategoriasTemAnterior] = useState(false);
+  const [categoriasTemProxima, setCategoriasTemProxima] = useState(false);
+  const categoriasMedidasRef = useRef({ larguraConteudo: 0, larguraVisivel: 0 });
+  const [categoriasPopulares, setCategoriasPopulares] = useState<CategoriaPopular[]>([]);
+  const [carregandoCategorias, setCarregandoCategorias] = useState(true);
+  const [erroCategorias, setErroCategorias] = useState<string | null>(null);
+
+  const atualizarIndicadoresCategorias = (offsetX = 0) => {
+    const { larguraConteudo, larguraVisivel } = categoriasMedidasRef.current;
+    setCategoriasTemAnterior(offsetX > 2);
+    setCategoriasTemProxima(offsetX + larguraVisivel < larguraConteudo - 2);
+  };
+
+  const moverCategorias = () => {
+    if (categoriasTemProxima) {
+      categoriasScrollRef.current?.scrollToEnd({ animated: true });
+    } else {
+      categoriasScrollRef.current?.scrollTo({ x: 0, animated: true });
+    }
+  };
+
+  const carregarCategoriasPopulares = useCallback(async () => {
+    setCarregandoCategorias(true);
+    setErroCategorias(null);
+    setCategoriasTemAnterior(false);
+    setCategoriasTemProxima(false);
+    categoriasScrollRef.current?.scrollTo({ x: 0, animated: false });
+
+    try {
+      setCategoriasPopulares(await obterCategoriasPopulares());
+    } catch (error) {
+      setCategoriasPopulares([]);
+      setErroCategorias(getApiErrorMessage(error));
+    } finally {
+      setCarregandoCategorias(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void carregarCategoriasPopulares();
+    }, [carregarCategoriasPopulares])
+  );
 
   const buscarDadosAluno = useCallback(async () => {
     const isDemo =
@@ -453,32 +506,100 @@ function HomeAluno({ nome }: { nome: string }) {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={estilos.carrosselCategoriasContainer}
-        >
-          {CATEGORIAS_POPULARES_IMG005.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              activeOpacity={0.8}
-              onPress={() =>
-                router.push({
-                  pathname: "/busca-professores",
-                  params: { categoria: cat.nome },
-                })
+        {carregandoCategorias ? (
+          <ActivityIndicator
+            size="small"
+            color="#FF5A1F"
+            style={estilos.estadoCategorias}
+            accessibilityLabel="Carregando categorias populares"
+          />
+        ) : erroCategorias ? (
+          <TouchableOpacity
+            style={estilos.estadoCategorias}
+            onPress={() => void carregarCategoriasPopulares()}
+            accessibilityRole="button"
+          >
+            <Text style={estilos.mensagemCategorias}>
+              Não foi possível carregar as categorias. Toque para tentar novamente.
+            </Text>
+          </TouchableOpacity>
+        ) : categoriasPopulares.length === 0 ? (
+          <Text style={estilos.mensagemCategorias}>
+            Ainda não há categorias ensinadas por professores.
+          </Text>
+        ) : (
+          <View
+            style={estilos.areaCarrosselCategorias}
+            onLayout={(event) => {
+              categoriasMedidasRef.current.larguraVisivel = event.nativeEvent.layout.width;
+              atualizarIndicadoresCategorias();
+            }}
+          >
+            <ScrollView
+              ref={categoriasScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled
+              directionalLockEnabled
+              contentContainerStyle={estilos.carrosselCategoriasContainer}
+              accessibilityLabel="Categorias populares. Deslize horizontalmente para ver todas."
+              onContentSizeChange={(width) => {
+                categoriasMedidasRef.current.larguraConteudo = width;
+                atualizarIndicadoresCategorias();
+              }}
+              onScroll={(event) =>
+                atualizarIndicadoresCategorias(event.nativeEvent.contentOffset.x)
               }
-              style={estilos.cardCategoriaQuadrado}
+              scrollEventThrottle={16}
             >
-              <View style={estilos.iconeCategoriaWrap}>
-                <Feather name={cat.icone} size={22} color={cat.cor} />
-              </View>
-              <Text style={estilos.textoCategoriaNome} numberOfLines={1}>
-                {cat.nome}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              {categoriasPopulares.map((cat) => {
+                const visual = VISUAL_CATEGORIAS[cat.nome] ?? {
+                  icone: "book" as const,
+                  cor: "#475569",
+                  bg: "#F8FAFC",
+                };
+                return (
+                  <TouchableOpacity
+                    key={cat.nome}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/busca-professores",
+                        params: { categoria: cat.nome },
+                      })
+                    }
+                    style={estilos.cardCategoriaQuadrado}
+                  >
+                    <View style={[estilos.iconeCategoriaWrap, { backgroundColor: visual.bg }]}>
+                      <Feather name={visual.icone} size={22} color={visual.cor} />
+                    </View>
+                    <Text style={estilos.textoCategoriaNome} numberOfLines={1}>
+                      {cat.nome}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {(categoriasTemAnterior || categoriasTemProxima) && (
+              <TouchableOpacity
+                style={[estilos.setaCarrosselCategorias, estilos.setaCarrosselDireita]}
+                onPress={moverCategorias}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  categoriasTemProxima
+                    ? "Mostrar mais categorias"
+                    : "Voltar às primeiras categorias"
+                }
+              >
+                <Feather
+                  name={categoriasTemProxima ? "chevron-right" : "chevron-left"}
+                  size={20}
+                  color="#475569"
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* ============================================================== */}
         {/* 5. CARDS VERTICAIS DE PROFESSORES RECOMENDADOS (IMG-005)       */}
@@ -1168,10 +1289,46 @@ const estilos = StyleSheet.create({
   },
 
   // 4. Categorias Populares
+  estadoCategorias: {
+    minHeight: 102,
+    justifyContent: "center",
+  },
+  mensagemCategorias: {
+    minHeight: 54,
+    paddingVertical: 16,
+    color: "#64748B",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  areaCarrosselCategorias: {
+    position: "relative",
+  },
   carrosselCategoriasContainer: {
-    paddingRight: 10,
+    paddingLeft: 10,
+    paddingRight: 44,
     gap: 10,
     paddingBottom: 22,
+  },
+  setaCarrosselCategorias: {
+    position: "absolute",
+    top: 26,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+    zIndex: 1,
+  },
+  setaCarrosselDireita: {
+    right: 4,
   },
   cardCategoriaQuadrado: {
     width: 76,
