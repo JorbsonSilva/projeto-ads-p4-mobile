@@ -16,6 +16,12 @@ export interface ProgressoAluno {
   horasAcumuladas: number;
 }
 
+export interface DisponibilidadeProfessorData {
+  diaSemana: string;
+  horaInicio: string;
+  horaFim: string;
+}
+
 export interface PerfilAlunoData {
   id: number;
   nome: string;
@@ -60,7 +66,7 @@ export interface PerfilProfessorData {
     chavePix: string;
   };
   saberes: { id: number; nome: string; nivel: string; precoHora?: number }[];
-  disponibilidades: { diaSemana: string; horaInicio: string; horaFim: string }[];
+  disponibilidades: DisponibilidadeProfessorData[];
 }
 
 export interface ResultadoPerfilProfessorData {
@@ -257,6 +263,7 @@ export async function salvarPerfilProfessor(
       chavePix: novosDados.configuracoesEnsino?.chavePix,
       oferecePresencial: novosDados.configuracoesEnsino?.permitePresencial,
       raioAtendimentoKm: novosDados.configuracoesEnsino?.raioAtendimentoKm,
+      disponibilidades: novosDados.disponibilidades,
       aptidoes: novosDados.saberes?.map((saber) => ({
         saberId: saber.id,
         nomeSaber: saber.nome,
@@ -265,15 +272,38 @@ export async function salvarPerfilProfessor(
       })),
     }),
   });
-  if (novosDados.saberes) {
+  if (novosDados.saberes !== undefined || novosDados.disponibilidades !== undefined) {
     const perfilAtualizado = extrairDadosObjeto<PerfilApi>(await response.json());
-    const saberesSalvos = (Array.isArray(perfilAtualizado.aptidoes) ? perfilAtualizado.aptidoes : [])
-      .map((item) => Number(item.saberId ?? item.id));
-    if (
-      saberesSalvos.length !== novosDados.saberes.length ||
-      novosDados.saberes.some((saber) => !saberesSalvos.includes(saber.id))
-    ) {
-      throw new Error("O servidor não confirmou todas as disciplinas selecionadas. Tente novamente.");
+    if (novosDados.saberes !== undefined) {
+      const saberesSalvos = (Array.isArray(perfilAtualizado.aptidoes) ? perfilAtualizado.aptidoes : [])
+        .map((item) => Number(item.saberId ?? item.id));
+      if (
+        saberesSalvos.length !== novosDados.saberes.length ||
+        novosDados.saberes.some((saber) => !saberesSalvos.includes(saber.id))
+      ) {
+        throw new Error("O servidor não confirmou todas as disciplinas selecionadas. Tente novamente.");
+      }
+    }
+
+    if (novosDados.disponibilidades !== undefined) {
+      const normalizarDia = (dia: string) => dia.normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/-FEIRA$/, "");
+      const chaveDisponibilidade = (item: DisponibilidadeProfessorData) =>
+        `${normalizarDia(item.diaSemana)}|${item.horaInicio.slice(0, 5)}|${item.horaFim.slice(0, 5)}`;
+      const solicitadas = novosDados.disponibilidades.map(chaveDisponibilidade).sort();
+      const salvas = (Array.isArray(perfilAtualizado.disponibilidades) ? perfilAtualizado.disponibilidades : [])
+        .map((item) => ({
+          diaSemana: String(item.diaSemana ?? ""),
+          horaInicio: String(item.horaInicio ?? ""),
+          horaFim: String(item.horaFim ?? ""),
+        }))
+        .map(chaveDisponibilidade)
+        .sort();
+      if (solicitadas.length !== salvas.length || solicitadas.some((item, index) => item !== salvas[index])) {
+        throw new Error("O servidor não confirmou todos os dias e horários. Tente novamente.");
+      }
     }
   }
   return true;

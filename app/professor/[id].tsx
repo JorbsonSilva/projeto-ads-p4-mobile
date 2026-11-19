@@ -38,6 +38,23 @@ import { getApiErrorMessage } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import AvatarPerfil from "../../components/AvatarPerfil";
 
+const DIAS_SEMANA = [
+  { codigo: "SEGUNDA", nome: "Segunda-feira" },
+  { codigo: "TERCA", nome: "Terça-feira" },
+  { codigo: "QUARTA", nome: "Quarta-feira" },
+  { codigo: "QUINTA", nome: "Quinta-feira" },
+  { codigo: "SEXTA", nome: "Sexta-feira" },
+  { codigo: "SABADO", nome: "Sábado" },
+  { codigo: "DOMINGO", nome: "Domingo" },
+] as const;
+
+function normalizarDiaSemana(dia: string): string {
+  return dia.normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/-FEIRA$/, "");
+}
+
 export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -152,6 +169,12 @@ export default function PerfilProfessorScreen() {
   const avaliacaoArredondada = professor.notaMedia === null
     ? 0
     : Math.round(professor.notaMedia);
+  const disponibilidadePorDia = DIAS_SEMANA.map((dia) => ({
+    ...dia,
+    periodos: professor.disponibilidades.filter(
+      (item) => normalizarDiaSemana(item.diaSemana) === dia.codigo,
+    ),
+  })).filter((dia) => dia.periodos.length > 0);
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
@@ -408,7 +431,38 @@ export default function PerfilProfessorScreen() {
         </View>
 
         {/* ============================================================== */}
-        {/* 6. DISCIPLINAS E ESPECIALIDADES                                */}
+        {/* 6. DISPONIBILIDADE SEMANAL                                     */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Disponibilidade semanal</Text>
+          <Text style={estilos.secaoSubtitulo}>
+            Horários em que este professor aceita agendamentos:
+          </Text>
+          <View style={estilos.cardDisponibilidadePublica}>
+            {disponibilidadePorDia.length > 0 ? disponibilidadePorDia.map((dia) => (
+              <View key={dia.codigo} style={estilos.linhaDisponibilidadePublica}>
+                <Text style={estilos.nomeDiaDisponibilidadePublica}>{dia.nome}</Text>
+                <View style={estilos.periodosDisponibilidadePublica}>
+                  {dia.periodos.map((periodo, indice) => (
+                    <View key={`${dia.codigo}-${indice}`} style={estilos.chipHorarioPublico}>
+                      <Feather name="clock" size={11} color="#047857" />
+                      <Text style={estilos.textoChipHorarioPublico}>
+                        {periodo.horaInicio.slice(0, 5)}–{periodo.horaFim.slice(0, 5)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )) : (
+              <Text style={estilos.textoSemDisponibilidadePublica}>
+                O professor ainda não informou horários disponíveis.
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 7. DISCIPLINAS E ESPECIALIDADES                                */}
         {/* ============================================================== */}
         <View style={estilos.secaoContainer}>
           <Text style={estilos.secaoTitulo}>Disciplinas & Especialidades</Text>
@@ -807,6 +861,50 @@ const estilos = StyleSheet.create({
     color: "#64748B",
     marginTop: 2,
     marginBottom: 10,
+  },
+  cardDisponibilidadePublica: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 12,
+  },
+  linhaDisponibilidadePublica: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  nomeDiaDisponibilidadePublica: {
+    width: 100,
+    paddingTop: 5,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+  },
+  periodosDisponibilidadePublica: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  chipHorarioPublico: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  textoChipHorarioPublico: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#047857",
+  },
+  textoSemDisponibilidadePublica: {
+    fontSize: 12,
+    color: "#64748B",
   },
 
   // Modalidades (Cards)

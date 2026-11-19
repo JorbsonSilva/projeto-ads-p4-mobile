@@ -37,6 +37,7 @@ import {
   PerfilProfessorData,
   ResultadoPerfilAluno,
   ResultadoPerfilProfessorData,
+  DisponibilidadeProfessorData,
   salvarPerfilAluno,
   salvarPerfilProfessor,
   alterarSenha,
@@ -45,6 +46,59 @@ import {
   obterPerfilProfessor as obterPerfilPublicoProfessor,
   PerfilProfessorPublico,
 } from "../../services/professorService";
+
+const DIAS_SEMANA = [
+  { codigo: "SEGUNDA", nome: "Segunda-feira" },
+  { codigo: "TERCA", nome: "Terça-feira" },
+  { codigo: "QUARTA", nome: "Quarta-feira" },
+  { codigo: "QUINTA", nome: "Quinta-feira" },
+  { codigo: "SEXTA", nome: "Sexta-feira" },
+  { codigo: "SABADO", nome: "Sábado" },
+  { codigo: "DOMINGO", nome: "Domingo" },
+] as const;
+
+const HORARIOS_DISPONIVEIS = Array.from({ length: 36 }, (_, indice) => {
+  const minutos = 6 * 60 + indice * 30;
+  return `${Math.floor(minutos / 60).toString().padStart(2, "0")}:${(minutos % 60).toString().padStart(2, "0")}`;
+});
+
+function minutosDoHorario(horario: string): number {
+  const [hora, minuto] = horario.slice(0, 5).split(":").map(Number);
+  return hora * 60 + minuto;
+}
+
+function normalizarDiaSemana(dia: string): string {
+  return dia.normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/-FEIRA$/, "");
+}
+
+function horarioDeMinutos(minutos: number): string {
+  return `${Math.floor(minutos / 60).toString().padStart(2, "0")}:${(minutos % 60).toString().padStart(2, "0")}`;
+}
+
+function validarDisponibilidades(disponibilidades: DisponibilidadeProfessorData[]): string | null {
+  for (const dia of DIAS_SEMANA) {
+    const periodos = disponibilidades
+      .filter((item) => item.diaSemana === dia.codigo)
+      .map((item) => ({
+        inicio: minutosDoHorario(item.horaInicio),
+        fim: minutosDoHorario(item.horaFim),
+      }))
+      .sort((a, b) => a.inicio - b.inicio);
+
+    for (let indice = 0; indice < periodos.length; indice += 1) {
+      if (periodos[indice].fim <= periodos[indice].inicio) {
+        return `O horário final de ${dia.nome} deve ser posterior ao horário inicial.`;
+      }
+      if (indice > 0 && periodos[indice].inicio < periodos[indice - 1].fim) {
+        return `Os períodos de ${dia.nome} não podem se sobrepor.`;
+      }
+    }
+  }
+  return null;
+}
 
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
@@ -77,6 +131,7 @@ export default function PerfilScreen() {
   const [modalEditarAluno, setModalEditarAluno] = useState<boolean>(false);
   const [modalEditarProf, setModalEditarProf] = useState<boolean>(false);
   const [modalEditarTarifasProf, setModalEditarTarifasProf] = useState<boolean>(false);
+  const [modalDisponibilidade, setModalDisponibilidade] = useState<boolean>(false);
   const [modalLogoutVisivel, setModalLogoutVisivel] = useState<boolean>(false);
   const [modalSegurancaVisivel, setModalSegurancaVisivel] = useState<boolean>(false);
 
@@ -103,6 +158,8 @@ export default function PerfilScreen() {
   const [formProfPrecoOnline, setFormProfPrecoOnline] = useState<string>("");
   const [formProfPrecoPresencial, setFormProfPrecoPresencial] = useState<string>("");
   const [formProfPresencial, setFormProfPresencial] = useState<boolean>(false);
+  const [disponibilidadesRascunho, setDisponibilidadesRascunho] = useState<DisponibilidadeProfessorData[]>([]);
+  const [seletorHorarioAberto, setSeletorHorarioAberto] = useState<string | null>(null);
 
   const [salvandoEdicao, setSalvandoEdicao] = useState<boolean>(false);
   const [trocandoPerfil, setTrocandoPerfil] = useState<boolean>(false);
@@ -257,6 +314,115 @@ export default function PerfilScreen() {
         },
       }));
       setModalEditarTarifasProf(false);
+    } catch (error) {
+      Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
+  const abrirEditorDisponibilidade = () => {
+    setDisponibilidadesRascunho(perfilProfessor.disponibilidades.map((item) => ({
+      diaSemana: normalizarDiaSemana(item.diaSemana),
+      horaInicio: item.horaInicio.slice(0, 5),
+      horaFim: item.horaFim.slice(0, 5),
+    })));
+    setSeletorHorarioAberto(null);
+    setModalDisponibilidade(true);
+  };
+
+  const alternarDiaDisponivel = (diaSemana: string) => {
+    setDisponibilidadesRascunho((atuais) => atuais.some((item) => item.diaSemana === diaSemana)
+      ? atuais.filter((item) => item.diaSemana !== diaSemana)
+      : [...atuais, { diaSemana, horaInicio: "09:00", horaFim: "17:00" }]);
+    setSeletorHorarioAberto(null);
+  };
+
+  const atualizarHorarioDisponivel = (
+    diaSemana: string,
+    indice: number,
+    campo: "horaInicio" | "horaFim",
+    horario: string,
+  ) => {
+    setDisponibilidadesRascunho((atuais) => {
+      const periodosDoDia = atuais.filter((item) => item.diaSemana === diaSemana);
+      const periodo = periodosDoDia[indice];
+      if (!periodo) return atuais;
+
+      const atualizado = { ...periodo, [campo]: horario };
+      if (campo === "horaInicio" && minutosDoHorario(atualizado.horaFim) < minutosDoHorario(horario) + 60) {
+        atualizado.horaFim = horarioDeMinutos(minutosDoHorario(horario) + 60);
+      }
+
+      let indiceDoDia = -1;
+      return atuais.map((item) => {
+        if (item.diaSemana !== diaSemana) return item;
+        indiceDoDia += 1;
+        return indiceDoDia === indice ? atualizado : item;
+      });
+    });
+    setSeletorHorarioAberto(null);
+  };
+
+  const adicionarPeriodoDisponivel = (diaSemana: string) => {
+    const periodosDoDia = disponibilidadesRascunho.filter((item) => item.diaSemana === diaSemana);
+    const horariosOrdenados = [
+      ...HORARIOS_DISPONIVEIS.filter((horario) => minutosDoHorario(horario) >= 18 * 60),
+      ...HORARIOS_DISPONIVEIS.filter((horario) => minutosDoHorario(horario) < 18 * 60),
+    ];
+    const inicioLivre = horariosOrdenados.find((inicio) => {
+      const inicioMinutos = minutosDoHorario(inicio);
+      const fimMinutos = inicioMinutos + 60;
+      return fimMinutos <= minutosDoHorario("23:30")
+        && periodosDoDia.every((periodo) =>
+          fimMinutos <= minutosDoHorario(periodo.horaInicio)
+          || inicioMinutos >= minutosDoHorario(periodo.horaFim)
+        );
+    });
+
+    if (!inicioLivre) {
+      Alert.alert("Sem horário livre", "Remova ou ajuste um período existente para adicionar outro.");
+      return;
+    }
+
+    const inicioMinutos = minutosDoHorario(inicioLivre);
+    setDisponibilidadesRascunho((atuais) => [
+      ...atuais,
+      {
+        diaSemana,
+        horaInicio: inicioLivre,
+        horaFim: horarioDeMinutos(inicioMinutos + 60),
+      },
+    ]);
+  };
+
+  const removerPeriodoDisponivel = (diaSemana: string, indice: number) => {
+    let indiceDoDia = -1;
+    setDisponibilidadesRascunho((atuais) => atuais.filter((item) => {
+      if (item.diaSemana !== diaSemana) return true;
+      indiceDoDia += 1;
+      return indiceDoDia !== indice;
+    }));
+    setSeletorHorarioAberto(null);
+  };
+
+  const handleSalvarDisponibilidades = async () => {
+    const erro = validarDisponibilidades(disponibilidadesRascunho);
+    if (erro) {
+      Alert.alert("Horários inválidos", erro);
+      return;
+    }
+
+    setSalvandoEdicao(true);
+    try {
+      await salvarPerfilProfessor(perfilProfessor.id, {
+        disponibilidades: disponibilidadesRascunho,
+      });
+      setPerfilProfessor((prev) => ({
+        ...prev,
+        disponibilidades: disponibilidadesRascunho,
+      }));
+      setModalDisponibilidade(false);
     } catch (error) {
       Alert.alert("Não foi possível salvar", error instanceof Error ? error.message : "Tente novamente mais tarde.");
     } finally {
@@ -855,6 +1021,41 @@ export default function PerfilScreen() {
               </View>
             </View>
 
+            <View style={estilos.secaoContainer}>
+              <Text style={estilos.secaoTitulo}>Disponibilidade semanal</Text>
+              <View style={estilos.menuContaContainer}>
+                <TouchableOpacity
+                  style={estilos.menuItem}
+                  onPress={abrirEditorDisponibilidade}
+                  activeOpacity={0.7}
+                >
+                  <View style={[estilos.iconeMenuWrap, { backgroundColor: "#ECFDF5" }]}>
+                    <Feather name="calendar" size={17} color="#059669" />
+                  </View>
+                  <View style={estilos.infoMenuItem}>
+                    <Text style={estilos.tituloMenuItem}>Definir dias e horários</Text>
+                    <Text style={estilos.subtituloMenuItem}>
+                      {perfilProfessor.disponibilidades.length === 0
+                        ? "Nenhum horário cadastrado"
+                        : DIAS_SEMANA
+                            .filter((dia) => perfilProfessor.disponibilidades.some((item) =>
+                              normalizarDiaSemana(item.diaSemana) === dia.codigo
+                            ))
+                            .map((dia) => {
+                              const periodos = perfilProfessor.disponibilidades
+                                .filter((item) => normalizarDiaSemana(item.diaSemana) === dia.codigo)
+                                .map((item) => `${item.horaInicio.slice(0, 5)}–${item.horaFim.slice(0, 5)}`)
+                                .join(", ");
+                              return `${dia.nome.replace("-feira", "")}: ${periodos}`;
+                            })
+                            .join(" • ")}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* CONTA */}
             <View style={estilos.secaoContainer}>
               <Text style={estilos.secaoTitulo}>Conta</Text>
@@ -1194,6 +1395,165 @@ export default function PerfilScreen() {
                   <Text style={estilos.textoBotaoSalvar}>
                     {modalEditarProf ? "Salvar perfil profissional" : "Salvar formatos e tarifas"}
                   </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={modalDisponibilidade} transparent animationType="slide">
+        <View style={estilos.modalOverlay}>
+          <View style={estilos.modalCardEdicao}>
+            <View style={estilos.modalHeaderLinha}>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.modalTitulo}>Disponibilidade semanal</Text>
+                <Text style={estilos.textoAjudaDisponibilidade}>
+                  Selecione os dias e os períodos em que aceita aulas.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setModalDisponibilidade(false)}
+                accessibilityLabel="Fechar disponibilidade"
+              >
+                <Feather name="x" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 450 }}>
+              {DIAS_SEMANA.map((dia) => {
+                const periodos = disponibilidadesRascunho.filter((item) => item.diaSemana === dia.codigo);
+                const diaAtivo = periodos.length > 0;
+                return (
+                  <View key={dia.codigo} style={estilos.cardDiaDisponibilidade}>
+                    <TouchableOpacity
+                      style={estilos.botaoDiaDisponibilidade}
+                      onPress={() => alternarDiaDisponivel(dia.codigo)}
+                      activeOpacity={0.75}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: diaAtivo }}
+                    >
+                      <Feather
+                        name={diaAtivo ? "check-square" : "square"}
+                        size={20}
+                        color={diaAtivo ? "#059669" : "#94A3B8"}
+                      />
+                      <Text style={estilos.nomeDiaDisponibilidade}>{dia.nome}</Text>
+                      <Text style={estilos.statusDiaDisponibilidade}>
+                        {diaAtivo ? "Disponível" : "Indisponível"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {periodos.map((periodo, indice) => {
+                      const seletorInicio = `${dia.codigo}-${indice}-inicio`;
+                      const seletorFim = `${dia.codigo}-${indice}-fim`;
+                      const mostrarInicio = seletorHorarioAberto === seletorInicio;
+                      const mostrarFim = seletorHorarioAberto === seletorFim;
+                      const horariosInicio = HORARIOS_DISPONIVEIS.filter((horario) =>
+                        minutosDoHorario(horario) + 60 <= minutosDoHorario("23:30")
+                      );
+                      const horariosFim = HORARIOS_DISPONIVEIS.filter((horario) =>
+                        minutosDoHorario(horario) > minutosDoHorario(periodo.horaInicio)
+                      );
+
+                      return (
+                        <View key={`${dia.codigo}-${indice}`} style={estilos.periodoDisponibilidade}>
+                          <View style={estilos.linhaPeriodoDisponibilidade}>
+                            <Text style={estilos.labelPeriodoDisponibilidade}>Período {indice + 1}</Text>
+                            <TouchableOpacity
+                              onPress={() => removerPeriodoDisponivel(dia.codigo, indice)}
+                              accessibilityLabel={`Remover período ${indice + 1} de ${dia.nome}`}
+                            >
+                              <Feather name="trash-2" size={16} color="#DC2626" />
+                            </TouchableOpacity>
+                          </View>
+                          <View style={estilos.seletoresPeriodoDisponibilidade}>
+                            <TouchableOpacity
+                              style={[estilos.botaoHorarioDisponibilidade, mostrarInicio && estilos.botaoHorarioDisponibilidadeAtivo]}
+                              onPress={() => setSeletorHorarioAberto(mostrarInicio ? null : seletorInicio)}
+                            >
+                              <Text style={estilos.labelHorarioDisponibilidade}>Início</Text>
+                              <Text style={estilos.valorHorarioDisponibilidade}>{periodo.horaInicio}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[estilos.botaoHorarioDisponibilidade, mostrarFim && estilos.botaoHorarioDisponibilidadeAtivo]}
+                              onPress={() => setSeletorHorarioAberto(mostrarFim ? null : seletorFim)}
+                            >
+                              <Text style={estilos.labelHorarioDisponibilidade}>Término</Text>
+                              <Text style={estilos.valorHorarioDisponibilidade}>{periodo.horaFim}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {(mostrarInicio || mostrarFim) && (
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                              contentContainerStyle={estilos.opcoesHorarioDisponibilidade}
+                            >
+                              {(mostrarInicio ? horariosInicio : horariosFim).map((horario) => {
+                                const selecionado = horario === (mostrarInicio ? periodo.horaInicio : periodo.horaFim);
+                                return (
+                                  <TouchableOpacity
+                                    key={horario}
+                                    style={[
+                                      estilos.opcaoHorarioDisponibilidade,
+                                      selecionado && estilos.opcaoHorarioDisponibilidadeAtiva,
+                                    ]}
+                                    onPress={() => atualizarHorarioDisponivel(
+                                      dia.codigo,
+                                      indice,
+                                      mostrarInicio ? "horaInicio" : "horaFim",
+                                      horario,
+                                    )}
+                                  >
+                                    <Text
+                                      style={[
+                                        estilos.textoOpcaoHorarioDisponibilidade,
+                                        selecionado && estilos.textoOpcaoHorarioDisponibilidadeAtiva,
+                                      ]}
+                                    >
+                                      {horario}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    {diaAtivo && (
+                      <TouchableOpacity
+                        style={estilos.botaoAdicionarPeriodo}
+                        onPress={() => adicionarPeriodoDisponivel(dia.codigo)}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="plus" size={15} color="#059669" />
+                        <Text style={estilos.textoAdicionarPeriodo}>Adicionar período</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={estilos.modalAcoesLinha}>
+              <TouchableOpacity
+                style={estilos.botaoModalCancelar}
+                onPress={() => setModalDisponibilidade(false)}
+              >
+                <Text style={estilos.textoBotaoCancelar}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={estilos.botaoModalSalvar}
+                onPress={handleSalvarDisponibilidades}
+                disabled={salvandoEdicao}
+              >
+                {salvandoEdicao ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={estilos.textoBotaoSalvar}>Salvar disponibilidade</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1853,6 +2213,115 @@ const estilos = StyleSheet.create({
     fontSize: 11,
     color: "#64748B",
     marginTop: 1,
+  },
+  textoAjudaDisponibilidade: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 3,
+  },
+  cardDiaDisponibilidade: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+  },
+  botaoDiaDisponibilidade: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 32,
+  },
+  nomeDiaDisponibilidade: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  statusDiaDisponibilidade: {
+    fontSize: 10,
+    color: "#64748B",
+  },
+  periodoDisponibilidade: {
+    marginTop: 10,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  linhaPeriodoDisponibilidade: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  labelPeriodoDisponibilidade: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  seletoresPeriodoDisponibilidade: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  botaoHorarioDisponibilidade: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  botaoHorarioDisponibilidadeAtivo: {
+    borderColor: "#059669",
+    backgroundColor: "#ECFDF5",
+  },
+  labelHorarioDisponibilidade: {
+    fontSize: 10,
+    color: "#64748B",
+  },
+  valorHorarioDisponibilidade: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  opcoesHorarioDisponibilidade: {
+    gap: 6,
+    paddingVertical: 8,
+  },
+  opcaoHorarioDisponibilidade: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+  },
+  opcaoHorarioDisponibilidadeAtiva: {
+    backgroundColor: "#059669",
+  },
+  textoOpcaoHorarioDisponibilidade: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#334155",
+  },
+  textoOpcaoHorarioDisponibilidadeAtiva: {
+    color: "#FFFFFF",
+  },
+  botaoAdicionarPeriodo: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 5,
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  textoAdicionarPeriodo: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
   },
   divisorMenu: {
     height: 1,
