@@ -4,7 +4,6 @@
  * Implementada com total fidelidade à especificação visual IMG-015 (Home Professor.png).
  * 
  * Funcionalidades:
- * - Header superior com menu hambúrguer, logotipo Orienta e sino de notificações com badge numérico
  * - Alternador de perfil integrado (Aluno / Professor) no topo para testes e alternância de fluxo
  * - Saudação personalizada ao docente com mensagem inspiradora
  * - Card "Resumo geral" com métricas mensais retornadas pela API
@@ -18,7 +17,6 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -28,14 +26,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CentralNotificacoesModal } from "../components/CentralNotificacoesModal";
-import { Assets } from "../constants/assets";
 import { useAuth } from "../context/AuthContext";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
 import { getApiErrorMessage } from "../config/api";
 import {
   DadosHomeProfessor,
-  obterContagemNotificacoesNaoLidas,
   obterDadosHomeProfessor,
 } from "../services/professorHomeService";
 
@@ -61,8 +56,6 @@ export default function HomeProfessorScreen({
   const [atualizando, setAtualizando] = useState<boolean>(false);
   const [dados, setDados] = useState<DadosHomeProfessor>(DADOS_HOME_INICIAIS);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
-  const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState<number | null>(null);
-  const [modalNotificacoes, setModalNotificacoes] = useState<boolean>(false);
 
   const carregarDashboard = useCallback(async () => {
     try {
@@ -79,30 +72,13 @@ export default function HomeProfessorScreen({
     }
   }, [usuarioId]);
 
-  const carregarContagemNotificacoes = useCallback(async () => {
-    const idUsuario = Number(usuarioId);
-    if (!Number.isSafeInteger(idUsuario) || idUsuario <= 0) {
-      setNotificacoesNaoLidas(null);
-      return;
-    }
-
-    try {
-      setNotificacoesNaoLidas(await obterContagemNotificacoesNaoLidas(idUsuario));
-    } catch (error) {
-      setNotificacoesNaoLidas(null);
-      console.warn("Não foi possível carregar a contagem de notificações:", getApiErrorMessage(error));
-    }
-  }, [usuarioId]);
-
   useEffect(() => {
     carregarDashboard();
-    carregarContagemNotificacoes();
-  }, [carregarDashboard, carregarContagemNotificacoes]);
+  }, [carregarDashboard]);
 
   const onRefresh = () => {
     setAtualizando(true);
     carregarDashboard();
-    carregarContagemNotificacoes();
   };
 
   if (carregando) {
@@ -118,34 +94,6 @@ export default function HomeProfessorScreen({
 
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
-      {/* ============================================================== */}
-      {/* 1. HEADER SUPERIOR COM LOGOTIPO OFICIAL E NOTIFICAÇÕES         */}
-      {/* ============================================================== */}
-      <View style={estilos.header}>
-        <View style={estilos.logoHeaderContainer}>
-          <Image
-            source={Assets.logo.transparent}
-            style={estilos.logoImg}
-            resizeMode="contain"
-            accessibilityLabel="Logotipo Oficial Orienta"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={estilos.botaoHeaderCircular}
-          onPress={() => setModalNotificacoes(true)}
-          activeOpacity={0.7}
-          accessibilityLabel="Central de Notificações"
-        >
-          <Feather name="bell" size={20} color="#0F172A" />
-          {notificacoesNaoLidas !== null && notificacoesNaoLidas > 0 && (
-            <View style={estilos.badgeSino}>
-              <Text style={estilos.textoBadgeSino}>{notificacoesNaoLidas}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
@@ -451,13 +399,6 @@ export default function HomeProfessorScreen({
         <TabBarRN001 abaAtiva="home" perfilForcado="Professor" />
       )}
 
-      {/* Modal Central de Notificações */}
-      <CentralNotificacoesModal
-        visible={modalNotificacoes}
-        onClose={() => setModalNotificacoes(false)}
-        usuarioId={Number(usuarioId)}
-        onNotificacaoLida={carregarContagemNotificacoes}
-      />
     </View>
   );
 }
@@ -478,51 +419,6 @@ const estilos = StyleSheet.create({
     fontSize: 14,
     color: "#64748B",
     fontWeight: "500",
-  },
-  // 1. Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-  logoHeaderContainer: {
-    justifyContent: "center",
-    alignItems: "flex-start",
-  },
-  logoImg: {
-    width: 110,
-    height: 38,
-  },
-  botaoHeaderCircular: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#F8FAFC",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  badgeSino: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "#FF5A1F",
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 3,
-  },
-  textoBadgeSino: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#FFFFFF",
   },
   erroCarregamento: {
     backgroundColor: "#FEF2F2",
