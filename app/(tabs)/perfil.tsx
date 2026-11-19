@@ -63,8 +63,8 @@ const HORARIOS_DISPONIVEIS = Array.from({ length: 36 }, (_, indice) => {
 });
 
 function minutosDoHorario(horario: string): number {
-  const [hora, minuto] = horario.slice(0, 5).split(":").map(Number);
-  return hora * 60 + minuto;
+  const partes = horario.slice(0, 5).match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  return partes ? Number(partes[1]) * 60 + Number(partes[2]) : Number.NaN;
 }
 
 function normalizarDiaSemana(dia: string): string {
@@ -89,8 +89,11 @@ function validarDisponibilidades(disponibilidades: DisponibilidadeProfessorData[
       .sort((a, b) => a.inicio - b.inicio);
 
     for (let indice = 0; indice < periodos.length; indice += 1) {
-      if (periodos[indice].fim <= periodos[indice].inicio) {
-        return `O horário final de ${dia.nome} deve ser posterior ao horário inicial.`;
+      if (!Number.isFinite(periodos[indice].inicio) || !Number.isFinite(periodos[indice].fim)) {
+        return `Selecione horários válidos para ${dia.nome}.`;
+      }
+      if (periodos[indice].fim < periodos[indice].inicio + 60) {
+        return `Cada período de ${dia.nome} precisa ter pelo menos uma hora para permitir agendamentos.`;
       }
       if (indice > 0 && periodos[indice].inicio < periodos[indice - 1].fim) {
         return `Os períodos de ${dia.nome} não podem se sobrepor.`;
@@ -1453,7 +1456,7 @@ export default function PerfilScreen() {
                         minutosDoHorario(horario) + 60 <= minutosDoHorario("23:30")
                       );
                       const horariosFim = HORARIOS_DISPONIVEIS.filter((horario) =>
-                        minutosDoHorario(horario) > minutosDoHorario(periodo.horaInicio)
+                        minutosDoHorario(horario) >= minutosDoHorario(periodo.horaInicio) + 60
                       );
 
                       return (
