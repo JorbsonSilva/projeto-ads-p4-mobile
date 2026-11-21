@@ -4,23 +4,22 @@
  * Implementada com total fidelidade à especificação visual IMG-007B (Buscar_Presencial.jpeg).
  * 
  * Funcionalidades:
- * - Cabeçalho oficial com Logo Orienta e sino com badge de notificações
+ * - Cabeçalho oficial com logo Orienta e acesso às notificações
  * - Título "Professores Próximos" e subtítulo explicativo
  * - Barra de localização "Sua localização: Caruaru - PE" com botão GPS "Usar minha localização"
- * - Componente de Mapa Interativo Web-Safe com visual cartográfico limpo, radar pulsante do usuário ("Você está aqui"), pins acadêmicos dos professores e FAB de centralização
+ * - Mapa interativo de ruas reais com pontos aproximados das regiões de atendimento
  * - Barra de filtros com chips horizontais: [Filtros], "Todas as áreas ⌄", "Presencial ⌄", "↑↓ Ordenar por ⌄"
- * - Indicador de conexão que diferencia carregamento, sucesso e falha da API
+ * - Estados de carregamento, resultados vazios e falha da busca
  * - Feed de professores com distância retornada pela API, foto, selo verificado, badges de nível e botão [Ver perfil]
  * - Banner interurbano "Você também pode buscar por outras cidades >"
  * - Barra de navegação inferior (Tabs) do Orienta 2.0
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   Image,
   Modal,
   ScrollView,
@@ -33,6 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getApiErrorMessage } from "../config/api";
 import TabBarRN001 from "../components/navigation/TabBarRN001";
+import MapaPresencial from "../components/mapa/MapaPresencial";
 import { LOCALIZACOES_PRESENCIAIS } from "../constants/localizacoesPresenciais";
 import {
   obterProfessoresPresenciais,
@@ -94,29 +94,7 @@ export default function BuscaPresencialScreen() {
   const [modalOrdenacaoVisivel, setModalOrdenacaoVisivel] = useState<boolean>(false);
   const [modalCidadeVisivel, setModalCidadeVisivel] = useState<boolean>(false);
 
-  // Animação de pulso do radar do usuário
-  const [pulseAnim] = useState(new Animated.Value(1));
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.35,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulseAnim]);
-
-  // Carregamento de dados com serviço híbrido resiliente
+  // Carregamento de professores da API.
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     setStatusApi("loading");
@@ -273,96 +251,15 @@ export default function BuscaPresencialScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ============================================================== */}
-        {/* 4. COMPONENTE DE MAPA INTERATIVO (WEB-SAFE & ALTA FIDELIDADE)  */}
-        {/* ============================================================== */}
         <View style={estilos.mapaContainer}>
-          {/* Fundo do Mapa: Malha Urbana Estilizada */}
-          <View style={estilos.mapaCanvas}>
-            {/* Vias e Ruas Diagonais / Horizontais / Verticais */}
-            <View style={[estilos.rua, { top: "28%", left: 0, right: 0, height: 16, transform: [{ rotate: "-12deg" }] }]} />
-            <View style={[estilos.rua, { top: "62%", left: 0, right: 0, height: 18, transform: [{ rotate: "8deg" }] }]} />
-            <View style={[estilos.rua, { top: 0, bottom: 0, left: "30%", width: 14, transform: [{ rotate: "15deg" }] }]} />
-            <View style={[estilos.rua, { top: 0, bottom: 0, right: "28%", width: 16, transform: [{ rotate: "-10deg" }] }]} />
-
-            {/* Áreas Verdes / Praças / Parques */}
-            <View style={[estilos.parqueVerde, { top: 12, left: 12, width: 80, height: 50 }]} />
-            <View style={[estilos.parqueVerde, { top: 18, right: 16, width: 65, height: 45 }]} />
-            <View style={[estilos.parqueVerde, { bottom: 16, right: 28, width: 75, height: 55 }]} />
-
-            {/* Linhas de Tráfego / Detalhes */}
-            <View style={[estilos.faixaTracejada, { top: "29%", left: 0, right: 0, transform: [{ rotate: "-12deg" }] }]} />
-            <View style={[estilos.faixaTracejada, { top: "63%", left: 0, right: 0, transform: [{ rotate: "8deg" }] }]} />
-
-            {/* Marcador Central do Usuário (Você está aqui) */}
-            <View style={estilos.pontoUsuarioContainer}>
-              {/* Radar Pulsante */}
-              <Animated.View
-                style={[
-                  estilos.radarPulso,
-                  {
-                    transform: [{ scale: pulseAnim }],
-                  },
-                ]}
-              />
-              <View style={estilos.radarPulsoInterno} />
-
-              {/* Ponto Central Azul */}
-              <View style={estilos.pontoAzulCore} />
-
-              {/* Balão / Tooltip "Você está aqui" */}
-              <View style={estilos.balaoUsuario}>
-                <Text style={estilos.textoBalaoUsuario}>Você está aqui</Text>
-                <View style={estilos.trianguloBalao} />
-              </View>
-            </View>
-
-            {/* Pins de Professores Espalhados nas Ruas */}
-            {professores.map((prof) => {
-              const selecionado = professorSelecionadoId === prof.id;
-              return (
-                <TouchableOpacity
-                  key={`pin-${prof.id}`}
-                  style={[
-                    estilos.pinProfessor,
-                    {
-                      top: `${prof.mapPin.topPercent}%`,
-                      left: `${prof.mapPin.leftPercent}%`,
-                    },
-                    selecionado && estilos.pinProfessorSelecionado,
-                  ]}
-                  onPress={() => handleSelecionarPinProfessor(prof.id)}
-                  activeOpacity={0.8}
-                >
-                  <FontAwesome5 name="graduation-cap" size={14} color="#FFFFFF" />
-
-                  {/* Tooltip dinâmico quando o pin é clicado */}
-                  {selecionado && (
-                    <View style={estilos.tooltipPin}>
-                      <Text style={estilos.tooltipNome} numberOfLines={1}>
-                        {prof.nome.replace("Prof. ", "").replace("Profa. ", "")}
-                      </Text>
-                      <Text style={estilos.tooltipDistancia}>
-                        {prof.distanciaKm == null
-                          ? "Distância indisponível"
-                          : `${prof.distanciaKm} km`}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-
-            {/* Botão Flutuante (FAB) de Centralização */}
-            <TouchableOpacity
-              style={estilos.fabCentralizar}
-              onPress={handleRecentralizarMapa}
-              activeOpacity={0.8}
-              accessibilityLabel="Centralizar mapa na minha localização"
-            >
-              <MaterialIcons name="my-location" size={20} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
+          <MapaPresencial
+            centro={coordenadasBusca}
+            cidadeSelecionada={cidadeSelecionada}
+            professores={professores}
+            professorSelecionadoId={professorSelecionadoId}
+            onSelecionarProfessor={handleSelecionarPinProfessor}
+            onRecentralizar={handleRecentralizarMapa}
+          />
         </View>
 
         {/* ============================================================== */}
@@ -841,154 +738,6 @@ const estilos = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
   },
-  mapaCanvas: {
-    flex: 1,
-    position: "relative",
-    backgroundColor: "#E2E8F0",
-  },
-  rua: {
-    position: "absolute",
-    backgroundColor: "#FFFFFF",
-  },
-  parqueVerde: {
-    position: "absolute",
-    backgroundColor: "#DCFCE7",
-    borderRadius: 8,
-  },
-  faixaTracejada: {
-    position: "absolute",
-    height: 1,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderStyle: "dashed",
-  },
-  pontoUsuarioContainer: {
-    position: "absolute",
-    top: "48%",
-    left: "50%",
-    transform: [{ translateX: -40 }, { translateY: -40 }],
-    width: 80,
-    height: 80,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radarPulso: {
-    position: "absolute",
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "rgba(59, 130, 246, 0.25)",
-    borderWidth: 1.5,
-    borderColor: "rgba(37, 99, 235, 0.4)",
-  },
-  radarPulsoInterno: {
-    position: "absolute",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(59, 130, 246, 0.35)",
-  },
-  pontoAzulCore: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#2563EB",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  balaoUsuario: {
-    position: "absolute",
-    top: -26,
-    backgroundColor: "#0F2942",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  textoBalaoUsuario: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  trianguloBalao: {
-    position: "absolute",
-    bottom: -4,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderTopWidth: 4,
-    borderLeftColor: "transparent",
-    borderRightColor: "transparent",
-    borderTopColor: "#0F2942",
-  },
-
-  // Pins dos Professores
-  pinProfessor: {
-    position: "absolute",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FF6B1A",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  pinProfessorSelecionado: {
-    backgroundColor: "#0F172A",
-    borderColor: "#FF6B1A",
-    transform: [{ scale: 1.15 }],
-  },
-  tooltipPin: {
-    position: "absolute",
-    bottom: 34,
-    backgroundColor: "#0F172A",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    minWidth: 70,
-    alignItems: "center",
-  },
-  tooltipNome: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  tooltipDistancia: {
-    color: "#FDBA74",
-    fontSize: 9,
-    fontWeight: "600",
-  },
-  fabCentralizar: {
-    position: "absolute",
-    bottom: 12,
-    right: 12,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-  },
-
   // 6. Barra de Filtros (Chips)
   filtrosScroll: {
     paddingHorizontal: 16,

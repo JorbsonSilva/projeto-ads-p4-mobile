@@ -21,10 +21,6 @@ export interface ProfessorPresencial {
   tags: string[];
   precoHora: number;
   online: boolean;
-  mapPin: {
-    topPercent: number;
-    leftPercent: number;
-  };
 }
 
 export interface ResultadoBuscaPresencial {
@@ -83,14 +79,6 @@ export async function obterProfessoresPresenciais(filtros: {
     throw new Error(response.data.message || "A API retornou uma lista de professores inválida.");
   }
 
-  const pinPositions = [
-    { topPercent: 32, leftPercent: 24 },
-    { topPercent: 26, leftPercent: 75 },
-    { topPercent: 68, leftPercent: 68 },
-    { topPercent: 20, leftPercent: 43 },
-    { topPercent: 65, leftPercent: 35 },
-  ];
-
   let convertidos: ProfessorPresencial[] = listaApi.map((item, index) => {
     const aptidaoPrincipal = item.aptidoes?.[0];
     const distancia = item.distanciaKm ?? item.distanciaAproximadaKm;
@@ -111,7 +99,6 @@ export async function obterProfessoresPresenciais(filtros: {
       ),
       precoHora: aptidaoPrincipal?.precoHora ?? 0,
       online: false,
-      mapPin: pinPositions[index % pinPositions.length],
     };
   });
 

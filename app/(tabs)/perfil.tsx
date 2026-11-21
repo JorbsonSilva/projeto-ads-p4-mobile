@@ -298,7 +298,7 @@ export default function PerfilScreen() {
           cidade.estado === formProfEstadoAtendimento
       );
       if (!cidadeSelecionada || !cidadeSelecionada.regioes.some(
-        (regiao) => regiao === formProfRegiaoAtendimento
+        (regiao) => regiao.nome === formProfRegiaoAtendimento
       )) {
         Alert.alert(
           "Localização necessária",
@@ -1399,7 +1399,7 @@ export default function PerfilScreen() {
                                 setFormProfCidade(cidade.cidade);
                                 setFormProfEstadoAtendimento(cidade.estado);
                                 if (!cidade.regioes.some(
-                                  (regiao) => regiao === formProfRegiaoAtendimento
+                                  (regiao) => regiao.nome === formProfRegiaoAtendimento
                                 )) {
                                   setFormProfRegiaoAtendimento("");
                                 }
@@ -1432,15 +1432,15 @@ export default function PerfilScreen() {
                               cidade.cidade === formProfCidade &&
                               cidade.estado === formProfEstadoAtendimento
                           )?.regioes.map((regiao) => {
-                            const selecionada = regiao === formProfRegiaoAtendimento;
+                            const selecionada = regiao.nome === formProfRegiaoAtendimento;
                             return (
                               <TouchableOpacity
-                                key={regiao}
+                                key={regiao.nome}
                                 style={[
                                   estilos.opcaoLocalizacaoPresencial,
                                   selecionada && estilos.opcaoLocalizacaoPresencialAtiva,
                                 ]}
-                                onPress={() => setFormProfRegiaoAtendimento(regiao)}
+                                onPress={() => setFormProfRegiaoAtendimento(regiao.nome)}
                                 accessibilityRole="button"
                                 accessibilityState={{ selected: selecionada }}
                               >
@@ -1450,7 +1450,7 @@ export default function PerfilScreen() {
                                     selecionada && estilos.textoOpcaoLocalizacaoPresencialAtiva,
                                   ]}
                                 >
-                                  {regiao}
+                                  {regiao.nome}
                                 </Text>
                               </TouchableOpacity>
                             );
