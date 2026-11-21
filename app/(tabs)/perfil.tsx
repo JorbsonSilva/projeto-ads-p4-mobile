@@ -4,8 +4,7 @@
  * Implementação de alta fidelidade visual para as duas personas:
  * - Perfil do Aluno (IMG-016 / ORI-017): Hero com avatar, badge "Aluno", card azul de progresso
  *   (7 matérias, 12 mentorias, 45h), bio, menu da conta com chevrons, atividade recente e 5 abas Aluno.
- * - Perfil do Professor (IMG-017 / ORI-018): Hero docente com avatar, badge "Professor", card bege/creme
- *   de resumo do mês (24 aulas, 38 alunos, 36h, R$ 2.480,00), opções de ensino (bio, tarifas online/presencial,
+ * - Perfil do Professor (IMG-017 / ORI-018): Hero docente com avatar, badge "Professor", opções de ensino (bio, tarifas online/presencial,
  *   chave PIX), feed de avaliações dos alunos e 5 abas Professor.
  */
 
@@ -127,9 +126,6 @@ export default function PerfilScreen() {
   const [avaliacoesProfessor, setAvaliacoesProfessor] = useState<PerfilProfessorPublico | null>(null);
   const [carregandoAvaliacoes, setCarregandoAvaliacoes] = useState<boolean>(false);
   const [erroAvaliacoes, setErroAvaliacoes] = useState<string | null>(null);
-
-  // Controle de visibilidade de saldo do resumo do professor
-  const [saldoVisivel, setSaldoVisivel] = useState<boolean>(true);
 
   // Modais de Ação
   const [modalEditarAluno, setModalEditarAluno] = useState<boolean>(false);
@@ -883,75 +879,6 @@ export default function PerfilScreen() {
                   <Text style={estilos.pontoSeparador}>•</Text>
                   <Ionicons name="call-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
                   <Text style={estilos.textoLocalizacao}>{perfilProfessor.telefone}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* CARD BEGE / CREME / DOURADO DE RESUMO DO MÊS (IMG-017) */}
-            <View style={estilos.cardResumoMesDocente}>
-              <View style={estilos.cardResumoMesHeader}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={estilos.iconeResumoMesWrap}>
-                    <FontAwesome5 name="wallet" size={13} color="#D97706" />
-                  </View>
-                  <Text style={estilos.cardResumoMesTitulo}>Resumo do Mês</Text>
-                </View>
-
-                <TouchableOpacity
-                  onPress={() => setSaldoVisivel(!saldoVisivel)}
-                  style={estilos.botaoOlhoSaldo}
-                  activeOpacity={0.7}
-                >
-                  <Feather name={saldoVisivel ? "eye" : "eye-off"} size={14} color="#92400E" />
-                  <Text style={estilos.textoOlhoSaldo}>{saldoVisivel ? "Ocultar" : "Mostrar"}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={estilos.divisorCardResumoMes} />
-
-              <View style={estilos.gridMetricasDocente}>
-                <View style={estilos.blocoMetricaDocente}>
-                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#FEF3C7" }]}>
-                    <Feather name="calendar" size={13} color="#D97706" />
-                  </View>
-                  <Text style={estilos.valorMetricaDocente}>
-                    {perfilProfessor.resumoMes.aulasMinistradas}
-                  </Text>
-                  <Text style={estilos.labelMetricaDocente}>Aulas realizadas</Text>
-                </View>
-
-                <View style={estilos.blocoMetricaDocente}>
-                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#DBEAFE" }]}>
-                    <Feather name="users" size={13} color="#2563EB" />
-                  </View>
-                  <Text style={estilos.valorMetricaDocente}>
-                    {perfilProfessor.resumoMes.alunosAtendidos}
-                  </Text>
-                  <Text style={estilos.labelMetricaDocente}>Alunos atendidos</Text>
-                </View>
-
-                <View style={estilos.blocoMetricaDocente}>
-                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#F3E8FF" }]}>
-                    <Feather name="clock" size={13} color="#9333EA" />
-                  </View>
-                  <Text style={estilos.valorMetricaDocente}>
-                    {perfilProfessor.resumoMes.horasDedicadas}h
-                  </Text>
-                  <Text style={estilos.labelMetricaDocente}>Horas ministradas</Text>
-                </View>
-
-                <View style={estilos.blocoMetricaDocente}>
-                  <View style={[estilos.miniIconeDocenteWrap, { backgroundColor: "#D1FAE5" }]}>
-                    <Feather name="dollar-sign" size={13} color="#059669" />
-                  </View>
-                  <Text style={[estilos.valorMetricaDocente, { color: "#059669" }]}>
-                    {saldoVisivel
-                      ? `R$ ${perfilProfessor.resumoMes.ganhosMes.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}`
-                      : "R$ ••••••"}
-                  </Text>
-                  <Text style={estilos.labelMetricaDocente}>Ganhos no mês</Text>
                 </View>
               </View>
             </View>
@@ -2126,91 +2053,6 @@ const estilos = StyleSheet.create({
     width: 1,
     height: 28,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  cardResumoMesDocente: {
-    backgroundColor: "#FFFBEB",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: "#FDE68A",
-    elevation: 3,
-    shadowColor: "#D97706",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  cardResumoMesHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  iconeResumoMesWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  cardResumoMesTitulo: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#92400E",
-  },
-  botaoOlhoSaldo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEF3C7",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 4,
-  },
-  textoOlhoSaldo: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#92400E",
-  },
-  divisorCardResumoMes: {
-    height: 1,
-    backgroundColor: "#FDE68A",
-    marginBottom: 12,
-  },
-  gridMetricasDocente: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  blocoMetricaDocente: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#FEF3C7",
-  },
-  miniIconeDocenteWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-  valorMetricaDocente: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 2,
-  },
-  labelMetricaDocente: {
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "500",
   },
   secaoContainer: {
     marginBottom: 18,
