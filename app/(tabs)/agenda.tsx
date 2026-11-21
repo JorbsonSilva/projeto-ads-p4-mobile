@@ -35,23 +35,10 @@ import { getApiErrorMessage } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import { obterNotificacoes } from "../../services/notificacoesService";
 
-interface DiaSemana {
-  dia: string;
-  dataMes: string;
+interface DiaCalendario {
+  dia: number;
   dataIso: string;
-}
-
-function obterInicioSemana(data: Date): Date {
-  const inicio = new Date(data);
-  inicio.setHours(12, 0, 0, 0);
-  inicio.setDate(inicio.getDate() - ((inicio.getDay() + 6) % 7));
-  return inicio;
-}
-
-function adicionarDias(data: Date, dias: number): Date {
-  const resultado = new Date(data);
-  resultado.setDate(resultado.getDate() + dias);
-  return resultado;
+  pertenceAoMes: boolean;
 }
 
 function dataIso(data: Date): string {
@@ -61,15 +48,44 @@ function dataIso(data: Date): string {
   return `${ano}-${mes}-${dia}`;
 }
 
-function gerarDiasSemana(inicio: Date): DiaSemana[] {
-  return Array.from({ length: 7 }, (_, indice) => {
-    const data = adicionarDias(inicio, indice);
+function gerarDiasCalendario(mesVisivel: Date): DiaCalendario[] {
+  const primeiroDia = new Date(mesVisivel.getFullYear(), mesVisivel.getMonth(), 1, 12);
+  const inicio = new Date(primeiroDia);
+  inicio.setDate(primeiroDia.getDate() - primeiroDia.getDay());
+  const totalDiasMes = new Date(
+    mesVisivel.getFullYear(),
+    mesVisivel.getMonth() + 1,
+    0,
+  ).getDate();
+  const totalCelulas = Math.ceil((primeiroDia.getDay() + totalDiasMes) / 7) * 7;
+
+  return Array.from({ length: totalCelulas }, (_, indice) => {
+    const data = new Date(inicio);
+    data.setDate(inicio.getDate() + indice);
     return {
-      dia: data.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", ""),
-      dataMes: data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      dia: data.getDate(),
       dataIso: dataIso(data),
+      pertenceAoMes: data.getMonth() === mesVisivel.getMonth(),
     };
   });
+}
+
+function nomeMes(data: Date): string {
+  const mes = data.toLocaleDateString("pt-BR", { month: "long" });
+  return `${mes.charAt(0).toLocaleUpperCase("pt-BR")}${mes.slice(1)} ${data.getFullYear()}`;
+}
+
+function dataPorExtenso(data: string): string {
+  const [ano, mes, dia] = data.split("-").map(Number);
+  return new Date(ano, mes - 1, dia, 12).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
+function horarioCurto(horario: string): string {
+  return horario.split(" • ")[1] ?? horario;
 }
 
 function rotuloStatus(status: CompromissoAgenda["status"]): string {
@@ -91,14 +107,12 @@ export default function AgendaScreen() {
 
   const perfilAtivo: PerfilAgenda = perfilSessao === "Professor" ? "PROFESSOR" : "ALUNO";
   const [abaSegmentada, setAbaSegmentada] = useState<"AGENDA" | "SECUNDARIA">("AGENDA");
-  const [diaSelecionadoIdx, setDiaSelecionadoIdx] = useState<number>(() => {
-    const hoje = new Date().getDay();
-    return (hoje + 6) % 7;
-  });
-  const [inicioSemana, setInicioSemana] = useState<Date>(() => obterInicioSemana(new Date()));
-  const diaEscolhidoManualmente = useRef(false);
-  const diasSemana = useMemo(() => gerarDiasSemana(inicioSemana), [inicioSemana]);
-  const diaSelecionado = diasSemana[diaSelecionadoIdx];
+  const [dataSelecionada, setDataSelecionada] = useState<string>(() => dataIso(new Date()));
+  const [mesVisivel, setMesVisivel] = useState<Date>(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12),
+  );
+  const dataEscolhidaManualmente = useRef(false);
+  const diasCalendario = useMemo(() => gerarDiasCalendario(mesVisivel), [mesVisivel]);
 
   // Dados da Agenda
   const [dados, setDados] = useState<AgendaCompleta>({
@@ -135,7 +149,7 @@ export default function AgendaScreen() {
       const res = await obterAgenda(perfilAtivo, id);
       setDados(res);
       setErro(null);
-      if (!diaEscolhidoManualmente.current) {
+      if (!dataEscolhidaManualmente.current) {
         const compromissos = perfilAtivo === "PROFESSOR"
           ? [
               ...res.solicitacoes.map((item) => ({
@@ -156,8 +170,8 @@ export default function AgendaScreen() {
           .sort()[0];
         if (proximaData) {
           const dataCompromisso = new Date(`${proximaData}T12:00:00`);
-          setInicioSemana(obterInicioSemana(dataCompromisso));
-          setDiaSelecionadoIdx((dataCompromisso.getDay() + 6) % 7);
+          setMesVisivel(new Date(dataCompromisso.getFullYear(), dataCompromisso.getMonth(), 1, 12));
+          setDataSelecionada(proximaData);
         }
       }
       try {
@@ -179,11 +193,17 @@ export default function AgendaScreen() {
   }, [carregarDados]));
 
   const aulasProfessorDoDia = dados.aulasProfessor.filter(
-    (item) => item.dataIso === diaSelecionado?.dataIso,
-  );
+    (item) => item.dataIso === dataSelecionada,
+  ).sort((a, b) => horarioCurto(a.horario).localeCompare(horarioCurto(b.horario)));
   const aulasAlunoDoDia = dados.aulasAluno.filter(
-    (item) => item.dataIso === diaSelecionado?.dataIso,
-  );
+    (item) => item.dataIso === dataSelecionada,
+  ).sort((a, b) => horarioCurto(a.horario).localeCompare(horarioCurto(b.horario)));
+  const compromissosCalendario = perfilAtivo === "PROFESSOR"
+    ? [
+        ...dados.solicitacoes.map((item) => ({ dataIso: item.dataIso, status: item.status })),
+        ...dados.aulasProfessor,
+      ]
+    : dados.aulasAluno;
   // Ações do Professor
   const handleAceitarSolicitacao = async (id: number) => {
     setProcessandoAcao(true);
@@ -392,7 +412,7 @@ export default function AgendaScreen() {
                 abaSegmentada === "AGENDA" && estilos.segmentoTextoAtivo,
               ]}
             >
-              Agenda
+              Calendário
             </Text>
           </TouchableOpacity>
 
@@ -421,60 +441,105 @@ export default function AgendaScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ============================================================== */}
-        {/* 4. SELETOR SEMANAL HORIZONTAL (WEEKLY STRIP)                   */}
-        {/* ============================================================== */}
-        <View style={estilos.weeklyStripContainer}>
-          <TouchableOpacity
-            style={estilos.chevronSemana}
-            onPress={() => {
-              diaEscolhidoManualmente.current = true;
-              setInicioSemana((prev) => adicionarDias(prev, -7));
-            }}
-            accessibilityLabel="Semana anterior"
-          >
-            <Ionicons name="chevron-back" size={18} color="#0F172A" />
-          </TouchableOpacity>
+        <View style={estilos.calendarioCard}>
+          <View style={estilos.cabecalhoMes}>
+            <TouchableOpacity
+              style={estilos.botaoMes}
+              onPress={() => {
+                dataEscolhidaManualmente.current = true;
+                const anterior = new Date(mesVisivel.getFullYear(), mesVisivel.getMonth() - 1, 1, 12);
+                setMesVisivel(anterior);
+                setDataSelecionada(dataIso(anterior));
+              }}
+              accessibilityLabel="Mês anterior"
+            >
+              <Ionicons name="chevron-back" size={19} color="#0F172A" />
+            </TouchableOpacity>
+            <Text style={estilos.tituloMes} numberOfLines={1}>{nomeMes(mesVisivel)}</Text>
+            <TouchableOpacity
+              style={estilos.botaoHoje}
+              onPress={() => {
+                const hoje = new Date();
+                dataEscolhidaManualmente.current = true;
+                setMesVisivel(new Date(hoje.getFullYear(), hoje.getMonth(), 1, 12));
+                setDataSelecionada(dataIso(hoje));
+              }}
+              accessibilityLabel="Ir para hoje"
+            >
+              <Text style={estilos.textoBotaoHoje}>Hoje</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={estilos.botaoMes}
+              onPress={() => {
+                dataEscolhidaManualmente.current = true;
+                const proximo = new Date(mesVisivel.getFullYear(), mesVisivel.getMonth() + 1, 1, 12);
+                setMesVisivel(proximo);
+                setDataSelecionada(dataIso(proximo));
+              }}
+              accessibilityLabel="Próximo mês"
+            >
+              <Ionicons name="chevron-forward" size={19} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
 
-          <View style={estilos.diasSemanaRow}>
-            {diasSemana.map((item, idx) => {
-              const isSelected = idx === diaSelecionadoIdx;
-              const temCompromisso = [
-                ...dados.aulasProfessor,
-                ...dados.aulasAluno,
-              ].some((compromisso) => compromisso.dataIso === item.dataIso);
+          <View style={estilos.gradeDiasSemana}>
+            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dia) => (
+              <Text key={dia} style={estilos.rotuloDiaSemana}>{dia}</Text>
+            ))}
+          </View>
+
+          <View style={estilos.gradeCalendario}>
+            {diasCalendario.map((dia) => {
+              const selecionado = dia.dataIso === dataSelecionada;
+              const doDia = compromissosCalendario.filter((item) => item.dataIso === dia.dataIso);
+              const temSolicitacao = doDia.some((item) => item.status === "PENDENTE");
+              const temAulaConfirmada = doDia.some((item) =>
+                ["CONFIRMADO", "EM_ANDAMENTO", "AGUARDANDO_CONFIRMACAO"].includes(item.status),
+              );
               return (
                 <TouchableOpacity
-                  key={item.dataIso}
-                  style={[estilos.diaCard, isSelected && estilos.diaCardAtivo]}
+                  key={dia.dataIso}
+                  style={estilos.celulaDia}
                   onPress={() => {
-                    diaEscolhidoManualmente.current = true;
-                    setDiaSelecionadoIdx(idx);
+                    dataEscolhidaManualmente.current = true;
+                    setDataSelecionada(dia.dataIso);
+                    if (!dia.pertenceAoMes) {
+                      const dataClicada = new Date(`${dia.dataIso}T12:00:00`);
+                      setMesVisivel(new Date(dataClicada.getFullYear(), dataClicada.getMonth(), 1, 12));
+                    }
                   }}
-                  activeOpacity={0.8}
+                  accessibilityLabel={dataPorExtenso(dia.dataIso)}
+                  accessibilityState={{ selected: selecionado }}
+                  activeOpacity={0.75}
                 >
-                  <Text style={[estilos.textoDiaSemana, isSelected && estilos.textoDiaAtivo]}>
-                    {item.dia}
+                  <Text
+                    style={[
+                      estilos.numeroDia,
+                      !dia.pertenceAoMes && estilos.numeroDiaOutroMes,
+                      selecionado && estilos.numeroDiaSelecionado,
+                    ]}
+                  >
+                    {dia.dia}
                   </Text>
-                  <Text style={[estilos.textoDataMes, isSelected && estilos.textoDiaAtivo]}>
-                    {item.dataMes}
-                  </Text>
-                  {temCompromisso && <View style={estilos.dotDiaAtivo} />}
+                  <View style={estilos.pontosDia}>
+                    {temSolicitacao && <View style={[estilos.pontoAgenda, estilos.pontoSolicitacao]} />}
+                    {temAulaConfirmada && <View style={[estilos.pontoAgenda, estilos.pontoConfirmado]} />}
+                  </View>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <TouchableOpacity
-            style={estilos.chevronSemana}
-            onPress={() => {
-              diaEscolhidoManualmente.current = true;
-              setInicioSemana((prev) => adicionarDias(prev, 7));
-            }}
-            accessibilityLabel="Próxima semana"
-          >
-            <Ionicons name="chevron-forward" size={18} color="#0F172A" />
-          </TouchableOpacity>
+          <View style={estilos.legendaCalendario}>
+            <View style={estilos.itemLegenda}>
+              <View style={[estilos.pontoLegenda, estilos.pontoSolicitacao]} />
+              <Text style={estilos.textoLegenda}>Solicitações</Text>
+            </View>
+            <View style={estilos.itemLegenda}>
+              <View style={[estilos.pontoLegenda, estilos.pontoConfirmado]} />
+              <Text style={estilos.textoLegenda}>Aulas confirmadas</Text>
+            </View>
+          </View>
         </View>
 
         {/* ============================================================== */}
@@ -630,7 +695,10 @@ export default function AgendaScreen() {
 
             {/* Seção 2: Minhas Aulas Agendadas */}
             <View style={[estilos.secaoCabecalhoRow, { marginTop: 24 }]}>
-              <Text style={estilos.secaoTituloTexto}>Minhas Aulas Agendadas</Text>
+              <View style={estilos.tituloAgendaDia}>
+                <Text style={estilos.secaoTituloTexto}>Aulas e compromissos do dia</Text>
+                <Text style={estilos.dataSelecionadaTexto}>{dataPorExtenso(dataSelecionada)}</Text>
+              </View>
               <TouchableOpacity onPress={() => router.push("/todas-mentorias" as any)}>
                 <Text style={estilos.linkVerTodas}>Ver todas →</Text>
               </TouchableOpacity>
@@ -639,7 +707,7 @@ export default function AgendaScreen() {
             <View style={estilos.listaCardsContainer}>
               {aulasProfessorDoDia.length === 0 && (
                 <Text style={estilos.estadoListaTexto}>
-                  Nenhuma aula agendada para {diaSelecionado?.dataMes ?? "esta data"}.
+                  Nenhuma aula agendada para {dataPorExtenso(dataSelecionada)}.
                 </Text>
               )}
               {aulasProfessorDoDia.map((aula) => (
@@ -694,40 +762,64 @@ export default function AgendaScreen() {
           /* ============================================================== */
           <View style={estilos.conteudoBloco}>
             {/* Seção 1: Próximas Aulas */}
-            <View style={estilos.secaoCabecalhoRow}>
-              <Text style={estilos.secaoTituloTexto}>Aulas do dia</Text>
+            <View style={estilos.tituloAgendaDia}>
+              <Text style={estilos.secaoTituloTexto}>Aulas e compromissos do dia</Text>
+              <Text style={estilos.dataSelecionadaTexto}>{dataPorExtenso(dataSelecionada)}</Text>
             </View>
 
             <View style={estilos.listaCardsContainer}>
               {aulasAlunoDoDia.length === 0 && (
                 <Text style={estilos.estadoListaTexto}>
-                  Nenhuma aula para {diaSelecionado?.dataMes ?? "esta data"}.
+                  Nenhuma aula para esta data.
                 </Text>
               )}
               {aulasAlunoDoDia.map((item) => (
                 <View key={`aluno-aula-${item.id}`} style={estilos.cardAlunoAgendamento}>
                   <View style={estilos.cardAlunoTopo}>
+                    <View
+                      style={[
+                        estilos.horaAula,
+                        item.status === "CONFIRMADO" ? estilos.horaAulaConfirmada : estilos.horaAulaPendente,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          estilos.textoHoraAula,
+                          item.status === "CONFIRMADO"
+                            ? estilos.textoHoraAulaConfirmada
+                            : estilos.textoHoraAulaPendente,
+                        ]}
+                      >
+                        {horarioCurto(item.horario)}
+                      </Text>
+                    </View>
                     <View style={estilos.avatarContainer}>
-                      <AvatarPerfil nome={item.nome} fotoUrl={item.foto} tamanho={54} />
+                      <AvatarPerfil nome={item.nome} fotoUrl={item.foto} tamanho={42} />
                     </View>
 
                     <View style={estilos.alunoInfoTexto}>
                       <View style={estilos.linhaNomeBadge}>
                         <Text style={estilos.nomeMentor}>{item.nome}</Text>
-                        <View style={estilos.tagConfirmada}>
-                          <Feather name="check" size={11} color="#C2410C" style={{ marginRight: 3 }} />
-                          <Text style={estilos.textoTagConfirmada}>{rotuloStatus(item.status)}</Text>
+                        <View
+                          style={[
+                            estilos.tagConfirmada,
+                            item.status === "CONFIRMADO" && estilos.tagConfirmadaAzul,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              estilos.textoTagConfirmada,
+                              item.status === "CONFIRMADO" && estilos.textoTagConfirmadaAzul,
+                            ]}
+                          >
+                            {rotuloStatus(item.status)}
+                          </Text>
                         </View>
                       </View>
 
                       <View style={estilos.metaLinha}>
                         <Feather name="book-open" size={12} color="#475569" style={{ marginRight: 4 }} />
                         <Text style={estilos.metaTextoEscuro}>{item.materia}</Text>
-                      </View>
-
-                      <View style={estilos.metaLinha}>
-                        <Feather name="calendar" size={12} color="#475569" style={{ marginRight: 4 }} />
-                        <Text style={estilos.metaTextoEscuro}>{item.horario}</Text>
                       </View>
 
                       <View style={estilos.metaLinha}>
@@ -767,6 +859,16 @@ export default function AgendaScreen() {
                 </View>
               ))}
             </View>
+
+            <TouchableOpacity
+              style={estilos.botaoHorariosDisponiveis}
+              onPress={() => router.push("/busca-professores" as any)}
+              activeOpacity={0.8}
+            >
+              <Feather name="clock" size={17} color="#64748B" />
+              <Text style={estilos.textoHorariosDisponiveis}>Ver horários disponíveis</Text>
+              <Feather name="chevron-right" size={18} color="#64748B" />
+            </TouchableOpacity>
 
             {/* Banner Informativo de Regras */}
             <View style={estilos.bannerRegras}>
@@ -1000,9 +1102,9 @@ const estilos = StyleSheet.create({
     marginBottom: 16,
   },
   tituloPrincipal: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
-    color: "#0F172A",
+    color: "#EA6A1B",
   },
   subtituloPrincipal: {
     fontSize: 13,
@@ -1013,10 +1115,12 @@ const estilos = StyleSheet.create({
   // Segmented Control
   segmentedControl: {
     flexDirection: "row",
-    backgroundColor: "#E2E8F0",
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
     padding: 3,
     marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
   },
   segmentoItem: {
     flex: 1,
@@ -1027,7 +1131,8 @@ const estilos = StyleSheet.create({
     borderRadius: 10,
   },
   segmentoItemAtivo: {
-    backgroundColor: "#0A2540",
+    backgroundColor: "#F26A21",
+    borderRadius: 20,
   },
   segmentoTexto: {
     fontSize: 13,
@@ -1039,57 +1144,142 @@ const estilos = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // Weekly Strip
-  weeklyStripContainer: {
+  calendarioCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    marginBottom: 18,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  cabecalhoMes: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 8,
   },
-  chevronSemana: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: "#F1F5F9",
-  },
-  diasSemanaRow: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginHorizontal: 8,
-  },
-  diaCard: {
-    position: "relative",
+  botaoMes: {
     width: 34,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: "#F1F5F9",
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
   },
-  diaCardAtivo: {
-    backgroundColor: "#0A2540",
+  tituloMes: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
   },
-  textoDiaSemana: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#475569",
-    marginBottom: 2,
+  botaoHoje: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
   },
-  textoDataMes: {
-    fontSize: 10,
-    fontWeight: "500",
-    color: "#64748B",
-  },
-  textoDiaAtivo: {
-    color: "#FFFFFF",
+  textoBotaoHoje: {
+    color: "#EA6A1B",
+    fontSize: 12,
     fontWeight: "700",
   },
-  dotDiaAtivo: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: "#FF6B1A",
-    marginTop: 4,
+  gradeDiasSemana: {
+    flexDirection: "row",
+    marginBottom: 3,
+  },
+  rotuloDiaSemana: {
+    width: "14.2857%",
+    textAlign: "center",
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
+    paddingVertical: 5,
+  },
+  gradeCalendario: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  celulaDia: {
+    width: "14.2857%",
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  numeroDia: {
+    width: 28,
+    height: 28,
+    lineHeight: 28,
+    borderRadius: 14,
+    textAlign: "center",
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "500",
+    overflow: "hidden",
+  },
+  numeroDiaOutroMes: {
+    color: "#B8BDC5",
+  },
+  numeroDiaSelecionado: {
+    color: "#FFFFFF",
+    backgroundColor: "#F26A21",
+    fontWeight: "800",
+  },
+  pontosDia: {
+    height: 4,
+    flexDirection: "row",
+    gap: 3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pontoAgenda: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  pontoSolicitacao: {
+    backgroundColor: "#F26A21",
+  },
+  pontoConfirmado: {
+    backgroundColor: "#17629B",
+  },
+  legendaCalendario: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 18,
+    paddingTop: 10,
+    marginTop: 2,
+  },
+  itemLegenda: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  pontoLegenda: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  textoLegenda: {
+    color: "#64748B",
+    fontSize: 10,
+  },
+  tituloAgendaDia: {
+    flex: 1,
+    gap: 2,
+  },
+  dataSelecionadaTexto: {
+    color: "#C45B1A",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "capitalize",
   },
 
   // Conteúdo
@@ -1349,10 +1539,10 @@ const estilos = StyleSheet.create({
   // Visão Aluno
   cardAlunoAgendamento: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 13,
+    padding: 10,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E8E8E8",
     shadowColor: "#000",
     shadowOpacity: 0.03,
     shadowOffset: { width: 0, height: 2 },
@@ -1361,7 +1551,32 @@ const estilos = StyleSheet.create({
   },
   cardAlunoTopo: {
     flexDirection: "row",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  horaAula: {
+    width: 43,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingLeft: 6,
+    marginRight: 7,
+    borderLeftWidth: 2,
+  },
+  horaAulaConfirmada: {
+    borderLeftColor: "#17629B",
+  },
+  horaAulaPendente: {
+    borderLeftColor: "#F26A21",
+  },
+  textoHoraAula: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  textoHoraAulaConfirmada: {
+    color: "#17629B",
+  },
+  textoHoraAulaPendente: {
+    color: "#D65B16",
   },
   alunoInfoTexto: {
     flex: 1,
@@ -1441,6 +1656,24 @@ const estilos = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#DC2626",
+  },
+  botaoHorariosDisponiveis: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E8E8E8",
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    marginTop: 2,
+  },
+  textoHorariosDisponiveis: {
+    flex: 1,
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "700",
   },
   bannerRegras: {
     flexDirection: "row",

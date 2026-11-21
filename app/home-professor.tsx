@@ -283,18 +283,18 @@ export default function HomeProfessorScreen({
               <Text style={estilos.textoTagGratisPagas}>Flexibilidade Pedagógica</Text>
             </View>
             <Text style={estilos.bannerTitulo}>
-              Defina suas aulas como pagas ou gratuitas
+              Gerencie suas solicitações de aulas
             </Text>
             <Text style={estilos.bannerDescricao}>
-              Você decide o valor do seu conhecimento e sua modalidade de ensino.
+              Confira os pedidos recebidos e aceite ou recuse novas aulas e mentorias.
             </Text>
 
             <TouchableOpacity
               style={estilos.botaoGerenciarAulas}
-              onPress={() => router.push("/(tabs)/perfil?persona=professor" as any)}
+              onPress={() => router.push("/solicitacoes" as any)}
               activeOpacity={0.85}
             >
-              <Text style={estilos.textoBotaoGerenciarAulas}>Gerenciar aulas →</Text>
+              <Text style={estilos.textoBotaoGerenciarAulas}>Ver solicitações →</Text>
             </TouchableOpacity>
           </View>
 
