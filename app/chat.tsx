@@ -368,9 +368,7 @@ export default function ChatScreen() {
 
         <View style={estilos.headerLogoContainer}>
           <Feather name="book-open" size={22} color="#FF5A1F" style={estilos.logoIcone} />
-          <Text style={estilos.logoTexto}>
-            Orienta <Text style={{ color: "#FF5A1F" }}>2.0</Text>
-          </Text>
+          <Text style={estilos.logoTexto}>Orienta</Text>
         </View>
 
         <TouchableOpacity

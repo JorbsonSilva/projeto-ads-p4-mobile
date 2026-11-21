@@ -60,7 +60,6 @@ export default function PainelGanhosScreen() {
   });
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
-  const [erroPainel, setErroPainel] = useState(false);
   const [ocultarValores, setOcultarValores] = useState(false);
   const [semanaSelecionada, setSemanaSelecionada] = useState<number | null>(null);
   const [filtroExtrato, setFiltroExtrato] = useState<"TODAS" | TipoTransacao>("TODAS");
@@ -81,9 +80,7 @@ export default function PainelGanhosScreen() {
       }
       const res = await obterDadosDesempenho(Number(usuarioId));
       setDados(res);
-      setErroPainel(false);
     } catch (error) {
-      setErroPainel(true);
       Alert.alert("Não foi possível carregar os dados financeiros", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
@@ -119,7 +116,8 @@ export default function PainelGanhosScreen() {
 
   // Escala ajustada aos valores recebidos no período, sem limites monetários arbitrários.
   const pontos = dados.graficoEvolucao.map((p, index) => {
-    const x = paddingX + (index / (dados.graficoEvolucao.length - 1)) * graphWidth;
+    const divisor = Math.max(1, dados.graficoEvolucao.length - 1);
+    const x = paddingX + (index / divisor) * graphWidth;
     const y = CHART_HEIGHT - paddingY - (p.valor / maiorValorGrafico) * graphHeight;
     return { ...p, x, y };
   });
@@ -214,33 +212,6 @@ export default function PainelGanhosScreen() {
           </View>
         ) : (
           <>
-            <View
-              style={[
-                estilos.faixaModoSimulacao,
-                {
-                  backgroundColor: erroPainel ? "#FEF3C7" : "#ECFDF5",
-                  borderBottomColor: erroPainel ? "#FDE68A" : "#A7F3D0",
-                },
-              ]}
-            >
-              <Ionicons
-                name={erroPainel ? "alert-circle-outline" : "checkmark-circle-outline"}
-                size={14}
-                color={erroPainel ? "#D97706" : "#059669"}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  estilos.textoModoSimulacao,
-                  { color: erroPainel ? "#92400E" : "#065F46" },
-                ]}
-              >
-                {erroPainel
-                  ? "Não foi possível atualizar os dados financeiros do servidor"
-                  : "Resumo mensal e extrato carregados do servidor"}
-              </Text>
-            </View>
-
             {/* ============================================================== */}
             {/* CARD 1: AZUL MARINHO PROFUNDO ("SEUS RESULTADOS" / EVOLUÇÃO)   */}
             {/* ============================================================== */}
@@ -808,20 +779,6 @@ const estilos = StyleSheet.create({
     backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
-  },
-  faixaModoSimulacao: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
-  },
-  textoModoSimulacao: {
-    fontSize: 11.5,
-    fontWeight: "600",
   },
   scrollArea: {
     flex: 1,

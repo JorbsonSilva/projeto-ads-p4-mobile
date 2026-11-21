@@ -73,6 +73,7 @@ interface ResumoFinanceiroApi {
   aulasRealizadasMes: number;
   alunosAtendidosMes: number;
   aulasPendentesMes: number;
+  graficoEvolucao?: PontoGraficoLinha[];
 }
 
 function dataAtual(): Date {
@@ -189,7 +190,7 @@ export async function obterDadosDesempenho(professorId: number): Promise<DadosDe
       saldoDisponivelSaque: Number(resumo.saldoDisponivel ?? 0),
       saldoPendente: Number(resumo.saldoPendente ?? 0),
     },
-    graficoEvolucao: criarGraficoSemanal(extrato, agora),
+    graficoEvolucao: resumo.graficoEvolucao ?? criarGraficoSemanal(extrato, agora),
     distribuicaoAulas: criarDistribuicao(aulasRealizadasMes, aulasPendentesMes),
     volumePorDisciplina: volumes,
     extratoRecente: transacoes,
