@@ -9,8 +9,8 @@
  * - Barra de localização "Sua localização: Caruaru - PE" com botão GPS "Usar minha localização"
  * - Componente de Mapa Interativo Web-Safe com visual cartográfico limpo, radar pulsante do usuário ("Você está aqui"), pins acadêmicos dos professores e FAB de centralização
  * - Barra de filtros com chips horizontais: [Filtros], "Todas as áreas ⌄", "Presencial ⌄", "↑↓ Ordenar por ⌄"
- * - Banner discreto de resiliência e simulação (identifica se os dados vêm da API Spring Boot ou do fallback offline)
- * - Feed de professores com distância de pedestre destacada (🚶 1,2 km), foto com dot online, selo verificado, badges de nível e botão [Ver perfil]
+ * - Indicador de conexão que diferencia carregamento, sucesso e falha da API
+ * - Feed de professores com distância retornada pela API, foto, selo verificado, badges de nível e botão [Ver perfil]
  * - Banner interurbano "Você também pode buscar por outras cidades >"
  * - Barra de navegação inferior (Tabs) do Orienta 2.0
  */
@@ -23,7 +23,6 @@ import {
   Animated,
   Image,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,11 +31,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getApiErrorMessage } from "../config/api";
+import TabBarRN001 from "../components/navigation/TabBarRN001";
+import { LOCALIZACOES_PRESENCIAIS } from "../constants/localizacoesPresenciais";
 import {
   obterProfessoresPresenciais,
   ProfessorPresencial,
   ResultadoBuscaPresencial,
 } from "../services/buscaPresencialService";
+
+const CIDADES_DISPONIVEIS = LOCALIZACOES_PRESENCIAIS.map(
+  (cidade) => `${cidade.cidade} – ${cidade.estado}`
+);
+
+function obterCoordenadasCidade(cidadeSelecionada: string) {
+  const cidade = LOCALIZACOES_PRESENCIAIS.find(
+    (opcao) => `${opcao.cidade} – ${opcao.estado}` === cidadeSelecionada
+  );
+  const localizacao = cidade ?? LOCALIZACOES_PRESENCIAIS[0];
+  return { latitude: localizacao.latitude, longitude: localizacao.longitude };
+}
 
 const AREAS_DISPONIVEIS = [
   "Todas as áreas",
@@ -60,9 +74,16 @@ export default function BuscaPresencialScreen() {
 
   const [carregando, setCarregando] = useState<boolean>(true);
   const [professores, setProfessores] = useState<ProfessorPresencial[]>([]);
-  const [isSimulado, setIsSimulado] = useState<boolean>(true);
+  const [statusApi, setStatusApi] = useState<"loading" | "success" | "error">("loading");
   const [motivoStatus, setMotivoStatus] = useState<string>("");
   const [cidadeAtual, setCidadeAtual] = useState<string>("Caruaru – PE");
+  const [cidadeSelecionada, setCidadeSelecionada] = useState<string>("Caruaru – PE");
+  const [coordenadasBusca, setCoordenadasBusca] = useState<{
+    latitude: number;
+    longitude: number;
+  }>(
+    obterCoordenadasCidade("Caruaru – PE")
+  );
   const [gpsAtivo, setGpsAtivo] = useState<boolean>(false);
   const [professorSelecionadoId, setProfessorSelecionadoId] = useState<number | null>(null);
 
@@ -98,17 +119,23 @@ export default function BuscaPresencialScreen() {
   // Carregamento de dados com serviço híbrido resiliente
   const carregarDados = useCallback(async () => {
     setCarregando(true);
+    setStatusApi("loading");
     try {
       const res: ResultadoBuscaPresencial = await obterProfessoresPresenciais({
         area: areaSelecionada,
         raioKm: 15,
+        ...coordenadasBusca,
       });
 
       let lista = [...res.professores];
 
       // Aplica ordenação
       if (ordenacao === "proximidade") {
-        lista.sort((a, b) => a.distanciaKm - b.distanciaKm);
+        lista.sort(
+          (a, b) =>
+            (a.distanciaKm ?? Number.POSITIVE_INFINITY) -
+            (b.distanciaKm ?? Number.POSITIVE_INFINITY)
+        );
       } else if (ordenacao === "avaliacao") {
         lista.sort((a, b) => b.notaMedia - a.notaMedia);
       } else if (ordenacao === "precoMenor") {
@@ -116,16 +143,15 @@ export default function BuscaPresencialScreen() {
       }
 
       setProfessores(lista);
-      setIsSimulado(res.isSimulado);
-      setMotivoStatus(res.motivoStatus);
-      if (res.cidadeAtual) setCidadeAtual(res.cidadeAtual);
-    } catch {
-      setIsSimulado(true);
-      setMotivoStatus("Erro ao processar dados");
+      setStatusApi("success");
+    } catch (error) {
+      setProfessores([]);
+      setStatusApi("error");
+      setMotivoStatus(getApiErrorMessage(error));
     } finally {
       setCarregando(false);
     }
-  }, [areaSelecionada, ordenacao]);
+  }, [areaSelecionada, coordenadasBusca, ordenacao]);
 
   useEffect(() => {
     carregarDados();
@@ -133,20 +159,27 @@ export default function BuscaPresencialScreen() {
 
   // Ação de ativar localização via GPS
   const handleUsarMinhaLocalizacao = () => {
-    setGpsAtivo(true);
     if (typeof window !== "undefined" && navigator?.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        () => {
-          setCidadeAtual("Caruaru – PE (GPS)");
-          carregarDados();
+        ({ coords }) => {
+          setGpsAtivo(true);
+          setCidadeAtual("Minha localização (GPS)");
+          setCoordenadasBusca({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          });
         },
         () => {
-          setCidadeAtual("Caruaru – PE");
+          setGpsAtivo(false);
+          setCidadeAtual(cidadeSelecionada);
+          setCoordenadasBusca(obterCoordenadasCidade(cidadeSelecionada));
         },
         { timeout: 5000 }
       );
     } else {
-      setCidadeAtual("Caruaru – PE (Local)");
+      setGpsAtivo(false);
+      setCidadeAtual(cidadeSelecionada);
+      setCoordenadasBusca(obterCoordenadasCidade(cidadeSelecionada));
     }
   };
 
@@ -170,23 +203,23 @@ export default function BuscaPresencialScreen() {
             onPress={() => router.replace("/(tabs)")}
             activeOpacity={0.8}
             style={estilos.logoBotao}
+            accessibilityLabel="Página inicial Orienta"
           >
-            <View style={estilos.logoSimbolo}>
-              <View style={estilos.logoCirculoInterno} />
-            </View>
-            <Text style={estilos.logoTexto}>Orienta</Text>
+            <Image
+              source={require("../assets/images/branding/logo.png")}
+              style={estilos.logoImagem}
+              resizeMode="contain"
+              accessibilityLabel="Orienta"
+            />
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity
-          onPress={() => router.push("/noticias")}
+          onPress={() => router.push("/notificacoes")}
           style={estilos.sinoBotao}
           accessibilityLabel="Central de Notificações"
         >
           <Feather name="bell" size={22} color="#0F172A" />
-          <View style={estilos.sinoBadge}>
-            <Text style={estilos.sinoBadgeTexto}>3</Text>
-          </View>
         </TouchableOpacity>
       </View>
 
@@ -309,7 +342,11 @@ export default function BuscaPresencialScreen() {
                       <Text style={estilos.tooltipNome} numberOfLines={1}>
                         {prof.nome.replace("Prof. ", "").replace("Profa. ", "")}
                       </Text>
-                      <Text style={estilos.tooltipDistancia}>{prof.distanciaKm} km</Text>
+                      <Text style={estilos.tooltipDistancia}>
+                        {prof.distanciaKm == null
+                          ? "Distância indisponível"
+                          : `${prof.distanciaKm} km`}
+                      </Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -326,41 +363,6 @@ export default function BuscaPresencialScreen() {
               <MaterialIcons name="my-location" size={20} color="#0F172A" />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 5. ALERTA DE SIMULAÇÃO / RESILIÊNCIA (REQUISITO ESTREITO)      */}
-        {/* ============================================================== */}
-        <View style={estilos.containerAlerta}>
-          {isSimulado ? (
-            <View style={estilos.badgeSimulacaoOffline}>
-              <View style={estilos.iconeAlerta}>
-                <Text style={{ fontSize: 13 }}>⚠️</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={estilos.textoBadgeOffline}>
-                  Modo Simulação: Dados offline (Fallback resiliente ativo)
-                </Text>
-                <Text style={estilos.subtextoBadgeOffline}>
-                  Exibindo professores locais de Caruaru – PE conforme referência oficial.
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={carregarDados}
-                style={estilos.botaoReconectar}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Feather name="refresh-cw" size={14} color="#B45309" />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={estilos.badgeConectadoAPI}>
-              <View style={estilos.dotVerdeOnline} />
-              <Text style={estilos.textoConectado}>
-                Conectado à API Spring Boot em tempo real
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* ============================================================== */}
@@ -451,19 +453,35 @@ export default function BuscaPresencialScreen() {
             </View>
           ) : professores.length === 0 ? (
             <View style={estilos.vazioContainer}>
-              <Ionicons name="location-outline" size={48} color="#94A3B8" />
-              <Text style={estilos.vazioTitulo}>Nenhum professor encontrado</Text>
+              <Ionicons
+                name={statusApi === "error" ? "cloud-offline-outline" : "location-outline"}
+                size={48}
+                color="#94A3B8"
+              />
+              <Text style={estilos.vazioTitulo}>
+                {statusApi === "error"
+                  ? "Não foi possível carregar os professores"
+                  : "Nenhum professor encontrado"}
+              </Text>
               <Text style={estilos.vazioSubtitulo}>
-                Não encontramos professores presenciais nessa área no raio atual.
+                {statusApi === "error"
+                  ? motivoStatus || "Tente novamente em instantes."
+                  : "Não encontramos professores presenciais nessa área no raio atual."}
               </Text>
               <TouchableOpacity
                 style={estilos.botaoLimparFiltros}
-                onPress={() => {
-                  setAreaSelecionada("Todas as áreas");
-                  setOrdenacao("proximidade");
-                }}
+                onPress={
+                  statusApi === "error"
+                    ? carregarDados
+                    : () => {
+                        setAreaSelecionada("Todas as áreas");
+                        setOrdenacao("proximidade");
+                      }
+                }
               >
-                <Text style={estilos.textoLimpar}>Limpar filtros</Text>
+                <Text style={estilos.textoLimpar}>
+                  {statusApi === "error" ? "Tentar novamente" : "Limpar filtros"}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -519,7 +537,9 @@ export default function BuscaPresencialScreen() {
                       <View style={estilos.localizacaoLinha}>
                         <Ionicons name="location-sharp" size={12} color="#64748B" />
                         <Text style={estilos.distanciaTexto}>
-                          A {prof.distanciaKm.toString().replace(".", ",")} km • Presencial
+                          {prof.distanciaKm == null
+                            ? "Distância indisponível • Presencial"
+                            : `A ${prof.distanciaKm.toString().replace(".", ",")} km • Presencial`}
                         </Text>
                       </View>
 
@@ -539,7 +559,9 @@ export default function BuscaPresencialScreen() {
                       <View style={estilos.badgeDistanciaPedestre}>
                         <Ionicons name="walk" size={15} color="#0F172A" style={{ marginRight: 3 }} />
                         <Text style={estilos.textoDistanciaPedestre}>
-                          {prof.distanciaKm.toString().replace(".", ",")} km
+                          {prof.distanciaKm == null
+                            ? "Sem distância"
+                            : `${prof.distanciaKm.toString().replace(".", ",")} km`}
                         </Text>
                       </View>
 
@@ -666,85 +688,39 @@ export default function BuscaPresencialScreen() {
         >
           <View style={estilos.modalCard}>
             <Text style={estilos.modalTitulo}>Selecionar Cidade de Busca</Text>
-            {["Caruaru – PE", "Recife – PE", "Campina Grande – PB", "João Pessoa – PB"].map(
-              (cid) => (
-                <TouchableOpacity
-                  key={cid}
+            {CIDADES_DISPONIVEIS.map((cid) => (
+              <TouchableOpacity
+                key={cid}
+                style={[
+                  estilos.modalItem,
+                  cidadeAtual === cid && estilos.modalItemAtivo,
+                ]}
+                onPress={() => {
+                  setCidadeSelecionada(cid);
+                  setCidadeAtual(cid);
+                  setGpsAtivo(false);
+                  setCoordenadasBusca(obterCoordenadasCidade(cid));
+                  setModalCidadeVisivel(false);
+                }}
+              >
+                <Text
                   style={[
-                    estilos.modalItem,
-                    cidadeAtual === cid && estilos.modalItemAtivo,
+                    estilos.modalItemTexto,
+                    cidadeAtual === cid && estilos.modalItemTextoAtivo,
                   ]}
-                  onPress={() => {
-                    setCidadeAtual(cid);
-                    setModalCidadeVisivel(false);
-                    carregarDados();
-                  }}
                 >
-                  <Text
-                    style={[
-                      estilos.modalItemTexto,
-                      cidadeAtual === cid && estilos.modalItemTextoAtivo,
-                    ]}
-                  >
-                    {cid}
-                  </Text>
-                  {cidadeAtual === cid && (
-                    <Feather name="check" size={18} color="#FF6B1A" />
-                  )}
-                </TouchableOpacity>
-              )
-            )}
+                  {cid}
+                </Text>
+                {cidadeAtual === cid && (
+                  <Feather name="check" size={18} color="#FF6B1A" />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* ============================================================== */}
-      {/* 10. TAB BAR INFERIOR PADRÃO ORIENTA 2.0                        */}
-      {/* ============================================================== */}
-      <View style={[estilos.tabBarInferior, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.replace("/(tabs)")}
-        >
-          <Feather name="home" size={20} color="#94A3B8" />
-          <Text style={estilos.tabLabel}>Início</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={estilos.tabItem}>
-          <Feather name="search" size={20} color="#FF6B1A" />
-          <Text style={[estilos.tabLabel, estilos.tabLabelAtivo]}>Buscar</Text>
-          <View style={estilos.tabIndicadorAtivo} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/(tabs)/agenda")}
-        >
-          <Feather name="calendar" size={20} color="#94A3B8" />
-          <Text style={estilos.tabLabel}>Minhas aulas</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/noticias")}
-        >
-          <View style={{ position: "relative" }}>
-            <Feather name="message-square" size={20} color="#94A3B8" />
-            <View style={estilos.tabBadge}>
-              <Text style={estilos.tabBadgeTexto}>3</Text>
-            </View>
-          </View>
-          <Text style={estilos.tabLabel}>Mensagens</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={estilos.tabItem}
-          onPress={() => router.push("/perfil")}
-        >
-          <Feather name="user" size={20} color="#94A3B8" />
-          <Text style={estilos.tabLabel}>Perfil</Text>
-        </TouchableOpacity>
-      </View>
+      <TabBarRN001 abaAtiva="buscar" perfilForcado="Aluno" />
     </View>
   );
 }
@@ -777,48 +753,12 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  logoSimbolo: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#FF6B1A",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8,
-  },
-  logoCirculoInterno: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#FFFFFF",
-  },
-  logoTexto: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.5,
+  logoImagem: {
+    width: 52,
+    height: 52,
   },
   sinoBotao: {
-    position: "relative",
     padding: 6,
-  },
-  sinoBadge: {
-    position: "absolute",
-    top: 2,
-    right: 2,
-    backgroundColor: "#FF6B1A",
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF",
-  },
-  sinoBadgeTexto: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "800",
   },
 
   // 2. Seção Título
@@ -1047,61 +987,6 @@ const estilos = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 3,
-  },
-
-  // 5. Alerta de Resiliência / Simulação
-  containerAlerta: {
-    marginHorizontal: 16,
-    marginTop: 10,
-  },
-  badgeSimulacaoOffline: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEF3C7",
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  iconeAlerta: {
-    marginRight: 8,
-  },
-  textoBadgeOffline: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#92400E",
-  },
-  subtextoBadgeOffline: {
-    fontSize: 10,
-    color: "#B45309",
-    marginTop: 1,
-  },
-  botaoReconectar: {
-    padding: 6,
-    marginLeft: 6,
-  },
-  badgeConectadoAPI: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  dotVerdeOnline: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: "#10B981",
-    marginRight: 6,
-  },
-  textoConectado: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#065F46",
   },
 
   // 6. Barra de Filtros (Chips)
@@ -1364,59 +1249,6 @@ const estilos = StyleSheet.create({
   modalItemTextoAtivo: {
     color: "#FF6B1A",
     fontWeight: "700",
-  },
-
-  // 10. Tab Bar Inferior
-  tabBarInferior: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#FFFFFF",
-    flexDirection: "row",
-    justifyContent: "space-around",
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    elevation: 10,
-  },
-  tabItem: {
-    alignItems: "center",
-    position: "relative",
-    paddingVertical: 2,
-  },
-  tabLabel: {
-    fontSize: 11,
-    color: "#94A3B8",
-    marginTop: 4,
-    fontWeight: "600",
-  },
-  tabLabelAtivo: {
-    color: "#FF6B1A",
-    fontWeight: "700",
-  },
-  tabIndicadorAtivo: {
-    width: 20,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: "#FF6B1A",
-    marginTop: 3,
-  },
-  tabBadge: {
-    position: "absolute",
-    top: -3,
-    right: -8,
-    backgroundColor: "#FF6B1A",
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  tabBadgeTexto: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "800",
   },
 
   // Loading & Vazio

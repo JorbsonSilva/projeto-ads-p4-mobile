@@ -63,6 +63,7 @@ export interface PerfilProfessorData {
     valorHoraPresencial?: number;
     permitePresencial: boolean;
     raioAtendimentoKm?: number;
+    regiaoAtendimento?: string;
     chavePix: string;
   };
   saberes: { id: number; nome: string; nivel: string; precoHora?: number }[];
@@ -225,6 +226,7 @@ export async function obterPerfilProfessor(usuarioId: number): Promise<Resultado
         raioAtendimentoKm: perfil.raioAtendimentoKm === null || perfil.raioAtendimentoKm === undefined
           ? undefined
           : Number(perfil.raioAtendimentoKm),
+        regiaoAtendimento: String(perfil.regiaoAtendimento ?? ""),
         chavePix: String(ensino.chavePix ?? ""),
       },
       saberes: (Array.isArray(perfil.aptidoes) ? perfil.aptidoes : []).map((item: any) => ({
@@ -263,6 +265,7 @@ export async function salvarPerfilProfessor(
       chavePix: novosDados.configuracoesEnsino?.chavePix,
       oferecePresencial: novosDados.configuracoesEnsino?.permitePresencial,
       raioAtendimentoKm: novosDados.configuracoesEnsino?.raioAtendimentoKm,
+      regiaoAtendimento: novosDados.configuracoesEnsino?.regiaoAtendimento,
       disponibilidades: novosDados.disponibilidades,
       aptidoes: novosDados.saberes?.map((saber) => ({
         saberId: saber.id,

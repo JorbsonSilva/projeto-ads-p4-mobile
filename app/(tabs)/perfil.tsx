@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../context/AuthContext";
 import { getApiErrorMessage } from "../../config/api";
+import { LOCALIZACOES_PRESENCIAIS } from "../../constants/localizacoesPresenciais";
 import {
   obterPerfilAluno,
   obterPerfilProfessor,
@@ -157,6 +158,8 @@ export default function PerfilScreen() {
   const [formProfTitulacao, setFormProfTitulacao] = useState<string>("");
   const [formProfTelefone, setFormProfTelefone] = useState<string>("");
   const [formProfCidade, setFormProfCidade] = useState<string>("");
+  const [formProfEstadoAtendimento, setFormProfEstadoAtendimento] = useState<string>("");
+  const [formProfRegiaoAtendimento, setFormProfRegiaoAtendimento] = useState<string>("");
   const [formProfBio, setFormProfBio] = useState<string>("");
   const [formProfPrecoOnline, setFormProfPrecoOnline] = useState<string>("");
   const [formProfPrecoPresencial, setFormProfPrecoPresencial] = useState<string>("");
@@ -180,6 +183,8 @@ export default function PerfilScreen() {
         setFormProfTitulacao(res.dados.titulacao);
         setFormProfTelefone(res.dados.telefone);
         setFormProfCidade(res.dados.cidade);
+        setFormProfEstadoAtendimento(res.dados.estado);
+        setFormProfRegiaoAtendimento(res.dados.configuracoesEnsino.regiaoAtendimento || "");
         setFormProfBio(res.dados.bio);
         setFormProfPrecoOnline(String(res.dados.configuracoesEnsino.valorHoraOnline || ""));
         setFormProfPrecoPresencial(String(res.dados.configuracoesEnsino.valorHoraPresencial || ""));
@@ -286,6 +291,23 @@ export default function PerfilScreen() {
   };
 
   const handleSalvarTarifasProfessor = async () => {
+    if (formProfPresencial) {
+      const cidadeSelecionada = LOCALIZACOES_PRESENCIAIS.find(
+        (cidade) =>
+          cidade.cidade === formProfCidade &&
+          cidade.estado === formProfEstadoAtendimento
+      );
+      if (!cidadeSelecionada || !cidadeSelecionada.regioes.some(
+        (regiao) => regiao === formProfRegiaoAtendimento
+      )) {
+        Alert.alert(
+          "Localização necessária",
+          "Selecione uma cidade e uma região de atendimento para oferecer aulas presenciais."
+        );
+        return;
+      }
+    }
+
     setSalvandoEdicao(true);
     try {
       const precoOnlineNum = formProfPrecoOnline.trim() ? Number(formProfPrecoOnline.replace(",", ".")) : undefined;
@@ -299,21 +321,27 @@ export default function PerfilScreen() {
       }
 
       await salvarPerfilProfessor(perfilProfessor.id, {
+        cidade: formProfCidade,
+        estado: formProfEstadoAtendimento,
         configuracoesEnsino: {
           ...perfilProfessor.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
           valorHoraPresencial: precoPresencialNum,
           permitePresencial: formProfPresencial,
+          regiaoAtendimento: formProfRegiaoAtendimento,
         },
       });
 
       setPerfilProfessor((prev) => ({
         ...prev,
+        cidade: formProfCidade,
+        estado: formProfEstadoAtendimento,
         configuracoesEnsino: {
           ...prev.configuracoesEnsino,
           valorHoraOnline: precoOnlineNum,
           valorHoraPresencial: precoPresencialNum,
           permitePresencial: formProfPresencial,
+          regiaoAtendimento: formProfRegiaoAtendimento,
         },
       }));
       setModalEditarTarifasProf(false);
@@ -1016,7 +1044,7 @@ export default function PerfilScreen() {
                   <View style={estilos.infoMenuItem}>
                     <Text style={estilos.tituloMenuItem}>Configurar aulas e valores</Text>
                     <Text style={estilos.subtituloMenuItem}>
-                      Online: {perfilProfessor.configuracoesEnsino.valorHoraOnline !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h` : "Não informado"} • Presencial: {perfilProfessor.configuracoesEnsino.permitePresencial ? (perfilProfessor.configuracoesEnsino.valorHoraPresencial !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h` : "valor não informado") : "não oferecido"}
+                      Online: {perfilProfessor.configuracoesEnsino.valorHoraOnline !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraOnline.toFixed(2)}/h` : "Não informado"} • Presencial: {perfilProfessor.configuracoesEnsino.permitePresencial ? `${perfilProfessor.configuracoesEnsino.valorHoraPresencial !== undefined ? `R$ ${perfilProfessor.configuracoesEnsino.valorHoraPresencial.toFixed(2)}/h` : "valor não informado"}${perfilProfessor.configuracoesEnsino.regiaoAtendimento ? ` em ${perfilProfessor.configuracoesEnsino.regiaoAtendimento}, ${perfilProfessor.cidade}` : ""}` : "não oferecido"}
                     </Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#94A3B8" />
@@ -1347,6 +1375,97 @@ export default function PerfilScreen() {
                       thumbColor={formProfPresencial ? "#059669" : "#F8FAFC"}
                     />
                   </View>
+
+                  {formProfPresencial && (
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={estilos.labelInput}>Cidade de atendimento</Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={estilos.opcoesLocalizacaoPresencial}
+                      >
+                        {LOCALIZACOES_PRESENCIAIS.map((cidade) => {
+                          const selecionada =
+                            cidade.cidade === formProfCidade &&
+                            cidade.estado === formProfEstadoAtendimento;
+                          return (
+                            <TouchableOpacity
+                              key={`${cidade.cidade}-${cidade.estado}`}
+                              style={[
+                                estilos.opcaoLocalizacaoPresencial,
+                                selecionada && estilos.opcaoLocalizacaoPresencialAtiva,
+                              ]}
+                              onPress={() => {
+                                setFormProfCidade(cidade.cidade);
+                                setFormProfEstadoAtendimento(cidade.estado);
+                                if (!cidade.regioes.some(
+                                  (regiao) => regiao === formProfRegiaoAtendimento
+                                )) {
+                                  setFormProfRegiaoAtendimento("");
+                                }
+                              }}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: selecionada }}
+                            >
+                              <Text
+                                style={[
+                                  estilos.textoOpcaoLocalizacaoPresencial,
+                                  selecionada && estilos.textoOpcaoLocalizacaoPresencialAtiva,
+                                ]}
+                              >
+                                {cidade.cidade} - {cidade.estado}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+
+                      <Text style={estilos.labelInput}>Bairro ou região de atendimento</Text>
+                      {LOCALIZACOES_PRESENCIAIS.find(
+                        (cidade) =>
+                          cidade.cidade === formProfCidade &&
+                          cidade.estado === formProfEstadoAtendimento
+                      ) ? (
+                        <View style={estilos.opcoesLocalizacaoPresencial}>
+                          {LOCALIZACOES_PRESENCIAIS.find(
+                            (cidade) =>
+                              cidade.cidade === formProfCidade &&
+                              cidade.estado === formProfEstadoAtendimento
+                          )?.regioes.map((regiao) => {
+                            const selecionada = regiao === formProfRegiaoAtendimento;
+                            return (
+                              <TouchableOpacity
+                                key={regiao}
+                                style={[
+                                  estilos.opcaoLocalizacaoPresencial,
+                                  selecionada && estilos.opcaoLocalizacaoPresencialAtiva,
+                                ]}
+                                onPress={() => setFormProfRegiaoAtendimento(regiao)}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected: selecionada }}
+                              >
+                                <Text
+                                  style={[
+                                    estilos.textoOpcaoLocalizacaoPresencial,
+                                    selecionada && estilos.textoOpcaoLocalizacaoPresencialAtiva,
+                                  ]}
+                                >
+                                  {regiao}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ) : (
+                        <Text style={estilos.textoAjudaDisponibilidade}>
+                          Selecione uma das cidades disponíveis.
+                        </Text>
+                      )}
+                      <Text style={estilos.textoAjudaDisponibilidade}>
+                        Usamos um ponto aproximado da região; seu endereço não é solicitado nem exibido.
+                      </Text>
+                    </View>
+                  )}
 
                   <View style={{ flexDirection: "row", gap: 10 }}>
                     <View style={{ flex: 1 }}>
@@ -2154,6 +2273,32 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
+  },
+  opcoesLocalizacaoPresencial: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingVertical: 4,
+  },
+  opcaoLocalizacaoPresencial: {
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  opcaoLocalizacaoPresencialAtiva: {
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FF5A1F",
+  },
+  textoOpcaoLocalizacaoPresencial: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  textoOpcaoLocalizacaoPresencialAtiva: {
+    color: "#C2410C",
   },
   chipInteresse: {
     backgroundColor: "#EFF6FF",

@@ -1,10 +1,11 @@
 /**
  * @file buscaPresencialService.ts
  * @description Serviço Oficial de Busca Presencial por Geolocalização conectado à API Spring Boot 3.
- * Endpoint consumido: GET /api/v1/usuarios/professores/busca
+ * Endpoint consumido: GET /api/v1/usuarios/professores/busca-presencial
  */
 
-import { API_URL } from "../config/api";
+import { api } from "../config/api";
+import type { ApiResponse } from "../config/api";
 
 export interface ProfessorPresencial {
   id: number;
@@ -15,7 +16,7 @@ export interface ProfessorPresencial {
   fotoUrl: string;
   oferecePresencial: boolean;
   regiaoAtendimento: string;
-  distanciaKm: number;
+  distanciaKm: number | null;
   textoProximidade: string;
   tags: string[];
   precoHora: number;
@@ -28,110 +29,101 @@ export interface ProfessorPresencial {
 
 export interface ResultadoBuscaPresencial {
   professores: ProfessorPresencial[];
-  isSimulado: boolean;
-  motivoStatus: string;
-  cidadeAtual: string;
-  raioKm: number;
+}
+
+interface ProfessorBuscaApi {
+  id: number;
+  nome: string;
+  bioProfessor: string | null;
+  fotoUrl: string | null;
+  notaMedia: number | null;
+  totalAvaliacoes: number | null;
+  oferecePresencial: boolean | null;
+  regiaoAtendimento: string | null;
+  distanciaKm: number | null;
+  distanciaAproximadaKm: number | null;
+  textoProximidade: string | null;
+  aptidoes: {
+    saberNome: string | null;
+    precoHora: number | null;
+    nivelDominio: string | null;
+  }[] | null;
 }
 
 /**
- * Consulta a busca presencial diretamente da API REST com cálculo Haversine no banco
+ * Consulta a busca presencial na API, que calcula as distâncias com Haversine.
  */
-export async function obterProfessoresPresenciais(filtros?: {
-  latitude?: number;
-  longitude?: number;
+export async function obterProfessoresPresenciais(filtros: {
+  latitude: number;
+  longitude: number;
   raioKm?: number;
   termo?: string;
   area?: string;
 }): Promise<ResultadoBuscaPresencial> {
-  const latitude = filtros?.latitude ?? -23.55052; // Coordenadas de referência
-  const longitude = filtros?.longitude ?? -46.633308;
-  const raioKm = filtros?.raioKm ?? 20;
-  const termo = filtros?.termo?.trim() ?? "";
-  const area = filtros?.area ?? "Todas as áreas";
+  const latitude = filtros.latitude;
+  const longitude = filtros.longitude;
+  const raioKm = filtros.raioKm ?? 20;
+  const termo = filtros.termo?.trim() ?? "";
+  const area = filtros.area ?? "Todas as áreas";
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-    const queryParams = new URLSearchParams({
-      modalidade: "PRESENCIAL",
-      latitude: latitude.toString(),
-      longitude: longitude.toString(),
-      raioKm: raioKm.toString(),
-    });
-
-    if (termo) queryParams.append("termo", termo);
-
-    const url = `${API_URL}/api/v1/usuarios/professores/busca?${queryParams.toString()}`;
-
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const json = await res.json();
-      const listaApi = json.data || json;
-
-      if (Array.isArray(listaApi)) {
-        let convertidos: ProfessorPresencial[] = listaApi.map((item: any, index: number) => {
-          const aptidaoPrincipal = item.aptidoes?.[0];
-          const pinPositions = [
-            { topPercent: 32, leftPercent: 24 },
-            { topPercent: 26, leftPercent: 75 },
-            { topPercent: 68, leftPercent: 68 },
-            { topPercent: 20, leftPercent: 43 },
-            { topPercent: 65, leftPercent: 35 },
-          ];
-          const pin = pinPositions[index % pinPositions.length];
-          const distancia = item.distanciaAproximadaKm ?? (1.0 + index * 0.7);
-
-          return {
-            id: item.id || 100 + index,
-            nome: item.nome || "Professor(a)",
-            materia: aptidaoPrincipal?.saberNome || "Mentoria",
-            notaMedia: item.notaMedia ?? 4.9,
-            totalAvaliacoes: item.totalAvaliacoes ?? 100,
-            fotoUrl: item.fotoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
-            oferecePresencial: true,
-            regiaoAtendimento: item.regiaoAtendimento || "Região Central",
-            distanciaKm: Number(distancia.toFixed(1)),
-            textoProximidade: `A ${distancia.toFixed(1).replace(".", ",")} km • Presencial`,
-            tags: [aptidaoPrincipal?.nivelDominio || "Ensino Superior", "Presencial"],
-            precoHora: aptidaoPrincipal?.precoHora ?? 60.0,
-            online: true,
-            mapPin: pin,
-          };
-        });
-
-        if (area && area !== "Todas as áreas" && area !== "Todas") {
-          convertidos = convertidos.filter(
-            (p) => p.materia.toLowerCase().includes(area.toLowerCase()) || p.tags.some((tag) => tag.toLowerCase().includes(area.toLowerCase()))
-          );
-        }
-
-        return {
-          professores: convertidos,
-          isSimulado: false,
-          motivoStatus: "Conectado à API Spring Boot com sucesso",
-          cidadeAtual: "Região Selecionada",
-          raioKm,
-        };
-      }
+  const response = await api.get<ApiResponse<ProfessorBuscaApi[]>>(
+    "/usuarios/professores/busca-presencial",
+    {
+      params: {
+        latitude,
+        longitude,
+        raioKm,
+        ...(termo ? { termo } : {}),
+      },
     }
-  } catch (err) {
-    console.warn("Falha na busca presencial via API:", err);
+  );
+  const listaApi = response.data.data;
+
+  if (!response.data.success || !Array.isArray(listaApi)) {
+    throw new Error(response.data.message || "A API retornou uma lista de professores inválida.");
+  }
+
+  const pinPositions = [
+    { topPercent: 32, leftPercent: 24 },
+    { topPercent: 26, leftPercent: 75 },
+    { topPercent: 68, leftPercent: 68 },
+    { topPercent: 20, leftPercent: 43 },
+    { topPercent: 65, leftPercent: 35 },
+  ];
+
+  let convertidos: ProfessorPresencial[] = listaApi.map((item, index) => {
+    const aptidaoPrincipal = item.aptidoes?.[0];
+    const distancia = item.distanciaKm ?? item.distanciaAproximadaKm;
+
+    return {
+      id: item.id,
+      nome: item.nome,
+      materia: aptidaoPrincipal?.saberNome || "Mentoria",
+      notaMedia: item.notaMedia ?? 0,
+      totalAvaliacoes: item.totalAvaliacoes ?? 0,
+      fotoUrl: item.fotoUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
+      oferecePresencial: item.oferecePresencial ?? false,
+      regiaoAtendimento: item.regiaoAtendimento || "Região não informada",
+      distanciaKm: distancia == null ? null : Number(distancia.toFixed(1)),
+      textoProximidade: item.textoProximidade || "Distância indisponível",
+      tags: [aptidaoPrincipal?.nivelDominio, "Presencial"].filter(
+        (tag): tag is string => Boolean(tag)
+      ),
+      precoHora: aptidaoPrincipal?.precoHora ?? 0,
+      online: false,
+      mapPin: pinPositions[index % pinPositions.length],
+    };
+  });
+
+  if (area && area !== "Todas as áreas" && area !== "Todas") {
+    convertidos = convertidos.filter(
+      (professor) =>
+        professor.materia.toLowerCase().includes(area.toLowerCase()) ||
+        professor.tags.some((tag) => tag.toLowerCase().includes(area.toLowerCase()))
+    );
   }
 
   return {
-    professores: [],
-    isSimulado: false,
-    motivoStatus: "Nenhum professor presencial encontrado para os filtros selecionados.",
-    cidadeAtual: "Região Selecionada",
-    raioKm,
+    professores: convertidos,
   };
 }
