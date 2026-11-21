@@ -8,10 +8,10 @@
  * - Modal de confirmação de aceite com link para a agenda
  * - Modal de recusa com seleção rápida de justificativa
  * - Barra inferior dockada com as 5 abas da versão Professor (RN-001)
- * - Serviço híbrido com fallback offline e badge de modo de simulação
+ * - Consulta autenticada à API e feedback explícito de erro
  */
 
-import { Feather, FontAwesome5, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Feather, FontAwesome5, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -19,7 +19,6 @@ import {
   Alert,
   Image,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -30,6 +29,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { getApiErrorMessage } from "../config/api";
 import { useAuth } from "../context/AuthContext";
 import {
   aceitarSolicitacao,
@@ -65,12 +65,13 @@ export default function SolicitacoesScreen() {
 
   const carregarDados = useCallback(async () => {
     try {
-      const res: ResultadoSolicitacoes = await obterSolicitacoes(usuarioId || 2);
+      const res: ResultadoSolicitacoes = await obterSolicitacoes(Number(usuarioId));
       setSolicitacoes(res.dados);
       setTotais(res.totais);
       setIsSimulado(res.isSimulado);
-    } catch {
+    } catch (error) {
       setIsSimulado(true);
+      Alert.alert("Não foi possível carregar as solicitações", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
       setAtualizando(false);
@@ -121,7 +122,9 @@ export default function SolicitacoesScreen() {
       const res = await aceitarSolicitacao(solicitacaoAtiva.id);
       setModalAceitarVisivel(false);
       setFeedbackSucesso(res.mensagem);
-      carregarDados();
+      await carregarDados();
+    } catch (error) {
+      Alert.alert("Não foi possível aceitar a solicitação", getApiErrorMessage(error));
     } finally {
       setProcessandoAcao(false);
     }
@@ -135,7 +138,9 @@ export default function SolicitacoesScreen() {
       const res = await recusarSolicitacao(solicitacaoAtiva.id, motivoFinal);
       setModalRecusarVisivel(false);
       setFeedbackSucesso(res.mensagem);
-      carregarDados();
+      await carregarDados();
+    } catch (error) {
+      Alert.alert("Não foi possível recusar a solicitação", getApiErrorMessage(error));
     } finally {
       setProcessandoAcao(false);
     }
@@ -439,7 +444,7 @@ export default function SolicitacoesScreen() {
               {item.mensagemAluno ? (
                 <View style={estilos.blocoMensagemAluno}>
                   <FontAwesome5 name="quote-left" size={10} color="#94A3B8" style={{ marginBottom: 4 }} />
-                  <Text style={estilos.textoMensagemAluno}>"{item.mensagemAluno}"</Text>
+                  <Text style={estilos.textoMensagemAluno}>&ldquo;{item.mensagemAluno}&rdquo;</Text>
                 </View>
               ) : null}
 
@@ -508,6 +513,8 @@ export default function SolicitacoesScreen() {
                           ? "Confirmada na Agenda"
                           : item.status === "CONCLUIDA"
                           ? "Aula Concluída"
+                          : item.status === "CANCELADA"
+                          ? "Aula Cancelada"
                           : "Solicitação Recusada"}
                       </Text>
                     </View>
