@@ -356,38 +356,42 @@ export default function PainelGanhosScreen() {
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(255, 90, 31, 0.15)" }]}>
                     <FontAwesome5 name="chalkboard-teacher" size={15} color="#FF7A3D" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Aulas realizadas</Text>
-                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasMinistradas}</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
+                  <View style={estilos.textosMetricaNavy}>
+                    <Text style={estilos.labelMetricaNavy}>Aulas realizadas</Text>
+                    <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasMinistradas}</Text>
+                  </View>
                 </View>
 
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(37, 99, 235, 0.15)" }]}>
                     <Feather name="clock" size={15} color="#60A5FA" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Aulas pendentes</Text>
-                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasPendentes}</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
+                  <View style={estilos.textosMetricaNavy}>
+                    <Text style={estilos.labelMetricaNavy}>Aulas pendentes</Text>
+                    <Text style={estilos.valorMetricaNavy}>{dados.metricas.aulasPendentes}</Text>
+                  </View>
                 </View>
 
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
                     <Feather name="users" size={15} color="#34D399" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Alunos atendidos</Text>
-                  <Text style={estilos.valorMetricaNavy}>{dados.metricas.alunosAtendidos}</Text>
-                  <Text style={estilos.variacaoMetricaNavy}>No mês</Text>
+                  <View style={estilos.textosMetricaNavy}>
+                    <Text style={estilos.labelMetricaNavy}>Alunos atendidos</Text>
+                    <Text style={estilos.valorMetricaNavy}>{dados.metricas.alunosAtendidos}</Text>
+                  </View>
                 </View>
 
                 <View style={estilos.cardMetricaNavy}>
                   <View style={[estilos.iconeMetricaWrapper, { backgroundColor: "rgba(245, 158, 11, 0.15)" }]}>
                     <MaterialCommunityIcons name="currency-usd" size={17} color="#FBBF24" />
                   </View>
-                  <Text style={estilos.labelMetricaNavy}>Ganhos brutos</Text>
-                  <Text style={[estilos.valorMetricaNavy, { color: "#34D399" }]}>
-                    {formatarMoeda(dados.metricas.ganhosMes)}
-                  </Text>
-                  <Text style={[estilos.variacaoMetricaNavy, { color: "#34D399" }]}>No mês</Text>
+                  <View style={estilos.textosMetricaNavy}>
+                    <Text style={estilos.labelMetricaNavy}>Ganhos brutos</Text>
+                    <Text style={[estilos.valorMetricaNavy, estilos.valorGanhosMetricaNavy, { color: "#34D399" }]}>
+                      {formatarMoeda(dados.metricas.ganhosMes)}
+                    </Text>
+                  </View>
                 </View>
               </View>
             </View>
@@ -906,15 +910,18 @@ const estilos = StyleSheet.create({
   gridMetricasNavy: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 14,
+    gap: 8,
+    marginTop: 10,
   },
   cardMetricaNavy: {
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
     minWidth: "45%",
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 14,
-    padding: 12,
+    padding: 8,
+    gap: 8,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
   },
@@ -924,24 +931,25 @@ const estilos = StyleSheet.create({
     borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
+    flexShrink: 0,
+  },
+  textosMetricaNavy: {
+    flex: 1,
+    minWidth: 0,
   },
   labelMetricaNavy: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#94A3B8",
     fontWeight: "500",
   },
   valorMetricaNavy: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "800",
     color: "#FFFFFF",
-    marginTop: 2,
+    marginTop: 1,
   },
-  variacaoMetricaNavy: {
-    fontSize: 10,
-    color: "#64748B",
-    marginTop: 3,
-    fontWeight: "500",
+  valorGanhosMetricaNavy: {
+    fontSize: 13,
   },
 
   // CARD ATALHO SAQUE
