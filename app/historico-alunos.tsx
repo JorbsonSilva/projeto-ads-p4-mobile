@@ -55,7 +55,6 @@ export default function HistoricoAlunosScreen() {
   });
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
-  const [erroHistorico, setErroHistorico] = useState(false);
 
   // Estados de pesquisa e filtros
   const [busca, setBusca] = useState("");
@@ -81,9 +80,7 @@ export default function HistoricoAlunosScreen() {
       }
       const res = await obterHistoricoAlunos(Number(usuarioId));
       setDados(res);
-      setErroHistorico(false);
     } catch (error) {
-      setErroHistorico(true);
       Alert.alert("Não foi possível carregar os alunos", getApiErrorMessage(error));
     } finally {
       setCarregando(false);
@@ -198,33 +195,6 @@ export default function HistoricoAlunosScreen() {
           />
         }
       >
-        <View
-          style={[
-            estilos.faixaModoSimulacao,
-            {
-              backgroundColor: erroHistorico ? "#FEF3C7" : "#ECFDF5",
-              borderBottomColor: erroHistorico ? "#FDE68A" : "#A7F3D0",
-            },
-          ]}
-        >
-          <Ionicons
-            name={erroHistorico ? "alert-circle-outline" : "checkmark-circle-outline"}
-            size={14}
-            color={erroHistorico ? "#D97706" : "#059669"}
-            style={{ marginRight: 6 }}
-          />
-          <Text
-            style={[
-              estilos.textoModoSimulacao,
-              { color: erroHistorico ? "#92400E" : "#065F46" },
-            ]}
-          >
-            {erroHistorico
-              ? "Não foi possível atualizar os dados do servidor"
-              : "Dados dos alunos carregados do servidor"}
-          </Text>
-        </View>
-
         {/* CARDS DE RESUMO DE ATENDIMENTO (3 COLUNAS) */}
         <View style={estilos.gridMetricasAlunos}>
           {/* Card 1: Total de Alunos */}
@@ -713,20 +683,6 @@ const estilos = StyleSheet.create({
     backgroundColor: "#F1F5F9",
     justifyContent: "center",
     alignItems: "center",
-  },
-  faixaModoSimulacao: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FEF3C7",
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#FDE68A",
-  },
-  textoModoSimulacao: {
-    fontSize: 11.5,
-    fontWeight: "600",
   },
   scrollArea: {
     flex: 1,
