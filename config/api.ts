@@ -7,12 +7,26 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios, { AxiosError } from "axios";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 import { Agendamento, AgendamentoRequest, ApiResponse, JustificativaRequest, RemarcarAgendamentoRequest } from "../types/agendamento";
 
 export type { ApiResponse };
 
+function resolveDefaultBaseUrl(): string {
+  if (Platform.OS === "web") {
+    return "http://localhost:8080";
+  }
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const ip = hostUri.split(":")[0];
+    return `http://${ip}:8080`;
+  }
+  return "http://localhost:8080";
+}
+
 const envApiUrl = process.env.EXPO_PUBLIC_API_URL;
-const defaultBaseUrl = "http://localhost:8080";
+const defaultBaseUrl = resolveDefaultBaseUrl();
 const RAW_API_URL = (envApiUrl || defaultBaseUrl).replace(/\/+$/, "");
 // Garante URL raiz para chamadas que já utilizam '/api/...' ou '/agendamentos'
 export const API_URL = RAW_API_URL.replace(/\/api(\/v1)?\/?$/, "");
