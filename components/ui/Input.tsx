@@ -14,20 +14,20 @@
  * - Acessibilidade WCAG AA (labels, aria-invalid, contrastes)
  */
 
-import React, { useState, forwardRef } from 'react';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import React, { forwardRef, useState } from 'react';
 import {
-  View,
+  Platform,
+  StyleProp,
+  StyleSheet,
   Text,
   TextInput,
   TextInputProps,
-  TouchableOpacity,
-  StyleSheet,
-  ViewStyle,
   TextStyle,
-  StyleProp,
-  Platform,
+  TouchableOpacity,
+  View,
+  ViewStyle,
 } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
 import { Theme } from '../../constants/theme';
 
 // =============================================================================
@@ -223,7 +223,7 @@ export const Input = forwardRef<TextInput, InputProps>(
               minHeight: getHeightBySize(),
               borderColor: getBorderColor(),
               backgroundColor: getBackgroundColor(),
-              borderWidth: isFocused || hasError ? 1.5 : 1,
+              borderWidth: 1.5,
             },
             isFocused && styles.inputBoxFocused,
             disabled && styles.inputBoxDisabled,
@@ -343,17 +343,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: '#FFFFFF',
     borderStyle: 'solid',
-    transitionProperty: 'border-color, box-shadow',
-    transitionDuration: '150ms',
+    ...(Platform.OS === 'web'
+      ? ({
+          transitionProperty: 'border-color, box-shadow',
+          transitionDuration: '150ms',
+        } as any)
+      : {}),
   } as ViewStyle,
   inputBoxFocused: {
     ...(Platform.OS === 'web'
       ? ({
           boxShadow: '0 0 0 3px rgba(255, 90, 31, 0.15)',
         } as any)
-      : {
-          elevation: 2,
-        }),
+      : {}),
   },
   inputBoxDisabled: {
     borderColor: '#E2E8F0',
