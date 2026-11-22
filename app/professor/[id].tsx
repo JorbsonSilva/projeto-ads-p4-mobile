@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,23 +39,6 @@ import { getApiErrorMessage } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import AvatarPerfil from "../../components/AvatarPerfil";
 
-const DIAS_SEMANA = [
-  { codigo: "SEGUNDA", nome: "Segunda-feira" },
-  { codigo: "TERCA", nome: "Terça-feira" },
-  { codigo: "QUARTA", nome: "Quarta-feira" },
-  { codigo: "QUINTA", nome: "Quinta-feira" },
-  { codigo: "SEXTA", nome: "Sexta-feira" },
-  { codigo: "SABADO", nome: "Sábado" },
-  { codigo: "DOMINGO", nome: "Domingo" },
-] as const;
-
-function normalizarDiaSemana(dia: string): string {
-  return dia.normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/-FEIRA$/, "");
-}
-
 export default function PerfilProfessorScreen() {
   const { id } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -64,6 +48,7 @@ export default function PerfilProfessorScreen() {
   const [carregandoPerfil, setCarregandoPerfil] = useState(true);
   const [erroPerfil, setErroPerfil] = useState<string | null>(null);
   const [favoritado, setFavoritado] = useState<boolean>(false);
+  const [sobreProfessorVisivel, setSobreProfessorVisivel] = useState<boolean>(false);
 
   // Seleção de Modalidade (ONLINE vs PRESENCIAL)
   const [modalidade, setModalidade] = useState<"ONLINE" | "PRESENCIAL">("ONLINE");
@@ -166,16 +151,11 @@ export default function PerfilProfessorScreen() {
 
   const precoAtual = modalidade === "ONLINE" ? professor.precoOnline : professor.precoPresencial;
   const totalModalidades = Number(professor.aceitaOnline) + Number(professor.oferecePresencial);
+  const biografiaProfessor = professor.bio?.trim() || "O professor ainda não adicionou uma biografia.";
+  const possuiBiografia = Boolean(professor.bio?.trim());
   const avaliacaoArredondada = professor.notaMedia === null
     ? 0
     : Math.round(professor.notaMedia);
-  const disponibilidadePorDia = DIAS_SEMANA.map((dia) => ({
-    ...dia,
-    periodos: professor.disponibilidades.filter(
-      (item) => normalizarDiaSemana(item.diaSemana) === dia.codigo,
-    ),
-  })).filter((dia) => dia.periodos.length > 0);
-
   return (
     <View style={[estilos.container, { paddingTop: insets.top }]}>
       {/* ============================================================== */}
@@ -228,95 +208,111 @@ export default function PerfilProfessorScreen() {
         {/* 2. HERO DO MENTOR (FOTO, SELO, AVALIAÇÃO, MODALIDADE)          */}
         {/* ============================================================== */}
         <View style={estilos.heroCard}>
-          {/* Avatar com Dot Online */}
+          {/* Foto e informações principais lado a lado para aproveitar a largura da tela */}
           <View style={estilos.avatarContainer}>
             <AvatarPerfil
               nome={professor.nome}
               fotoUrl={professor.fotoUrl}
-              tamanho={88}
+              tamanho={72}
             />
             {professor.online && <View style={estilos.dotOnlineVerde} />}
           </View>
 
-          {/* Nome e Selo de Verificação */}
-          <View style={estilos.nomeLinha}>
-            <Text style={estilos.nomeProfessor}>{professor.nome}</Text>
-            {professor.verificado && (
-              <MaterialIcons
-                name="verified"
-                size={20}
-                color="#0057B8"
-                style={{ marginLeft: 6 }}
-              />
-            )}
-          </View>
-
-          {/* Título Acadêmico / Formação */}
-          {professor.tituloAcademico ? (
-            <Text style={estilos.tituloAcademico}>{professor.tituloAcademico}</Text>
-          ) : null}
-
-          {/* Linha de Avaliação com Estrelas */}
-          {professor.notaMedia !== null ? (
-            <View style={estilos.avaliacaoLinha}>
-              <View style={estilos.estrelasRow}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <MaterialIcons
-                    key={star}
-                    name={star <= avaliacaoArredondada ? "star" : "star-outline"}
-                    size={16}
-                    color="#F5A623"
-                  />
-                ))}
-              </View>
-              <Text style={estilos.notaDestaque}>
-                {professor.notaMedia.toString().replace(".", ",")}{" "}
-                <Text style={estilos.totalAvaliacoesTexto}>
-                  ({professor.totalAvaliacoes} avaliações)
+          <View style={estilos.infoHero}>
+              {/* Nome e Selo de Verificação */}
+              <View style={estilos.nomeLinha}>
+                <Text style={estilos.nomeProfessor} numberOfLines={2}>
+                  {professor.nome}
                 </Text>
-              </Text>
-            </View>
-          ) : (
-            <Text style={estilos.semAvaliacao}>Ainda sem avaliações</Text>
-          )}
+                {professor.verificado && (
+                  <MaterialIcons
+                    name="verified"
+                    size={18}
+                    color="#0057B8"
+                    style={{ marginLeft: 5 }}
+                  />
+                )}
+              </View>
 
-          {/* Tag de Modalidade e Região */}
-          {professor.cidade ? (
-            <View style={estilos.badgeLocalizacao}>
-              <Ionicons name="location-sharp" size={13} color="#0284C7" />
-              <Text style={estilos.textoBadgeLocalizacao}>{professor.cidade}</Text>
-            </View>
-          ) : null}
+              {/* Título Acadêmico / Formação */}
+              {professor.tituloAcademico ? (
+                <Text style={estilos.tituloAcademico} numberOfLines={2}>
+                  {professor.tituloAcademico}
+                </Text>
+              ) : null}
+
+              {/* Linha de Avaliação com Estrelas */}
+              {professor.notaMedia !== null ? (
+                <View style={estilos.avaliacaoLinha}>
+                  <View style={estilos.estrelasRow}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <MaterialIcons
+                        key={star}
+                        name={star <= avaliacaoArredondada ? "star" : "star-outline"}
+                        size={15}
+                        color="#F5A623"
+                      />
+                    ))}
+                  </View>
+                  <Text style={estilos.notaDestaque}>
+                    {professor.notaMedia.toString().replace(".", ",")}{" "}
+                    <Text style={estilos.totalAvaliacoesTexto}>
+                      ({professor.totalAvaliacoes} avaliações)
+                    </Text>
+                  </Text>
+                </View>
+              ) : (
+                <Text style={estilos.semAvaliacao}>Ainda sem avaliações</Text>
+              )}
+
+              {/* Tag de Modalidade e Região */}
+              {professor.cidade ? (
+                <View style={estilos.badgeLocalizacao}>
+                  <Ionicons name="location-sharp" size={13} color="#0284B7" />
+                  <Text style={estilos.textoBadgeLocalizacao}>{professor.cidade}</Text>
+                </View>
+              ) : null}
+          </View>
         </View>
 
         {/* ============================================================== */}
-        {/* 4. MÉTRICAS DISPONÍVEIS NO PERFIL PÚBLICO                     */}
+        {/* 3. RESUMO SOBRE O PROFESSOR                                    */}
         {/* ============================================================== */}
-        <View style={estilos.metricasGrid}>
-          <View style={estilos.metricaItem}>
-            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#EFF6FF" }]}>
-              <Feather name="book-open" size={18} color="#2563EB" />
-            </View>
-            <Text style={estilos.metricaNumero}>{professor.materias.length}</Text>
-            <Text style={estilos.metricaLabel}>Disciplinas</Text>
-          </View>
-
-          <View style={estilos.metricaItem}>
-            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#ECFDF5" }]}>
-              <Feather name="monitor" size={18} color="#059669" />
-            </View>
-            <Text style={estilos.metricaNumero}>{totalModalidades}</Text>
-            <Text style={estilos.metricaLabel}>Modalidades</Text>
-          </View>
-
-          <View style={estilos.metricaItem}>
-            <View style={[estilos.metricaIconeWrapper, { backgroundColor: "#FFFBEB" }]}>
-              <MaterialIcons name="star-outline" size={20} color="#D97706" />
-            </View>
-            <Text style={estilos.metricaNumero}>
-              {professor.notaMedia?.toString().replace(".", ",") ?? "—"}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Sobre o Professor</Text>
+          <View style={estilos.cardResumoBiografia}>
+            <Text style={estilos.textoBiografiaResumo} numberOfLines={3}>
+              {biografiaProfessor}
             </Text>
-            <Text style={estilos.metricaLabel}>Avaliação média</Text>
+            {possuiBiografia ? (
+              <TouchableOpacity
+                style={estilos.botaoLerBiografia}
+                onPress={() => setSobreProfessorVisivel(true)}
+                activeOpacity={0.7}
+                accessibilityLabel={`Ler a apresentação completa de ${professor.nome}`}
+              >
+                <Text style={estilos.textoLerBiografia}>Ler mais</Text>
+                <Feather name="arrow-up-right" size={14} color="#FF6B1A" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        {/* ============================================================== */}
+        {/* 4. DISCIPLINAS E ESPECIALIDADES                                */}
+        {/* ============================================================== */}
+        <View style={estilos.secaoContainer}>
+          <Text style={estilos.secaoTitulo}>Disciplinas & Especialidades</Text>
+          <View style={estilos.chipsDisciplinasContainer}>
+            {professor.materias.map((materia, mIdx) => (
+              <View key={`m-${mIdx}`} style={estilos.chipDisciplina}>
+                <FontAwesome5 name="book-reader" size={13} color="#FF6B1A" style={{ marginRight: 6 }} />
+                <Text style={estilos.chipDisciplinaTexto}>{materia}</Text>
+              </View>
+            ))}
+            {professor.materias.length === 0 ? (
+              <Text style={estilos.textoBiografia}>Nenhuma disciplina informada.</Text>
+            ) : null}
           </View>
         </View>
 
@@ -325,9 +321,6 @@ export default function PerfilProfessorScreen() {
         {/* ============================================================== */}
         <View style={estilos.secaoContainer}>
           <Text style={estilos.secaoTitulo}>Modalidade da Aula</Text>
-          <Text style={estilos.secaoSubtitulo}>
-            Selecione o formato que melhor se adapta à sua rotina:
-          </Text>
 
           <View style={estilos.modalidadesContainer}>
             {professor.aceitaOnline ? (
@@ -342,26 +335,26 @@ export default function PerfilProfessorScreen() {
                 <View style={estilos.modalidadeTopoLinha}>
                   <View style={estilos.modalidadeIconeTitulo}>
                     <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#EFF6FF" }]}>
-                      <Feather name="monitor" size={18} color="#2563EB" />
+                      <Feather name="monitor" size={16} color="#2563EB" />
                     </View>
-                    <View>
-                      <Text style={estilos.tituloModalidade}>100% Online</Text>
-                      <Text style={estilos.subtituloModalidade}>Sala Virtual Orienta</Text>
+                    <View style={estilos.modalidadeTextoArea}>
+                      <Text style={estilos.tituloModalidade} numberOfLines={1}>100% Online</Text>
+                      <Text style={estilos.subtituloModalidade} numberOfLines={1}>
+                        Sala Virtual Orienta
+                      </Text>
                     </View>
-                  </View>
-                  <View style={estilos.badgeMaisEscolhida}>
-                    <Text style={estilos.textoMaisEscolhida}>Mais escolhida</Text>
                   </View>
                 </View>
 
-                <Text style={estilos.descricaoModalidade}>
-                  Aula ao vivo com quadro interativo, gravação da sessão e compartilhamento de materiais.
-                </Text>
-
                 <View style={estilos.modalidadePrecoLinha}>
-                  <Text style={estilos.precoModalidade}>
+                  <Text
+                    style={estilos.precoModalidade}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
                     {professor.precoOnline !== null
-                      ? `${professor.precoOnlinePorAptidao ? "A partir de " : ""}R$ ${professor.precoOnline.toFixed(2).replace(".", ",")} / hora`
+                      ? `${professor.precoOnlinePorAptidao ? "A partir de " : ""}R$ ${professor.precoOnline.toFixed(2).replace(".", ",")}/h`
                       : "Preço não informado"}
                   </Text>
                   <View
@@ -388,26 +381,26 @@ export default function PerfilProfessorScreen() {
                 <View style={estilos.modalidadeTopoLinha}>
                   <View style={estilos.modalidadeIconeTitulo}>
                     <View style={[estilos.iconeModalidadeBox, { backgroundColor: "#FFF7ED" }]}>
-                      <Ionicons name="location-sharp" size={18} color="#FF6B1A" />
+                      <Ionicons name="location-sharp" size={16} color="#FF6B1A" />
                     </View>
-                    <View>
-                      <Text style={estilos.tituloModalidade}>Presencial</Text>
-                      <Text style={estilos.subtituloModalidade}>{professor.cidade}</Text>
+                    <View style={estilos.modalidadeTextoArea}>
+                      <Text style={estilos.tituloModalidade} numberOfLines={1}>Presencial</Text>
+                      <Text style={estilos.subtituloModalidade} numberOfLines={1}>
+                        {professor.cidade || "Local a combinar"}
+                      </Text>
                     </View>
-                  </View>
-                  <View style={estilos.badgePresencialTag}>
-                    <Text style={estilos.textoPresencialTag}>Sob consulta</Text>
                   </View>
                 </View>
 
-                <Text style={estilos.descricaoModalidade}>
-                  Aula presencial em domicílio ou biblioteca acordada, respeitando os protocolos de segurança.
-                </Text>
-
                 <View style={estilos.modalidadePrecoLinha}>
-                  <Text style={estilos.precoModalidade}>
+                  <Text
+                    style={estilos.precoModalidade}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
                     {professor.precoPresencial !== null
-                      ? `${professor.precoPresencialPorAptidao ? "A partir de " : ""}R$ ${professor.precoPresencial.toFixed(2).replace(".", ",")} / hora`
+                      ? `${professor.precoPresencialPorAptidao ? "A partir de " : ""}R$ ${professor.precoPresencial.toFixed(2).replace(".", ",")}/h`
                       : "Preço não informado"}
                   </Text>
                   <View
@@ -431,68 +424,7 @@ export default function PerfilProfessorScreen() {
         </View>
 
         {/* ============================================================== */}
-        {/* 6. DISPONIBILIDADE SEMANAL                                     */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoContainer}>
-          <Text style={estilos.secaoTitulo}>Disponibilidade semanal</Text>
-          <Text style={estilos.secaoSubtitulo}>
-            Horários em que este professor aceita agendamentos:
-          </Text>
-          <View style={estilos.cardDisponibilidadePublica}>
-            {disponibilidadePorDia.length > 0 ? disponibilidadePorDia.map((dia) => (
-              <View key={dia.codigo} style={estilos.linhaDisponibilidadePublica}>
-                <Text style={estilos.nomeDiaDisponibilidadePublica}>{dia.nome}</Text>
-                <View style={estilos.periodosDisponibilidadePublica}>
-                  {dia.periodos.map((periodo, indice) => (
-                    <View key={`${dia.codigo}-${indice}`} style={estilos.chipHorarioPublico}>
-                      <Feather name="clock" size={11} color="#047857" />
-                      <Text style={estilos.textoChipHorarioPublico}>
-                        {periodo.horaInicio.slice(0, 5)}–{periodo.horaFim.slice(0, 5)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )) : (
-              <Text style={estilos.textoSemDisponibilidadePublica}>
-                O professor ainda não informou horários disponíveis.
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 7. DISCIPLINAS E ESPECIALIDADES                                */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoContainer}>
-          <Text style={estilos.secaoTitulo}>Disciplinas & Especialidades</Text>
-          <View style={estilos.chipsDisciplinasContainer}>
-            {professor.materias.map((materia, mIdx) => (
-              <View key={`m-${mIdx}`} style={estilos.chipDisciplina}>
-                <FontAwesome5 name="book-reader" size={13} color="#FF6B1A" style={{ marginRight: 6 }} />
-                <Text style={estilos.chipDisciplinaTexto}>{materia}</Text>
-              </View>
-            ))}
-            {professor.materias.length === 0 ? (
-              <Text style={estilos.textoBiografia}>Nenhuma disciplina informada.</Text>
-            ) : null}
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 8. SOBRE O PROFESSOR (BIOGRAFIA & METODOLOGIA)                 */}
-        {/* ============================================================== */}
-        <View style={estilos.secaoContainer}>
-          <Text style={estilos.secaoTitulo}>Sobre o Professor</Text>
-          <View style={estilos.cardBiografia}>
-            <Text style={estilos.textoBiografia}>
-              {professor.bio || "O professor ainda não adicionou uma biografia."}
-            </Text>
-          </View>
-        </View>
-
-        {/* ============================================================== */}
-        {/* 9. AVALIAÇÕES RECENTES DE ALUNOS                               */}
+        {/* 6. AVALIAÇÕES RECENTES DE ALUNOS                               */}
         {/* ============================================================== */}
         <View style={estilos.secaoContainer}>
           <View style={estilos.topoAvaliacoesLinha}>
@@ -530,8 +462,46 @@ export default function PerfilProfessorScreen() {
         </View>
       </ScrollView>
 
+      <Modal
+        visible={sobreProfessorVisivel}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSobreProfessorVisivel(false)}
+      >
+        <View style={estilos.modalSobreOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setSobreProfessorVisivel(false)}
+            activeOpacity={1}
+            accessibilityLabel="Fechar apresentação do professor"
+          />
+          <View style={[estilos.modalSobreCard, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            <View style={estilos.modalSobreAlca} />
+            <View style={estilos.modalSobreHeader}>
+              <View style={estilos.modalSobreTituloArea}>
+                <Text style={estilos.modalSobreTitulo}>Sobre {professor.nome}</Text>
+                <Text style={estilos.modalSobreSubtitulo}>Apresentação e metodologia</Text>
+              </View>
+              <TouchableOpacity
+                style={estilos.botaoFecharModalSobre}
+                onPress={() => setSobreProfessorVisivel(false)}
+                accessibilityLabel="Fechar"
+              >
+                <Feather name="x" size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={estilos.modalSobreConteudo}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={estilos.modalSobreTexto}>{biografiaProfessor}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* ============================================================== */}
-      {/* 10. STICKY ACTION FOOTER (CTA FIXO INFERIOR COM PREÇO DINÂMICO) */}
+      {/* 7. STICKY ACTION FOOTER (CTA FIXO INFERIOR COM PREÇO DINÂMICO) */}
       {/* ============================================================== */}
       <View
         style={[
@@ -661,30 +631,17 @@ const estilos = StyleSheet.create({
 
   // 2. Hero Card
   heroCard: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 18,
+    flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
   avatarContainer: {
     position: "relative",
-    marginBottom: 10,
-  },
-  avatarFoto: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    backgroundColor: "#E2E8F0",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
+    marginRight: 14,
   },
   avatarSemFoto: {
     alignItems: "center",
@@ -703,11 +660,16 @@ const estilos = StyleSheet.create({
   },
   nomeLinha: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+  infoHero: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "flex-start",
   },
   nomeProfessor: {
-    fontSize: 22,
+    flexShrink: 1,
+    fontSize: 19,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.5,
@@ -716,12 +678,12 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     color: "#64748B",
     fontWeight: "500",
-    marginTop: 3,
+    marginTop: 2,
   },
   avaliacaoLinha: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 4,
   },
   estrelasRow: {
     flexDirection: "row",
@@ -735,7 +697,7 @@ const estilos = StyleSheet.create({
   semAvaliacao: {
     fontSize: 13,
     color: "#64748B",
-    marginTop: 6,
+    marginTop: 4,
   },
   totalAvaliacoesTexto: {
     fontWeight: "400",
@@ -750,7 +712,7 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 16,
-    marginTop: 10,
+    marginTop: 6,
     gap: 4,
   },
   textoBadgeLocalizacao: {
@@ -803,47 +765,6 @@ const estilos = StyleSheet.create({
     color: "#065F46",
   },
 
-  // 4. Métricas Grid
-  metricasGrid: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 12,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: "#F1F5F9",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-  },
-  metricaItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  metricaIconeWrapper: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  metricaNumero: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  metricaLabel: {
-    fontSize: 10,
-    color: "#64748B",
-    marginTop: 2,
-    fontWeight: "500",
-    textAlign: "center",
-  },
 
   // 5. Seções Comuns
   secaoContainer: {
@@ -856,65 +777,19 @@ const estilos = StyleSheet.create({
     color: "#0F172A",
     letterSpacing: -0.3,
   },
-  secaoSubtitulo: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 2,
-    marginBottom: 10,
-  },
-  cardDisponibilidadePublica: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 14,
-    gap: 12,
-  },
-  linhaDisponibilidadePublica: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  nomeDiaDisponibilidadePublica: {
-    width: 100,
-    paddingTop: 5,
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#334155",
-  },
-  periodosDisponibilidadePublica: {
-    flex: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  chipHorarioPublico: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#ECFDF5",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-  textoChipHorarioPublico: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#047857",
-  },
-  textoSemDisponibilidadePublica: {
-    fontSize: 12,
-    color: "#64748B",
-  },
-
   // Modalidades (Cards)
   modalidadesContainer: {
-    gap: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
   },
   cardModalidade: {
+    flex: 1,
+    minWidth: 145,
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 10,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
     elevation: 1,
@@ -926,77 +801,48 @@ const estilos = StyleSheet.create({
   modalidadeTopoLinha: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
   modalidadeIconeTitulo: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
+    minWidth: 0,
   },
   iconeModalidadeBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 9,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 10,
+    marginRight: 8,
+  },
+  modalidadeTextoArea: {
+    flex: 1,
+    minWidth: 0,
   },
   tituloModalidade: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#0F172A",
   },
   subtituloModalidade: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#64748B",
-  },
-  badgeMaisEscolhida: {
-    backgroundColor: "#FFF7ED",
-    borderWidth: 1,
-    borderColor: "#FFD8A8",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  textoMaisEscolhida: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#C2410C",
-  },
-  badgePresencialTag: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  textoPresencialTag: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#475569",
-  },
-  descricaoModalidade: {
-    fontSize: 12,
-    color: "#475569",
-    marginTop: 8,
-    lineHeight: 17,
   },
   modalidadePrecoLinha: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 8,
+    paddingTop: 7,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
   },
   precoModalidade: {
-    fontSize: 16,
+    flexShrink: 1,
+    fontSize: 12,
     fontWeight: "800",
     color: "#FF6B1A",
-  },
-  unidadeHora: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#64748B",
   },
   radioIndicador: {
     width: 20,
@@ -1136,14 +982,31 @@ const estilos = StyleSheet.create({
     color: "#334155",
   },
 
-  // 8. Biografia
-  cardBiografia: {
+  // 8. Resumo da biografia
+  cardResumoBiografia: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: "#F1F5F9",
+    borderColor: "#E2E8F0",
     marginTop: 4,
+  },
+  textoBiografiaResumo: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 19,
+  },
+  botaoLerBiografia: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 5,
+    marginTop: 8,
+  },
+  textoLerBiografia: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FF6B1A",
   },
   textoBiografia: {
     fontSize: 13,
@@ -1259,73 +1122,65 @@ const estilos = StyleSheet.create({
     fontWeight: "800",
   },
 
-  // 11. Modal
-  modalOverlay: {
+  // Modal da biografia
+  modalSobreOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    justifyContent: "flex-end",
   },
-  modalCard: {
+  modalSobreCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    maxWidth: 340,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    maxHeight: "82%",
+    elevation: 12,
+  },
+  modalSobreAlca: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#CBD5E1",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalSobreHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    elevation: 8,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
   },
-  modalIconeSucesso: {
-    marginBottom: 8,
+  modalSobreTituloArea: {
+    flex: 1,
   },
-  modalTitulo: {
-    fontSize: 18,
+  modalSobreTitulo: {
+    fontSize: 17,
     fontWeight: "800",
     color: "#0F172A",
-    textAlign: "center",
   },
-  modalMensagem: {
-    fontSize: 13,
-    color: "#475569",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  modalResumoBox: {
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 12,
-    padding: 12,
-    width: "100%",
-    marginTop: 14,
-    gap: 4,
-  },
-  modalResumoLinha: {
-    fontSize: 12,
-    color: "#334155",
-  },
-  botaoModalConfirmar: {
-    backgroundColor: "#FF6B1A",
-    width: "100%",
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 16,
-  },
-  textoBotaoModal: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  botaoModalFechar: {
-    marginTop: 10,
-    paddingVertical: 8,
-  },
-  textoModalFechar: {
+  modalSobreSubtitulo: {
     fontSize: 12,
     color: "#64748B",
-    fontWeight: "600",
+    marginTop: 3,
+  },
+  botaoFecharModalSobre: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
+  },
+  modalSobreConteudo: {
+    marginTop: 16,
+  },
+  modalSobreTexto: {
+    fontSize: 14,
+    color: "#334155",
+    lineHeight: 22,
+    paddingBottom: 20,
   },
 });

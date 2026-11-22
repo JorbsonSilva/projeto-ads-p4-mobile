@@ -12,11 +12,12 @@
  * - Feed de próximas aulas reais com status, modalidade e acesso ao chat do agendamento
  */
 
-import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -97,7 +98,7 @@ export default function HomeProfessorScreen({
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[estilos.scrollContent, { paddingBottom: 28 }]}
+        contentContainerStyle={[estilos.scrollContent, { paddingBottom: 20 }]}
         refreshControl={
           <RefreshControl
             refreshing={atualizando}
@@ -128,9 +129,17 @@ export default function HomeProfessorScreen({
         {/* 2. SAUDAÇÃO PERSONALIZADA (IMG-015)                            */}
         {/* ============================================================== */}
         <View style={estilos.saudacaoContainer}>
-          <Text style={estilos.saudacaoTitulo}>
-            Olá, {nomeUsuario || "Professor"}! 👋
-          </Text>
+          <View style={estilos.saudacaoLinha}>
+            <Image
+              source={require("../assets/images/branding/logo.png")}
+              style={estilos.logoImagem}
+              resizeMode="contain"
+              accessibilityLabel="Orienta"
+            />
+            <Text style={estilos.saudacaoTitulo} numberOfLines={1}>
+              Olá, {nomeUsuario || "Professor"}! 👋
+            </Text>
+          </View>
           <Text style={estilos.saudacaoSubtitulo}>
             Gerencie suas aulas, inspire e transforme vidas.
           </Text>
@@ -161,12 +170,10 @@ export default function HomeProfessorScreen({
                   <Feather name="calendar" size={14} color="#0284C7" />
                 </View>
               </View>
-              <Text style={estilos.valorMetricaGrande}>
-                {metricas.aulasRealizadas.valor}
-              </Text>
-              <Text style={estilos.labelMetrica}>
-                {metricas.aulasRealizadas.label}
-              </Text>
+              <View style={estilos.textoMetrica}>
+                <Text style={estilos.valorMetricaGrande}>{metricas.aulasRealizadas.valor}</Text>
+                <Text style={estilos.labelMetrica} numberOfLines={2}>{metricas.aulasRealizadas.label}</Text>
+              </View>
             </View>
 
             {/* 2. Alunos atendidos */}
@@ -176,12 +183,10 @@ export default function HomeProfessorScreen({
                   <Feather name="users" size={14} color="#10B981" />
                 </View>
               </View>
-              <Text style={estilos.valorMetricaGrande}>
-                {metricas.alunosAtendidos.valor}
-              </Text>
-              <Text style={estilos.labelMetrica}>
-                {metricas.alunosAtendidos.label}
-              </Text>
+              <View style={estilos.textoMetrica}>
+                <Text style={estilos.valorMetricaGrande}>{metricas.alunosAtendidos.valor}</Text>
+                <Text style={estilos.labelMetrica} numberOfLines={2}>{metricas.alunosAtendidos.label}</Text>
+              </View>
             </View>
 
             {/* 3. Aulas pendentes */}
@@ -191,12 +196,10 @@ export default function HomeProfessorScreen({
                   <Feather name="clock" size={14} color="#8B5CF6" />
                 </View>
               </View>
-              <Text style={estilos.valorMetricaGrande}>
-                {metricas.aulasPendentes.valor}
-              </Text>
-              <Text style={estilos.labelMetrica}>
-                {metricas.aulasPendentes.label}
-              </Text>
+              <View style={estilos.textoMetrica}>
+                <Text style={estilos.valorMetricaGrande}>{metricas.aulasPendentes.valor}</Text>
+                <Text style={estilos.labelMetrica} numberOfLines={2}>{metricas.aulasPendentes.label}</Text>
+              </View>
             </View>
 
             {/* 4. Ganhos no mês */}
@@ -206,12 +209,10 @@ export default function HomeProfessorScreen({
                   <Feather name="dollar-sign" size={14} color="#FF5A1F" />
                 </View>
               </View>
-              <Text style={estilos.valorMetricaGrandeLaranja}>
-                {metricas.ganhosMes.valor}
-              </Text>
-              <Text style={estilos.labelMetrica}>
-                {metricas.ganhosMes.label}
-              </Text>
+              <View style={estilos.textoMetrica}>
+                <Text style={estilos.valorMetricaGrandeLaranja}>{metricas.ganhosMes.valor}</Text>
+                <Text style={estilos.labelMetrica} numberOfLines={2}>{metricas.ganhosMes.label}</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -274,34 +275,29 @@ export default function HomeProfessorScreen({
         </View>
 
         {/* ============================================================== */}
-        {/* 6. BANNER DE CHAMADA 3D (GESTÃO DE AULAS - IMG-015)            */}
+        {/* 6. CARD DE SOLICITAÇÕES DE AULA                              */}
         {/* ============================================================== */}
-        <View style={estilos.bannerChamadaCard}>
+        <TouchableOpacity
+          style={estilos.bannerChamadaCard}
+          onPress={() => router.push("/solicitacoes" as any)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Gerenciar solicitações de aula"
+        >
+          <View style={estilos.iconeSolicitacoes}>
+            <Feather name="inbox" size={22} color="#FF5A1F" />
+          </View>
           <View style={estilos.bannerConteudoTexto}>
-            <View style={estilos.tagGratisPagas}>
-              <MaterialCommunityIcons name="star-four-points" size={14} color="#FF5A1F" style={{ marginRight: 4 }} />
-              <Text style={estilos.textoTagGratisPagas}>Flexibilidade Pedagógica</Text>
-            </View>
-            <Text style={estilos.bannerTitulo}>
-              Gerencie suas solicitações de aulas
+            <Text style={estilos.bannerTitulo}>Solicitações de aula</Text>
+            <Text style={estilos.bannerDescricao} numberOfLines={2}>
+              Confira os pedidos recebidos e responda às novas solicitações.
             </Text>
-            <Text style={estilos.bannerDescricao}>
-              Confira os pedidos recebidos e aceite ou recuse novas aulas e mentorias.
-            </Text>
-
-            <TouchableOpacity
-              style={estilos.botaoGerenciarAulas}
-              onPress={() => router.push("/solicitacoes" as any)}
-              activeOpacity={0.85}
-            >
-              <Text style={estilos.textoBotaoGerenciarAulas}>Ver solicitações →</Text>
-            </TouchableOpacity>
           </View>
-
-          <View style={estilos.iconeEstilizadoWrapper}>
-            <Ionicons name="sparkles" size={54} color="#FED7AA" />
+          <View style={estilos.botaoSolicitacoes}>
+            <Text style={estilos.textoBotaoSolicitacoes}>Ver solicitações</Text>
+            <Feather name="arrow-right" size={16} color="#FFFFFF" />
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* ============================================================== */}
         {/* 7. PRÓXIMAS AULAS DO PROFESSOR (IMG-015)                       */}
@@ -318,7 +314,7 @@ export default function HomeProfessorScreen({
           </View>
 
           <View style={estilos.listaAulasCards}>
-            {proximasAulas.map((aula) => (
+            {proximasAulas.slice(0, 1).map((aula) => (
               <TouchableOpacity
                 key={`aula-${aula.id}`}
                 style={estilos.cardAulaItem}
@@ -408,6 +404,16 @@ const estilos = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
+  logoImagem: {
+    width: 72,
+    height: 72,
+  },
+  saudacaoLinha: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -440,16 +446,17 @@ const estilos = StyleSheet.create({
 
   scrollContent: {
     padding: 16,
-    gap: 16,
+    gap: 12,
   },
 
   // 2. Saudação
   saudacaoContainer: {
     marginTop: 4,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   saudacaoTitulo: {
-    fontSize: 22,
+    flex: 1,
+    fontSize: 20,
     fontWeight: "800",
     color: "#0F172A",
     letterSpacing: -0.3,
@@ -464,7 +471,7 @@ const estilos = StyleSheet.create({
   cardResumoGeral: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
-    padding: 18,
+    padding: 15,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     shadowColor: "#000",
@@ -476,10 +483,10 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   resumoGeralTitulo: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
     color: "#0F172A",
   },
@@ -491,50 +498,55 @@ const estilos = StyleSheet.create({
   gridMetricas2x2: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
   },
   blocoMetricaItem: {
     width: "48%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
     backgroundColor: "#F8FAFC",
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: "#F1F5F9",
   },
   blocoMetricaCabecalho: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
+  },
+  textoMetrica: {
+    flex: 1,
+    minWidth: 0,
   },
   iconeMetricaWrapperAzul: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#EFF6FF",
     alignItems: "center",
     justifyContent: "center",
   },
   iconeMetricaWrapperVerde: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#ECFDF5",
     alignItems: "center",
     justifyContent: "center",
   },
   iconeMetricaWrapperRoxo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#F5F3FF",
     alignItems: "center",
     justifyContent: "center",
   },
   iconeMetricaWrapperLaranja: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#FFF7ED",
     alignItems: "center",
     justifyContent: "center",
@@ -553,17 +565,18 @@ const estilos = StyleSheet.create({
     fontSize: 11,
     color: "#64748B",
     marginTop: 2,
+    lineHeight: 14,
   },
 
   // 5. Ações Rápidas Circulares
   secaoAtalhosRapidos: {
-    marginTop: 4,
+    marginTop: 0,
   },
   secaoTitulo: {
     fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   linhaAtalhosCirculares: {
     flexDirection: "row",
@@ -574,88 +587,84 @@ const estilos = StyleSheet.create({
     width: "23%",
   },
   circuloAtalho: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 6,
     position: "relative",
   },
   labelAtalhoCircular: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     color: "#334155",
     textAlign: "center",
   },
 
-  // 6. Banner de Chamada 3D
+  // 6. Card de solicitações
   bannerChamadaCard: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
     backgroundColor: "#FFF7ED",
     borderRadius: 18,
-    padding: 18,
+    padding: 14,
     borderWidth: 1,
     borderColor: "#FED7AA",
-    position: "relative",
-    overflow: "hidden",
+  },
+  iconeSolicitacoes: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFEDD5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
   },
   bannerConteudoTexto: {
     flex: 1,
-    zIndex: 2,
-  },
-  tagGratisPagas: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  textoTagGratisPagas: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#EA580C",
+    marginRight: 6,
   },
   bannerTitulo: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
-    lineHeight: 22,
-    marginBottom: 4,
   },
   bannerDescricao: {
     fontSize: 12,
     color: "#64748B",
-    lineHeight: 18,
-    marginBottom: 14,
+    lineHeight: 16,
+    marginTop: 3,
   },
-  botaoGerenciarAulas: {
-    alignSelf: "flex-start",
+  botaoSolicitacoes: {
+    width: "100%",
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     backgroundColor: "#FF5A1F",
-    paddingHorizontal: 16,
-    paddingVertical: 9,
     borderRadius: 10,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
   },
-  textoBotaoGerenciarAulas: {
+  textoBotaoSolicitacoes: {
     fontSize: 13,
     fontWeight: "700",
     color: "#FFFFFF",
   },
-  iconeEstilizadoWrapper: {
-    position: "absolute",
-    right: -10,
-    bottom: -10,
-    opacity: 0.6,
-    zIndex: 1,
-  },
 
   // 7. Próximas Aulas
   secaoProximasAulas: {
-    marginTop: 4,
+    marginTop: 0,
   },
   secaoHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   linkVerTodas: {
     fontSize: 13,
@@ -663,7 +672,7 @@ const estilos = StyleSheet.create({
     color: "#FF5A1F",
   },
   listaAulasCards: {
-    gap: 12,
+    gap: 8,
   },
   semAulasTexto: {
     color: "#64748B",
@@ -689,17 +698,17 @@ const estilos = StyleSheet.create({
   corpoCardAula: {
     flex: 1,
     flexDirection: "row",
-    padding: 12,
+    padding: 10,
     alignItems: "center",
   },
   avatarContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   infoAlunoColuna: {
     flex: 1,
@@ -708,8 +717,10 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 6,
   },
   nomeAlunoTexto: {
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: "700",
     color: "#0F172A",
@@ -726,7 +737,7 @@ const estilos = StyleSheet.create({
     backgroundColor: "#FEF3C7",
   },
   textoStatusAula: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
   },
   textoConfirmado: {
@@ -738,11 +749,12 @@ const estilos = StyleSheet.create({
   metaLinha: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 3,
   },
   metaTexto: {
     fontSize: 12,
     color: "#64748B",
+    flexShrink: 1,
   },
   metaPonto: {
     marginHorizontal: 6,
@@ -753,8 +765,8 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
-    paddingTop: 8,
+    marginTop: 7,
+    paddingTop: 7,
     borderTopWidth: 1,
     borderTopColor: "#F8FAFC",
   },
