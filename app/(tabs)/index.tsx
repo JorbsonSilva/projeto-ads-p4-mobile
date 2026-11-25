@@ -168,6 +168,9 @@ export default function Index() {
 // ==========================================
 
 function HomeAluno({ nome }: { nome: string }) {
+  const { isAuthenticated, carregandoAuth, perfilAtivo } = useAuth();
+  const exibirTutor = process.env.EXPO_PUBLIC_TUTOR_ENABLED === "true" &&
+    isAuthenticated && !carregandoAuth && perfilAtivo === "Aluno";
   const insets = useSafeAreaInsets();
   const [professores, setProfessores] = useState<ProfessorDestaque[]>([]);
   const [favoritos, setFavoritos] = useState<Record<number, boolean>>({});
@@ -441,6 +444,18 @@ function HomeAluno({ nome }: { nome: string }) {
             </View>
           </LinearGradient>
         </View>
+
+        {exibirTutor && (
+          <TouchableOpacity
+            style={estilos.atalhoTutor}
+            accessibilityRole="button"
+            onPress={() => router.push("/tutor")}
+          >
+            <Feather name="help-circle" size={20} color="#A83A16" />
+            <Text style={estilos.textoAtalhoTutor}>Dúvidas sobre o Orienta</Text>
+            <Feather name="chevron-right" size={18} color="#64748B" />
+          </TouchableOpacity>
+        )}
 
         {/* ============================================================== */}
         {/* 4. CARROSSEL DE SEIS CATEGORIAS POPULARES (IMG-005)            */}
@@ -1232,6 +1247,24 @@ const estilos = StyleSheet.create({
   },
 
   // 4. Cabeçalho de Seções Genérico
+  atalhoTutor: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+  },
+  textoAtalhoTutor: {
+    flex: 1,
+    color: "#15233C",
+    fontSize: 15,
+    fontWeight: "600",
+  },
   secaoHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
