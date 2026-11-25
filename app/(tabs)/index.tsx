@@ -169,7 +169,7 @@ export default function Index() {
 
 function HomeAluno({ nome }: { nome: string }) {
   const { isAuthenticated, carregandoAuth, perfilAtivo } = useAuth();
-  const exibirTutor = process.env.EXPO_PUBLIC_TUTOR_ENABLED === "true" &&
+  const exibirTutor = process.env.EXPO_PUBLIC_TUTOR_ENABLED !== "false" &&
     isAuthenticated && !carregandoAuth && perfilAtivo === "Aluno";
   const insets = useSafeAreaInsets();
   const [professores, setProfessores] = useState<ProfessorDestaque[]>([]);

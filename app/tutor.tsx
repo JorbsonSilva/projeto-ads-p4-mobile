@@ -20,7 +20,7 @@ const ORIGEM: Record<TutorOrigem, string> = {
 
 export default function TutorRoute() {
   const { carregandoAuth, isAuthenticated, usuarioId, perfilAtivo, token } = useAuth();
-  if (process.env.EXPO_PUBLIC_TUTOR_ENABLED !== 'true') return <Redirect href="/(tabs)" />;
+  if (process.env.EXPO_PUBLIC_TUTOR_ENABLED === 'false') return <Redirect href="/(tabs)" />;
   if (carregandoAuth) {
     return <View style={styles.loading}><ActivityIndicator accessibilityLabel="Carregando sessão" /></View>;
   }
